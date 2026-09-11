@@ -3,6 +3,7 @@ import ApplicationServices
 import Carbon.HIToolbox
 import Darwin
 import Foundation
+import NativeMenuDispatch
 import WindowManagementBridge
 
 private enum TileCommand: String, CaseIterable {
@@ -634,61 +635,21 @@ private func firstWindowIsMinimized(processID: pid_t) -> Bool? {
     return copyAXAttribute(window, "AXMinimized") as? Bool
 }
 
-// Research probe: discover semantic menu identifiers without opening menus or
-// matching localized titles. These AppKit identifiers are not a stable contract.
-private func nativeMenuItem(processID: pid_t, identifier: String) -> AXUIElement? {
-    let app = AXUIElementCreateApplication(processID)
-    AXUIElementSetMessagingTimeout(app, 2)
-    guard let value = copyAXAttribute(app, "AXMenuBar") else { return nil }
-    var queue: [(AXUIElement, Int)] = [(unsafeDowncast(value, to: AXUIElement.self), 0)]
-    var index = 0
-    while index < queue.count && index < 2_000 {
-        let (element, depth) = queue[index]
-        index += 1
-        if copyAXAttribute(element, "AXIdentifier") as? String == identifier {
-            return element
-        }
-        if depth < 7, let children = copyAXAttribute(element, "AXChildren") as? [AXUIElement] {
-            queue.append(contentsOf: children.map { ($0, depth + 1) })
-        }
-    }
-    return nil
-}
-
 @MainActor
 private func dispatchNativeMenuCommand(
     _ command: TileCommand,
     processID: pid_t,
     window: AXUIElement
 ) throws {
-    let started = ProcessInfo.processInfo.systemUptime
-    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processID else {
-        throw POCError.observation("Target lost foreground focus; no menu action sent")
-    }
-    guard let item = nativeMenuItem(processID: processID, identifier: command.selectorName) else {
-        throw POCError.observation("This app does not expose the native \(command.rawValue) menu command")
-    }
-    var actions: CFArray?
-    let actionError = AXUIElementCopyActionNames(item, &actions)
-    guard copyAXAttribute(item, "AXEnabled") as? Bool == true,
-          actionError == .success, (actions as? [String])?.contains(kAXPressAction) == true else {
-        throw POCError.observation("Native \(command.rawValue) is unavailable for this window")
-    }
-    let application = AXUIElementCreateApplication(processID)
-    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processID,
-          let focused = copyAXAttribute(application, "AXFocusedWindow"),
-          CFEqual(focused, window) else {
-        throw POCError.observation("Focused window changed during discovery; no menu action sent")
-    }
-    let dispatchStarted = ProcessInfo.processInfo.systemUptime
-    let result = AXUIElementPerformAction(item, kAXPressAction as CFString)
-    let ended = ProcessInfo.processInfo.systemUptime
-    print("Native identifier: \(command.selectorName); AXPress result: \(result.rawValue)")
+    let metrics = try NativeMenuDispatcher.dispatch(
+        identifier: command.selectorName,
+        commandName: command.rawValue,
+        processID: processID,
+        window: window
+    )
+    print("Native identifier: \(command.selectorName); AXPress result: 0")
     print(String(format: "Discovery + dispatch: %.1f ms; dispatch alone: %.1f ms (excludes animation)",
-                 (ended - started) * 1000, (ended - dispatchStarted) * 1000))
-    guard result == .success else {
-        throw POCError.observation("Native menu action failed with Accessibility error \(result.rawValue)")
-    }
+                 metrics.totalMilliseconds, metrics.dispatchMilliseconds))
 }
 
 @MainActor

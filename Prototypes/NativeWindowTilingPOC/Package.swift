@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "native-window-tiling-poc", targets: ["NativeWindowTilingPOC"]),
+        .executable(name: "desktop-groups-prototype", targets: ["DesktopGroupsPrototype"]),
     ],
     targets: [
         .target(
@@ -18,9 +19,19 @@ let package = Package(
                 .linkedFramework("Foundation"),
             ]
         ),
+        .target(name: "NativeMenuDispatch"),
+        .target(name: "DesktopGroupsCore"),
         .executableTarget(
             name: "NativeWindowTilingPOC",
-            dependencies: ["WindowManagementBridge"]
+            dependencies: ["WindowManagementBridge", "NativeMenuDispatch"]
+        ),
+        .executableTarget(
+            name: "DesktopGroupsPrototype",
+            dependencies: ["DesktopGroupsCore", "NativeMenuDispatch"]
+        ),
+        .testTarget(
+            name: "DesktopGroupsCoreTests",
+            dependencies: ["DesktopGroupsCore"]
         ),
     ]
 )

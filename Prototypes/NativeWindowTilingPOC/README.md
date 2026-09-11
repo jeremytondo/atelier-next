@@ -1,5 +1,9 @@
 # Native window tiling proof of concept
 
+ATE-14 builds on this package with a long-running
+[Desktop Groups prototype](DESKTOP-GROUPS.md). The shared `NativeMenuDispatch`
+target now supplies the semantic Accessibility dispatcher to both executables.
+
 ATE-13 now has a working native tiling route: find the foreground app's native
 Window menu command by its Accessibility identifier and invoke `AXPress`.
 The owning app performs macOS tiling; the tester does not synthesize shortcuts
