@@ -643,11 +643,10 @@ private final class DesktopGroupController {
         print("Grouped \(focused.groupKey): \(group.members.count) member(s)")
         printMembers(group, records: latestRecords)
 
-        // Native menu dispatch requires foreground focus. Walking the initial
-        // group backward makes the original member the final Fill target.
-        for member in group.members.reversed() {
-            guard !Task.isCancelled else { return }
-            await focusAndMaybeFill(member.key, in: group.key, forceFill: true)
+        // Fill only the active member. Other members remain deferred until the
+        // user selects them, avoiding focus cycling and eager window mutation.
+        if let activeMember = group.activeMember {
+            await focusAndMaybeFill(activeMember.key, in: group.key, forceFill: true)
         }
     }
 
@@ -718,10 +717,13 @@ private final class DesktopGroupController {
         _ = store.activate(member, in: groupKey)
         print("Selected member \((store.groups[groupKey]?.activeIndex ?? 0) + 1): \(record.title)")
 
-        let priorFrame = filledFrames[member]
-        let movedSinceFill = priorFrame.map { !$0.approximatelyEquals(record.bounds) } ?? true
+        let frameMatches = filledFrames[member].map { $0.approximatelyEquals(record.bounds) }
         let result = store.groups[groupKey]?.members.first { $0.key == member }?.lastFillResult
-        let needsFill = forceFill || result == .deferred || result == .notAttempted || movedSinceFill
+            ?? .notAttempted
+        let needsFill = result.shouldAttemptFill(
+            force: forceFill,
+            recordedFrameMatchesCurrent: frameMatches
+        )
         guard needsFill, !Task.isCancelled else { return }
 
         do {

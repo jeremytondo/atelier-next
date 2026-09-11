@@ -41,15 +41,19 @@ test procedure are in the
 | `Cmd-Opt-[` / `Cmd-Opt-]` | Select the previous / next member, wrapping at either end |
 
 On first grouping, the focused window becomes member 1 and the rest follow in
-Core Graphics front-to-back order. Initial Fill dispatch runs in reverse member
-order so member 1 finishes focused. Running `Cmd-Opt-G` again repairs membership
-and retries Fill; it does not dissolve the group.
+Core Graphics front-to-back order. Only the focused member is filled immediately;
+the others defer Fill until first selected. Running `Cmd-Opt-G` again repairs
+membership and retries Fill for the focused member; it does not dissolve the
+group.
 
 New eligible windows append without focus theft. A background-created member is
-left unfilled until first selected. Closed, minimized, hidden, fullscreen, moved,
-or otherwise ineligible windows are removed and later indexes compact. Returning
-windows append at the end. An AX observer drives prompt updates, with a one-second
-reconciliation pass as a safety net.
+left unfilled until first selected. On later selections, a member is refilled only
+if its frame changed since its last successful Fill. Unavailable or failed Fill
+commands wait for an explicit `Cmd-Opt-G` repair instead of retrying on every
+selection. Closed, minimized, hidden, fullscreen, moved, or otherwise ineligible
+windows are removed and later indexes compact. Returning windows append at the
+end. An AX observer drives prompt updates, with a one-second reconciliation pass
+as a safety net.
 
 ## Architecture and boundaries
 
@@ -81,9 +85,10 @@ Use two unrelated, single-window apps on one Desktop, then repeat with two
 windows from one app:
 
 1. Give the windows distinct original sizes and press `Cmd-Opt-G` on the first.
-2. Confirm both remain independently Fill-sized after the initial reverse pass.
-3. Alternate `Cmd-Opt-1` and `Cmd-Opt-2`; after the first selection has settled,
-   subsequent unchanged selections should not dispatch another Fill.
+2. Confirm only the focused member fills immediately, then select each remaining
+   member once and confirm it fills on first activation.
+3. Alternate `Cmd-Opt-1` and `Cmd-Opt-2`; after each member's first selection has
+   settled, subsequent unchanged selections should not dispatch another Fill.
 4. Use the native Return to Previous Size command on each window and inspect
    WindowManager logs to determine whether macOS retained independent restore
    state.

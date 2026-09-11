@@ -34,6 +34,26 @@ public enum FillResult: Equatable, Sendable {
     case succeeded
     case unavailable(String)
     case failed(String)
+
+    /// Whether activating this member should enforce Fill. A successful member
+    /// only needs another dispatch after its frame changes; unavailable and
+    /// failed commands wait for an explicit forced repair instead of being
+    /// retried on every selection.
+    public func shouldAttemptFill(
+        force: Bool,
+        recordedFrameMatchesCurrent: Bool?
+    ) -> Bool {
+        if force { return true }
+
+        switch self {
+        case .notAttempted, .deferred:
+            return true
+        case .succeeded:
+            return recordedFrameMatchesCurrent != true
+        case .unavailable, .failed:
+            return false
+        }
+    }
 }
 
 public struct GroupMember: Equatable, Sendable {
@@ -80,7 +100,7 @@ public struct GroupStore: Sendable {
 
             let existing = Set(group.members.map(\.key))
             for candidate in candidates + [focused] where !existing.contains(candidate) {
-                group.members.append(GroupMember(key: candidate))
+                group.members.append(GroupMember(key: candidate, lastFillResult: .deferred))
             }
 
             group.activeIndex = index(of: focused, in: group.members)
@@ -90,9 +110,12 @@ public struct GroupStore: Sendable {
         }
 
         let memberKeys = [focused] + candidates
+        let members = memberKeys.enumerated().map { index, member in
+            GroupMember(key: member, lastFillResult: index == 0 ? .notAttempted : .deferred)
+        }
         let group = WindowGroup(
             key: key,
-            members: memberKeys.map { GroupMember(key: $0) },
+            members: members,
             activeIndex: 0
         )
         groups[key] = group

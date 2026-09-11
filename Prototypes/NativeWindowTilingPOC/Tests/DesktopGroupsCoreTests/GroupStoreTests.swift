@@ -16,6 +16,7 @@ private let three = WindowKey(processID: 30, windowID: 303)
 
     #expect(group.members.map(\.key) == [two, one, three])
     #expect(group.activeIndex == 0)
+    #expect(group.members.map(\.lastFillResult) == [.notAttempted, .deferred, .deferred])
 }
 
 @Test func reconciliationCompactsAndAppendsWithoutReordering() {
@@ -92,4 +93,35 @@ private let three = WindowKey(processID: 30, windowID: 303)
     let group = store.reconcile(key: groupKey, eligibleFrontToBack: [two, one, three])
 
     #expect(group?.members.first { $0.key == two }?.lastFillResult == .succeeded)
+}
+
+@Test func fillAttemptPolicyIsLazyAndSelfHealing() {
+    #expect(FillResult.notAttempted.shouldAttemptFill(
+        force: false,
+        recordedFrameMatchesCurrent: nil
+    ))
+    #expect(FillResult.deferred.shouldAttemptFill(
+        force: false,
+        recordedFrameMatchesCurrent: nil
+    ))
+    #expect(!FillResult.succeeded.shouldAttemptFill(
+        force: false,
+        recordedFrameMatchesCurrent: true
+    ))
+    #expect(FillResult.succeeded.shouldAttemptFill(
+        force: false,
+        recordedFrameMatchesCurrent: false
+    ))
+    #expect(!FillResult.failed("transient").shouldAttemptFill(
+        force: false,
+        recordedFrameMatchesCurrent: nil
+    ))
+    #expect(!FillResult.unavailable("unsupported").shouldAttemptFill(
+        force: false,
+        recordedFrameMatchesCurrent: nil
+    ))
+    #expect(FillResult.unavailable("unsupported").shouldAttemptFill(
+        force: true,
+        recordedFrameMatchesCurrent: nil
+    ))
 }
