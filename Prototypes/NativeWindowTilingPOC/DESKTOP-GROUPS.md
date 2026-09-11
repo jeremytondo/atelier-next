@@ -25,6 +25,12 @@ The process is an accessory application with no window or Dock icon. Keep the
 terminal open and use Control-C to stop it. A per-user process lock rejects a
 second manager before it can register observers or global hotkeys.
 
+During initial smoke testing, this Mac experienced an Apple PCIe/Ethernet kernel
+panic while two timed test launches had been left running. The evidence does not
+support the prototype as its direct cause. The diagnosis and safer long-running
+test procedure are in the
+[incident review](Evidence/2026-09-10-mac-mini-panic/README.md).
+
 ## Shortcuts
 
 | Shortcut | Action |
