@@ -1,0 +1,41 @@
+[0/1] Planning build
+Building for debugging...
+[0/4] Write sources
+[1/4] Write swift-version--58304C5D6DBC2206.txt
+[3/6] Compiling NativeWindowTilingPOC main.swift
+[4/6] Emitting module NativeWindowTilingPOC
+[4/7] Write Objects.LinkFileList
+[5/7] Linking native-window-tiling-poc
+[6/7] Applying native-window-tiling-poc
+Build of product 'native-window-tiling-poc' complete! (1.11s)
+error: Accessibility is not authorized; menu test is blocked before launch
+SkyLight connection ID: 9769899
+left: _zoomLeft: [available]
+right: _zoomRight: [available]
+fill: _zoomFill: [available]
+top: _zoomTop: [available]
+bottom: _zoomBottom: [available]
+top-left: _zoomTopLeft: [available]
+top-right: _zoomTopRight: [available]
+bottom-left: _zoomBottomLeft: [available]
+bottom-right: _zoomBottomRight: [available]
+center: _zoomCenter: [available]
+untile: _zoomUntile: [available]
+Usage: native-window-tiling-poc [command] [--probe] [--smoke-test]
+
+Commands: left, right, fill, top, bottom, top-left, top-right, bottom-left, bottom-right, center, untile
+
+  --probe       Resolve the private APIs without opening a window.
+  --smoke-test  Tile the window, report its resulting bounds, then quit.
+  --cross-process-smoke-test
+                Ask WindowManagement to tile a separate fixture process.
+  --keyboard-cross-process-smoke-test
+                Send the system tiling shortcut directly to a fixture PID.
+  --standard-app-keyboard-smoke-test
+                Compare targeted/global delivery using a disposable TextEdit.
+  --standard-app-menu-smoke-test
+                Invoke a native menu action by AXIdentifier, then restore size.
+  --request-accessibility
+                Ask macOS to show the Accessibility permission UI.
+  --coordinator-smoke-test
+                Tile this process's window through NSWMWindowCoordinator.

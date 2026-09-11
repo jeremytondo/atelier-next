@@ -1,5 +1,17 @@
 # ATE-13 native macOS window-control findings
 
+> Historical experiment report. Read [REVIEW.md](REVIEW.md) for the subsequent
+> audit and revised assessment. The owned-window success and independent-client
+> failures reproduce, but the broad rejection of synthetic shortcuts and the
+> recommendation to prioritize dragging are superseded by evidence from Loop,
+> WindowKeys, BetterTouchTool, and Karabiner. Original observations below are
+> retained to make the change in interpretation traceable.
+
+> Subsequent local validation confirmed native cross-process menu invocation in
+> TextEdit for left, right, top-left, and fill. See the
+> [validation record](Evidence/2026-09-10-menu-validation/README.md), including
+> the one-point restoration discrepancy and remaining coverage limits.
+
 Status: exploratory research, not a production API decision  
 Test environment: macOS 26.5.2 (build 25F84), Apple silicon  
 Scope: native desktop tiling; Spaces control has not yet been investigated

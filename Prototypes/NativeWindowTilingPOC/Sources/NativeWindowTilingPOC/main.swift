@@ -73,6 +73,8 @@ private struct Options {
     let crossProcessSmokeTest: Bool
     let keyboardCrossProcessSmokeTest: Bool
     let standardAppKeyboardSmokeTest: Bool
+    let standardAppMenuSmokeTest: Bool
+    let focusedWindow: Bool
     let requestAccessibility: Bool
     let coordinatorSmokeTest: Bool
 
@@ -88,6 +90,8 @@ private struct Options {
         let crossProcessSmokeTest = arguments.contains("--cross-process-smoke-test")
         let keyboardCrossProcessSmokeTest = arguments.contains("--keyboard-cross-process-smoke-test")
         let standardAppKeyboardSmokeTest = arguments.contains("--standard-app-keyboard-smoke-test")
+        let standardAppMenuSmokeTest = arguments.contains("--standard-app-menu-smoke-test")
+        let focusedWindow = arguments.contains("--focused-window")
         let requestAccessibility = arguments.contains("--request-accessibility")
         let coordinatorSmokeTest = arguments.contains("--coordinator-smoke-test")
         let commandArgument = arguments.dropFirst().first { !$0.hasPrefix("-") }
@@ -95,6 +99,11 @@ private struct Options {
 
         if let commandArgument, TileCommand(rawValue: commandArgument) == nil {
             throw POCError.invalidCommand(commandArgument)
+        }
+        if focusedWindow && [probeOnly, smokeTest, fixture, crossProcessSmokeTest,
+                             keyboardCrossProcessSmokeTest, standardAppKeyboardSmokeTest,
+                             standardAppMenuSmokeTest, coordinatorSmokeTest].contains(true) {
+            throw POCError.observation("--focused-window cannot be combined with another test mode")
         }
 
         return Options(
@@ -105,6 +114,8 @@ private struct Options {
             crossProcessSmokeTest: crossProcessSmokeTest,
             keyboardCrossProcessSmokeTest: keyboardCrossProcessSmokeTest,
             standardAppKeyboardSmokeTest: standardAppKeyboardSmokeTest,
+            standardAppMenuSmokeTest: standardAppMenuSmokeTest,
+            focusedWindow: focusedWindow,
             requestAccessibility: requestAccessibility,
             coordinatorSmokeTest: coordinatorSmokeTest
         )
@@ -125,6 +136,11 @@ private struct Options {
                         Send the system tiling shortcut directly to a fixture PID.
           --standard-app-keyboard-smoke-test
                         Compare targeted/global delivery using a disposable TextEdit.
+          --standard-app-menu-smoke-test
+                        Invoke a native menu action by AXIdentifier, then restore size.
+          --focused-window
+                        Wait five seconds, then invoke the native command on your
+                        focused window. Leaves the result in place; use untile to restore.
           --request-accessibility
                         Ask macOS to show the Accessibility permission UI.
           --coordinator-smoke-test
@@ -140,6 +156,7 @@ private enum POCError: LocalizedError {
     case unsupportedSelector(String)
     case unsupportedKeyboardShortcut(String)
     case eventCreation
+    case observation(String)
 
     var errorDescription: String? {
         switch self {
@@ -155,6 +172,8 @@ private enum POCError: LocalizedError {
             "The keyboard-event prototype does not define a system shortcut for \(command)"
         case .eventCreation:
             "CoreGraphics could not create the synthetic keyboard event"
+        case let .observation(message):
+            message
         }
     }
 }
@@ -466,10 +485,13 @@ private func runCrossProcessSmokeTest(command: TileCommand, skyLight: SkyLightCo
     } while after == before && Date() < deadline
 
     print("SkyLight bounds after:  \(formatBounds(after))")
+    guard let before, let after, before != .zero, after != .zero else {
+        throw POCError.observation("RESULT: inconclusive — valid before/after bounds are required")
+    }
     if after == before {
         print("RESULT: rejected or ignored — the foreign window did not move")
     } else {
-        print("RESULT: accepted — WindowManagement tiled a foreign-process window")
+        print("RESULT: bounds changed — native tiling still requires independent verification")
     }
 }
 
@@ -612,6 +634,155 @@ private func firstWindowIsMinimized(processID: pid_t) -> Bool? {
     return copyAXAttribute(window, "AXMinimized") as? Bool
 }
 
+// Research probe: discover semantic menu identifiers without opening menus or
+// matching localized titles. These AppKit identifiers are not a stable contract.
+private func nativeMenuItem(processID: pid_t, identifier: String) -> AXUIElement? {
+    let app = AXUIElementCreateApplication(processID)
+    AXUIElementSetMessagingTimeout(app, 2)
+    guard let value = copyAXAttribute(app, "AXMenuBar") else { return nil }
+    var queue: [(AXUIElement, Int)] = [(unsafeDowncast(value, to: AXUIElement.self), 0)]
+    var index = 0
+    while index < queue.count && index < 2_000 {
+        let (element, depth) = queue[index]
+        index += 1
+        if copyAXAttribute(element, "AXIdentifier") as? String == identifier {
+            return element
+        }
+        if depth < 7, let children = copyAXAttribute(element, "AXChildren") as? [AXUIElement] {
+            queue.append(contentsOf: children.map { ($0, depth + 1) })
+        }
+    }
+    return nil
+}
+
+@MainActor
+private func dispatchNativeMenuCommand(
+    _ command: TileCommand,
+    processID: pid_t,
+    window: AXUIElement
+) throws {
+    let started = ProcessInfo.processInfo.systemUptime
+    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processID else {
+        throw POCError.observation("Target lost foreground focus; no menu action sent")
+    }
+    guard let item = nativeMenuItem(processID: processID, identifier: command.selectorName) else {
+        throw POCError.observation("This app does not expose the native \(command.rawValue) menu command")
+    }
+    var actions: CFArray?
+    let actionError = AXUIElementCopyActionNames(item, &actions)
+    guard copyAXAttribute(item, "AXEnabled") as? Bool == true,
+          actionError == .success, (actions as? [String])?.contains(kAXPressAction) == true else {
+        throw POCError.observation("Native \(command.rawValue) is unavailable for this window")
+    }
+    let application = AXUIElementCreateApplication(processID)
+    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processID,
+          let focused = copyAXAttribute(application, "AXFocusedWindow"),
+          CFEqual(focused, window) else {
+        throw POCError.observation("Focused window changed during discovery; no menu action sent")
+    }
+    let dispatchStarted = ProcessInfo.processInfo.systemUptime
+    let result = AXUIElementPerformAction(item, kAXPressAction as CFString)
+    let ended = ProcessInfo.processInfo.systemUptime
+    print("Native identifier: \(command.selectorName); AXPress result: \(result.rawValue)")
+    print(String(format: "Discovery + dispatch: %.1f ms; dispatch alone: %.1f ms (excludes animation)",
+                 (ended - started) * 1000, (ended - dispatchStarted) * 1000))
+    guard result == .success else {
+        throw POCError.observation("Native menu action failed with Accessibility error \(result.rawValue)")
+    }
+}
+
+@MainActor
+private func runFocusedWindowCommand(command: TileCommand, requestAccessibility: Bool) throws {
+    guard accessibilityIsTrusted(requestIfNeeded: requestAccessibility) else {
+        throw POCError.observation("Accessibility permission is missing. Enable the terminal app running this command (Ghostty if launched there), then rerun.")
+    }
+    print("Switch to the window you want to \(command.rawValue). Control-C cancels.")
+    for seconds in stride(from: 5, through: 1, by: -1) {
+        print("\(seconds)…")
+        fflush(stdout)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+    }
+    guard let app = NSWorkspace.shared.frontmostApplication else {
+        throw POCError.observation("No foreground application was found")
+    }
+    let application = AXUIElementCreateApplication(app.processIdentifier)
+    guard let value = copyAXAttribute(application, "AXFocusedWindow"),
+          CFGetTypeID(value) == AXUIElementGetTypeID() else {
+        throw POCError.observation("The foreground app has no accessible focused window")
+    }
+    let window = unsafeDowncast(value, to: AXUIElement.self)
+    print("Target: \(app.localizedName ?? "application") (PID \(app.processIdentifier))")
+    try dispatchNativeMenuCommand(command, processID: app.processIdentifier, window: window)
+    print("Native command dispatched. The window stays in place; run untile to request its previous size.")
+}
+
+@MainActor
+private func compareNativeMenuDelivery(
+    command: TileCommand,
+    skyLight: SkyLightConnection,
+    processID: pid_t,
+    windowNumber: Int
+) throws {
+    guard command != .untile else {
+        throw POCError.invalidCommand("Use a placement; this probe runs untile afterward")
+    }
+    guard AXIsProcessTrusted() else {
+        throw POCError.observation("Accessibility is not authorized; menu test is blocked")
+    }
+    let pointerBefore = CGEvent(source: nil)?.location
+    let application = AXUIElementCreateApplication(processID)
+    guard let windows = copyAXAttribute(application, "AXWindows") as? [AXUIElement],
+          windows.count == 1,
+          let before = skyLight.bounds(of: windowNumber), before != .zero else {
+        throw POCError.observation("Expected exactly one fixture window with valid bounds")
+    }
+    print("MENU TEST target PID=\(processID) window=\(windowNumber) time=\(ISO8601DateFormatter().string(from: Date()))")
+    print("Accessibility trusted: true; pointer before: \(String(describing: pointerBefore))")
+    print("Bounds before: \(formatBounds(before))")
+
+    func invoke(_ action: TileCommand) throws -> CGRect {
+        let started = Date()
+        try dispatchNativeMenuCommand(action, processID: processID, window: windows[0])
+        // Wait through the animation and require several matching valid samples.
+        let deadline = Date().addingTimeInterval(4)
+        var last: CGRect?
+        var stableSamples = 0
+        while Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            guard let current = skyLight.bounds(of: windowNumber), current != .zero else {
+                throw POCError.observation("Window disappeared while observing menu action")
+            }
+            stableSamples = current == last ? stableSamples + 1 : 0
+            last = current
+            if Date().timeIntervalSince(started) >= 1.2, stableSamples >= 4 {
+                print("Bounds after \(action.rawValue): \(formatBounds(current))")
+                return current
+            }
+        }
+        throw POCError.observation("Window bounds did not settle within four seconds")
+    }
+
+    let after = try invoke(command)
+    let restored = try invoke(.untile)
+    let pointerAfter = CGEvent(source: nil)?.location
+    let restorationDelta = [
+        restored.minX - before.minX,
+        restored.minY - before.minY,
+        restored.width - before.width,
+        restored.height - before.height,
+    ]
+    // Native untile on the tested TextEdit fixture can return a frame differing
+    // by one point. Preserve exact equality and deltas rather than concealing it.
+    // This tolerance describes geometry only; native state needs separate logs.
+    let restoredWithinOnePoint = restorationDelta.allSatisfy { abs($0) <= 1 }
+    print("MENU OBSERVATION changed=\(after != before) restoredOriginalBounds=\(restored == before) restoredWithinOnePoint=\(restoredWithinOnePoint) pointerUnchanged=\(pointerBefore != nil && pointerBefore == pointerAfter)")
+    print("RESTORE DELTA points [x,y,width,height]=\(restorationDelta)")
+    guard after != before, restoredWithinOnePoint else {
+        throw POCError.observation("Menu action did not change and restore the fixture bounds within one point")
+    }
+    print("Menu dispatch changed geometry and restored it within one point; corroborate native state with WindowManager logs. This is not an animation-quality or multi-window certification.")
+}
+
 @MainActor
 private func compareKeyboardEventDelivery(
     command: TileCommand,
@@ -659,8 +830,11 @@ private func compareKeyboardEventDelivery(
     } while after == before && Date() < deadline
 
     print("SkyLight bounds after targeted event: \(formatBounds(after))")
+    guard let before, let after, before != .zero, after != .zero else {
+        throw POCError.observation("RESULT: inconclusive — valid before/after bounds are required")
+    }
     if after != before {
-        print("RESULT: accepted — the target AppKit client performed the tile")
+        print("RESULT: bounds changed — native tiling still requires independent verification")
         return
     }
 
@@ -681,17 +855,20 @@ private func compareKeyboardEventDelivery(
     print("Posted the same shortcut through the global HID event tap")
 
     let globalDeadline = Date().addingTimeInterval(4)
-    var globallyPostedBounds = after
+    var globallyPostedBounds: CGRect? = after
     repeat {
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         globallyPostedBounds = skyLight.bounds(of: windowNumber)
     } while globallyPostedBounds == after && Date() < globalDeadline
 
     print("SkyLight bounds after global event:   \(formatBounds(globallyPostedBounds))")
+    guard let globallyPostedBounds, globallyPostedBounds != .zero else {
+        throw POCError.observation("GLOBAL RESULT: inconclusive — target bounds are unavailable")
+    }
     if globallyPostedBounds == after {
         print("GLOBAL RESULT: ignored — the system shortcut handler did not tile the target")
     } else {
-        print("GLOBAL RESULT: accepted — macOS tiled the frontmost target natively")
+        print("GLOBAL RESULT: bounds changed — native tiling still requires independent verification")
         return
     }
 
@@ -805,8 +982,12 @@ private func largestOnscreenWindowNumber(ownedBy processID: pid_t) -> Int? {
 private func runStandardAppKeyboardSmokeTest(
     command: TileCommand,
     skyLight: SkyLightConnection,
-    requestAccessibility: Bool
+    requestAccessibility: Bool,
+    useMenu: Bool = false
 ) throws {
+    if useMenu && !accessibilityIsTrusted(requestIfNeeded: requestAccessibility) {
+        throw POCError.observation("Accessibility is not authorized; menu test is blocked before launch")
+    }
     let applicationPath = "/System/Applications/TextEdit.app"
     let bundleIdentifier = "com.apple.TextEdit"
     guard FileManager.default.fileExists(atPath: applicationPath) else {
@@ -867,6 +1048,16 @@ private func runStandardAppKeyboardSmokeTest(
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
     }
 
+    if useMenu {
+        try compareNativeMenuDelivery(
+            command: command,
+            skyLight: skyLight,
+            processID: processID,
+            windowNumber: windowNumber
+        )
+        return
+    }
+
     try compareKeyboardEventDelivery(
         command: command,
         skyLight: skyLight,
@@ -881,6 +1072,11 @@ private func runStandardAppKeyboardSmokeTest(
 @MainActor
 private func run() throws {
     let options = try Options.parse(CommandLine.arguments)
+
+    if options.focusedWindow {
+        try runFocusedWindowCommand(command: options.command, requestAccessibility: options.requestAccessibility)
+        return
+    }
 
     if options.fixture {
         runFixture()
@@ -906,11 +1102,12 @@ private func run() throws {
         return
     }
 
-    if options.standardAppKeyboardSmokeTest {
+    if options.standardAppKeyboardSmokeTest || options.standardAppMenuSmokeTest {
         try runStandardAppKeyboardSmokeTest(
             command: options.command,
             skyLight: skyLight,
-            requestAccessibility: options.requestAccessibility
+            requestAccessibility: options.requestAccessibility,
+            useMenu: options.standardAppMenuSmokeTest
         )
         return
     }

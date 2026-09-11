@@ -1,0 +1,20 @@
+Building for debugging...
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+Build of product 'native-window-tiling-poc' complete! (0.07s)
+SkyLight connection ID: 6190507
+left: _zoomLeft: [available]
+right: _zoomRight: [available]
+fill: _zoomFill: [available]
+top: _zoomTop: [available]
+bottom: _zoomBottom: [available]
+top-left: _zoomTopLeft: [available]
+top-right: _zoomTopRight: [available]
+bottom-left: _zoomBottomLeft: [available]
+bottom-right: _zoomBottomRight: [available]
+center: _zoomCenter: [available]
+untile: _zoomUntile: [available]
+Fixture window #175691, WindowManagement ID 5992CBCF-D3BF-405B-96BD-C09BB7F72271
+SkyLight bounds before: x=395 y=146 width=680 height=432
+WindowManagement transaction: submitted windowID=5992CBCF-D3BF-405B-96BD-C09BB7F72271 tilingPosition=2
+SkyLight bounds after:  x=395 y=146 width=680 height=432
+RESULT: rejected or ignored — the foreign window did not move
