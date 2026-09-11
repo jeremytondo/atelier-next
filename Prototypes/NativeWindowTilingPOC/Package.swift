@@ -10,6 +10,8 @@ let package = Package(
     products: [
         .executable(name: "native-window-tiling-poc", targets: ["NativeWindowTilingPOC"]),
         .executable(name: "desktop-groups-prototype", targets: ["DesktopGroupsPrototype"]),
+        .executable(name: "space-control-prototype", targets: ["SpaceControlPrototype"]),
+        .executable(name: "scratchpad-prototype", targets: ["ScratchpadPrototype"]),
     ],
     targets: [
         .target(
@@ -21,6 +23,7 @@ let package = Package(
         ),
         .target(name: "NativeMenuDispatch"),
         .target(name: "DesktopGroupsCore"),
+        .target(name: "SpaceControlCore"),
         .executableTarget(
             name: "NativeWindowTilingPOC",
             dependencies: ["WindowManagementBridge", "NativeMenuDispatch"]
@@ -29,9 +32,21 @@ let package = Package(
             name: "DesktopGroupsPrototype",
             dependencies: ["DesktopGroupsCore", "NativeMenuDispatch"]
         ),
+        .executableTarget(
+            name: "SpaceControlPrototype",
+            dependencies: ["SpaceControlCore"]
+        ),
+        .executableTarget(
+            name: "ScratchpadPrototype",
+            dependencies: ["NativeMenuDispatch"]
+        ),
         .testTarget(
             name: "DesktopGroupsCoreTests",
             dependencies: ["DesktopGroupsCore"]
+        ),
+        .testTarget(
+            name: "SpaceControlCoreTests",
+            dependencies: ["SpaceControlCore"]
         ),
     ]
 )

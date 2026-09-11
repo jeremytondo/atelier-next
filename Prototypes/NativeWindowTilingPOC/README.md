@@ -4,6 +4,16 @@ ATE-14 builds on this package with a long-running
 [Desktop Groups prototype](DESKTOP-GROUPS.md). The shared `NativeMenuDispatch`
 target now supplies the semantic Accessibility dispatcher to both executables.
 
+ATE-15 adds a separate long-running [Space Control prototype](SPACE-CONTROL.md)
+with session-owned Option-number switching and native Desktop creation through
+Mission Control Accessibility. It shares the package but does not modify the
+ATE-13 or ATE-14 runtime paths.
+
+ATE-16 adds a [Scratchpad prototype](SCRATCHPAD.md) that launches, shows, places,
+and hides one configured app from a global shortcut while restoring prior focus.
+It automatically applies and verifies macOS's All Desktops assignment, then uses
+the shared native menu dispatcher.
+
 ATE-13 now has a working native tiling route: find the foreground app's native
 Window menu command by its Accessibility identifier and invoke `AXPress`.
 The owning app performs macOS tiling; the tester does not synthesize shortcuts
