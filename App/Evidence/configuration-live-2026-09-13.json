@@ -1,0 +1,13 @@
+{
+  "groupChecks": [
+    "Live Group with three fixture windows retained identities and order across reload; helper PID unchanged.",
+    "Group cycling continued after configuration reload.",
+    "Calculator hotkey summoned/hid around a reload; previous fixture focus restored, Desktop unchanged, Calculator excluded from Group."
+  ],
+  "originalDesktopIDs": [
+    "3",
+    "14"
+  ],
+  "restoredActiveDesktop": "14",
+  "configRestored": true
+}

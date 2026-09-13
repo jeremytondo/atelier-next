@@ -22,6 +22,7 @@ let package = Package(
             ]
         ),
         .target(name: "NativeMenuDispatch"),
+        .target(name: "QuickAppSupport"),
         .target(name: "DesktopGroupsCore"),
         .target(name: "SpaceControlCore"),
         .executableTarget(
@@ -34,12 +35,13 @@ let package = Package(
         ),
         .executableTarget(
             name: "SpaceControlPrototype",
-            dependencies: ["SpaceControlCore"]
+            dependencies: ["SpaceControlCore", "NativeMenuDispatch", "QuickAppSupport"]
         ),
         .executableTarget(
             name: "ScratchpadPrototype",
-            dependencies: ["NativeMenuDispatch"]
+            dependencies: ["NativeMenuDispatch", "QuickAppSupport"]
         ),
+        .testTarget(name: "QuickAppSupportTests", dependencies: ["QuickAppSupport"]),
         .testTarget(
             name: "DesktopGroupsCoreTests",
             dependencies: ["DesktopGroupsCore"]

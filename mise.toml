@@ -1,0 +1,63 @@
+[tools]
+node = "26.4.0"
+"npm:xcodebuildmcp" = "2.6.2"
+gh = "2.95.0"
+jq = "1.8.1"
+shellcheck = "0.11.0"
+actionlint = "1.7.12"
+
+[tasks.build]
+description = "Build, sign, and ZIP the local macOS app"
+run = "scripts/build-app.sh"
+
+[tasks.install]
+description = "Build and install Atelier in /Applications, preserving the previous app"
+run = "scripts/build-app.sh --install"
+
+[tasks.dev]
+description = "Build, install, and launch Atelier (quit the running app first)"
+run = "scripts/build-app.sh --install --launch"
+
+[tasks.test]
+description = "Run the app's Swift package tests"
+run = "xcodebuildmcp swift-package test --package-path \"$MISE_PROJECT_ROOT/App\""
+
+[tasks.check]
+description = "Run app tests and release automation checks"
+depends = ["test", "release:check"]
+
+[tasks."release:patch"]
+description = "Dispatch and watch a stable patch release from main"
+run = "scripts/release.sh patch"
+
+[tasks."release:minor"]
+description = "Dispatch and watch a stable minor release from main"
+run = "scripts/release.sh minor"
+
+[tasks."release:major"]
+description = "Dispatch and watch a stable major release from main"
+run = "scripts/release.sh major"
+
+[tasks."release:dev"]
+description = "Dispatch and watch the rolling dev release from main"
+run = "scripts/release.sh dev"
+
+[tasks."release:plan"]
+description = "Print release metadata without publishing: dev or stable patch|minor|major"
+run = "scripts/release-plan.sh"
+
+[tasks."release:package"]
+description = "Build, sign, notarize, and package an existing release plan JSON"
+run = "scripts/build-app.sh --release-plan"
+
+[tasks."release:publish"]
+description = "Publish verified release assets (used by GitHub Actions)"
+run = "scripts/publish-release.sh"
+
+[tasks."release:check"]
+description = "Lint workflows and shell scripts, and test release behavior"
+run = ["shellcheck scripts/*.sh", "actionlint", "scripts/release-test.sh"]
+
+[tasks."app:command"]
+description = "Send JSON to an app launched with --diagnostic-control"
+run = "scripts/app-command.sh"

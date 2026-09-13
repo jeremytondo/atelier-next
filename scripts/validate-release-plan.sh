@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# -eq 1 ]] || { echo 'usage: scripts/validate-release-plan.sh PLAN.json' >&2; exit 2; }
+jq -e '
+  (.channel == "dev" or .channel == "stable") and
+  (.marketing_version | test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")) and
+  (.build_number | test("^[0-9]{14}$")) and
+  (.commit | test("^[0-9a-f]{40}$")) and
+  (.built_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+  (.build_number == (.built_at | gsub("[-:TZ]"; ""))) and
+  (if .channel == "stable" then .tag == ("v" + .version) and .version == .marketing_version
+   else .tag == "dev" and
+     .version == (.marketing_version + "-dev.t" + .build_number[8:] + "+" + .commit[0:8]) end)
+' "$1" > /dev/null || { echo "Invalid release plan: $1" >&2; exit 1; }
