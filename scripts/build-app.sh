@@ -111,25 +111,47 @@ else
 fi
 
 if [[ $skip_build == false ]]; then
+  "$root/scripts/build-hammerspoon.sh"
   xcodebuildmcp swift-package build --package-path "$root/App" --configuration release --architectures arm64
 fi
 binaries="$root/App/.build/release"
-for executable in Atelier atelier-engine atelier-tools; do
+for executable in atelier-config atelier-engine atelier-tools; do
   [[ -x $binaries/$executable ]] || die "missing release executable: $executable"
   [[ $(lipo -archs "$binaries/$executable") == arm64 ]] || die "expected an arm64 executable: $executable"
 done
 app="$temporary/Atelier.app"
 contents="$app/Contents"
+hs2_app="$root/.build/hs2-derived/Build/Products/Release/Hammerspoon 2.app"
+[[ -x "$hs2_app/Contents/MacOS/Hammerspoon 2" ]] || die 'missing HS2 release bundle'
+ditto "$hs2_app" "$app"
 mkdir -p "$contents/MacOS" "$contents/Helpers" "$contents/Resources"
-ditto "$binaries/Atelier" "$contents/MacOS/Atelier"
+mv "$contents/MacOS/Hammerspoon 2" "$contents/MacOS/Atelier"
 ditto "$binaries/atelier-engine" "$contents/Helpers/atelier-engine"
+ditto "$binaries/atelier-config" "$contents/Helpers/atelier-config"
+ditto App/Resources/Atelier "$contents/Resources/Atelier"
+rm -rf "$contents/Resources/DefaultConfig"
+ditto App/Resources/DefaultConfig "$contents/Resources/DefaultConfig"
 cp App/Resources/Configuration.md App/Resources/ThirdPartyNotices.txt "$contents/Resources/"
+cp .build/hammerspoon2/LICENSE "$contents/Resources/Hammerspoon2-LICENSE"
+cp App/Hammerspoon/upstream.json "$contents/Resources/Hammerspoon2-version.json"
+mkdir -p "$contents/Resources/Licenses"
+for dependency in AXSwift javascript-core-extras swift-commandlinekit xctest-dynamic-overlay; do
+  cp "$root/.build/hs2-derived/SourcePackages/checkouts/$dependency/LICENSE" "$contents/Resources/Licenses/$dependency.txt"
+done
 "$binaries/atelier-tools" --icon "$temporary/AppIcon.iconset"
 iconutil -c icns "$temporary/AppIcon.iconset" -o "$contents/Resources/AppIcon.icns"
-cp App/Resources/Info.plist "$contents/Info.plist"
+# Retain HS2's usage descriptions and bundle metadata for its automation modules.
+plutil -replace CFBundleIdentifier -string com.elevenideas.Atelier "$contents/Info.plist"
+plutil -replace CFBundleExecutable -string Atelier "$contents/Info.plist"
+plutil -replace CFBundleName -string Atelier "$contents/Info.plist"
+plutil -replace CFBundleDisplayName -string Atelier "$contents/Info.plist"
+plutil -replace LSUIElement -bool true "$contents/Info.plist"
+plutil -replace CFBundleURLTypes -json '[{"CFBundleURLName":"com.elevenideas.Atelier","CFBundleURLSchemes":["atelier"]}]' "$contents/Info.plist"
+plutil -remove SUFeedURL "$contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $marketing_version" "$contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$contents/Info.plist"
+plutil -replace CFBundleIconFile -string AppIcon "$contents/Info.plist"
+plutil -remove CFBundleIconName "$contents/Info.plist" 2>/dev/null || true
 plutil -insert AtelierBuildVersion -string "$version" "$contents/Info.plist"
 plutil -insert AtelierBuildChannel -string "$channel" "$contents/Info.plist"
 plutil -insert AtelierBuildCommit -string "$commit" "$contents/Info.plist"
@@ -138,10 +160,26 @@ plutil -insert AtelierBuildDate -string "$built_at" "$contents/Info.plist"
 # readable resources and traversable directories for other users on the Mac.
 umask 022
 chmod -R u=rwX,go=rX "$app"
-for path in "$contents/Helpers/atelier-engine" "$app"; do
+# Sign nested bundles inside out, preserving HS2's automation services.
+for directory in "$contents/Frameworks" "$contents/XPCServices"; do
+  [[ -d $directory ]] || continue
+  while IFS= read -r -d '' path; do
+    if [[ $path == */HammerspoonOSAScriptHelper.xpc ]]; then
+      codesign --force --sign "$identity" --options runtime "$timestamp" \
+        --entitlements App/Hammerspoon/osascript-entitlements.plist "$path"
+      continue
+    fi
+    codesign --force --sign "$identity" --options runtime "$timestamp" \
+      --preserve-metadata=identifier,entitlements "$path"
+  done < <(find "$directory" -depth \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' -o -name '*.dylib' \) -print0)
+done
+for path in "$contents/Helpers/atelier-engine" "$contents/Helpers/atelier-config" "$contents/MacOS/hs2"; do
   codesign --force --sign "$identity" --options runtime "$timestamp" "$path"
 done
+codesign --force --sign "$identity" --options runtime "$timestamp" \
+  --entitlements App/Hammerspoon/entitlements.plist "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
+"$root/scripts/bundle-test.sh" "$app"
 
 if [[ $channel != local ]]; then
   ditto -c -k --sequesterRsrc --keepParent "$app" "$temporary/notarization.zip"
@@ -170,8 +208,9 @@ rm -rf "$output/Atelier.app"
 mv "$app" "$output/Atelier.app"
 mv "$temporary/$archive_name" "$output/$archive_name"
 if [[ $channel != local ]]; then
-  jq '. + {architecture: "arm64", minimum_macos: "26.0", signing: "developer-id", notarized: true,
-    asset: "Atelier-macos-arm64.zip"}' "$plan" > "$output/manifest.json"
+  jq --slurpfile hs2 App/Hammerspoon/upstream.json \
+    '. + {architecture: "arm64", minimum_macos: "26.0", signing: "developer-id", notarized: true,
+    hammerspoon2: $hs2[0], asset: "Atelier-macos-arm64.zip"}' "$plan" > "$output/manifest.json"
   (cd "$output" && shasum -a 256 Atelier-macos-arm64.zip manifest.json > checksums.txt)
 fi
 

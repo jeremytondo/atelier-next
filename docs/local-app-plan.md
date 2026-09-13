@@ -1,5 +1,7 @@
 # Atelier: first installable macOS app
 
+> Superseded September 13, 2026: the product is an HS2 distribution with customizable JavaScript defaults and native helpers for gaps. The standalone Swift runtime proposed below was replaced. See [the current app](../App/README.md). This document preserves the earlier architecture decision for context.
+
 > Configuration update: the implemented app now uses TOML under `~/.config/atelier/` with explicit menu/shortcut reload. The Settings-editor portions of this original plan are superseded by [the configuration reference](../App/Resources/Configuration.md).
 
 Proposed plan — September 13, 2026. Confirmed direction: Atelier should run independently of a separate Hammerspoon installation. This document proposes implementation; no app has been built or installed as part of this planning pass.

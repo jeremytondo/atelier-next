@@ -1,10 +1,10 @@
 # Atelier Next
 
-Prototypes and explorations for the next version of Atelier.
+Atelier is a customizable macOS workspace built on Hammerspoon 2.
 
 ## Application
 
-[Atelier for macOS](App/README.md) is the standalone macOS app, with native Spaces, Groups, and configurable Quick Apps. Build and install with `mise run dev`; see the app README for permissions and updates, and [releasing](docs/releases.md) for rolling dev builds and stable semantic releases.
+[Atelier for macOS](App/README.md) packages HS2 with JavaScript defaults for native Spaces, Groups, and Quick Apps, plus native helpers for missing capabilities. Build and install with `mise run dev`; see the app README for configuration and permissions, and [releasing](docs/releases.md) for rolling dev builds and stable semantic releases.
 
 ## Reference source
 

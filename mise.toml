@@ -19,12 +19,16 @@ description = "Build, install, and launch Atelier (quit the running app first)"
 run = "scripts/build-app.sh --install --launch"
 
 [tasks.test]
-description = "Run the app's Swift package tests"
-run = "xcodebuildmcp swift-package test --package-path \"$MISE_PROJECT_ROOT/App\""
+description = "Run native helper and JavaScript behavior tests"
+run = ["xcodebuildmcp swift-package test --package-path \"$MISE_PROJECT_ROOT/App\"", "node --test App/Tests/JavaScript/*.test.js"]
+
+[tasks."hs2:build"]
+description = "Build the pinned Hammerspoon 2 application with Atelier integration"
+run = "scripts/build-hammerspoon.sh"
 
 [tasks.check]
 description = "Run app tests and release automation checks"
-depends = ["test", "release:check"]
+depends = ["test", "release:check", "hs2:build"]
 
 [tasks.refs]
 description = "Fetch missing read-only reference source into repos/ (gitignored)"
@@ -69,7 +73,3 @@ run = "scripts/publish-release.sh"
 [tasks."release:check"]
 description = "Lint workflows and shell scripts, and test release behavior"
 run = ["shellcheck scripts/*.sh", "actionlint", "scripts/release-test.sh"]
-
-[tasks."app:command"]
-description = "Send JSON to an app launched with --diagnostic-control"
-run = "scripts/app-command.sh"

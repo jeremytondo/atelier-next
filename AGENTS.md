@@ -21,6 +21,11 @@ do not follow it blindly or deviate from it silently.
 
 ## Maintainability
 
+Hammerspoon 2 is Atelier's application and automation foundation. Implement
+customizable defaults through its JavaScript APIs first. Add native mechanisms
+only for demonstrated gaps, keep upstream integration patches small, and preserve
+user-owned configuration across updates.
+
 Long-term maintainability is a core priority. Prefer shared, plainly named
 logic over duplication, and change an existing design when that produces a
 simpler system. Code should be easy to understand, work with, and test.

@@ -1,3 +1,7 @@
+// The pinned HS2 API only exposes activating launch. This transaction keeps
+// launch/reopen, placement, All Desktops assignment, and final focus together so
+// summoning an app cannot switch away before its membership has been established.
+// General Group focus, Fill, shortcuts, and observation live in HS2 JavaScript.
 import AppKit
 import ApplicationServices
 import QuickAppSupport
@@ -98,7 +102,7 @@ extension EngineBridge {
     if let expected = request["expectedBundleID"] as? String, expected != target.bundleIdentifier {
       throw BridgeError(
         message:
-          "The configured app identity changed. Review the Quick App in Settings and save again.")
+          "The configured app identity changed. Review its app reference in init.js and reload.")
     }
     let size = request["size"] as? [String: Double]
     if request["size"] != nil {

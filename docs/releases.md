@@ -8,9 +8,9 @@ Atelier uses ATC's release channels: a rolling `dev` prerelease from `main` and 
 - [Latest stable ZIP](https://github.com/jeremytondo/atelier-next/releases/latest/download/Atelier-macos-arm64.zip)
 - [Release history and build details](https://github.com/jeremytondo/atelier-next/releases)
 
-These downloads become available after the corresponding first successful release. Unzip, quit Atelier, and move `Atelier.app` into `/Applications`. Grant Accessibility access on the first install. The app and signing identity are shared between channels, so they replace one another and use the same `~/.config/atelier` configuration. Changing from the original Apple Development signature may require a new Accessibility grant once. Only one Atelier instance runs at a time.
+These downloads become available after the corresponding first successful release. Unzip, quit Atelier, and move `Atelier.app` into `/Applications`. Grant Accessibility access on the first install. The app and signing identity are shared between channels, so they replace one another and use the same `~/.config/atelier/init.js` configuration. Changing from the original Apple Development signature may require a new Accessibility grant once. Only one Atelier instance runs at a time.
 
-To roll back, download an earlier stable release or use the previous bundle saved by `mise run install`. The `dev` assets are replaced on every successful publication; GitHub Actions retains each build's package artifact for 14 days. Configuration compatibility still matters when rolling back. Updates currently use downloaded ZIPs; Sparkle integration is separate work.
+To roll back, download an earlier stable release or use the previous bundle saved by `mise run install`. The `dev` assets are replaced on every successful publication; GitHub Actions retains each build's package artifact for 14 days. Configuration compatibility still matters when rolling back. Updates use downloaded ZIPs. The bundled HS2 host omits its upstream updater; all versions are built and published by Atelier.
 
 ## Everyday commands
 
@@ -18,7 +18,7 @@ Install Xcode and mise, then run `mise install`. Use `mise tasks` or `scripts/bu
 
 | Command | Result |
 | --- | --- |
-| `mise run check` | App tests, shell/workflow lint, release behavior tests |
+| `mise run check` | HS2 host build, native/JavaScript tests, shell/workflow lint, release tests |
 | `mise run build` | Local signed app and ZIP in `dist/` |
 | `mise run install` | Build and install, backing up the previous app |
 | `mise run dev` | Build, install, and launch |
@@ -87,3 +87,9 @@ Distribution packaging requires a valid Developer ID Application certificate, se
 The publisher verifies the ZIP and manifest checksums before any release mutation. Stable releases are assembled as drafts, then published as the latest stable version. Dev is always a prerelease and never becomes GitHub's latest stable release. Updating multiple dev assets is not atomic; if a download overlaps publication, retry after the workflow finishes. A failed initial publication can leave a draft: inspect and finish or remove that draft explicitly before rerunning. Stable tags and published stable assets are never force-updated.
 
 For local distribution validation, create a plan with `mise run release:plan dev > release-plan.json`, set `ATELIER_NOTARY_PROFILE` to an existing notarytool keychain profile (or set the three `ATELIER_APP_STORE_CONNECT_*` key-path/ID/issuer variables), then run `mise run release:package release-plan.json --output-dir dist/release`. This packages without uploading to GitHub. `--skip-build` is intended only for local packaging diagnosis; CI always compiles the current checkout.
+
+## Hammerspoon 2 dependency
+
+The app is built from the immutable HS2 revision and verified source archive declared in `App/Hammerspoon/upstream.json`, with the tracked integration patch applied in `.build/hammerspoon2`. The research checkout under `repos/` is never used by builds. XcodeBuildMCP builds the host's shared Atelier scheme; SwiftPM builds native helpers and the configuration migrator. The final bundle includes JavaScript defaults, starter configuration, and upstream notices. Release manifests record both Atelier's commit and the HS2 revision.
+
+Packaging runs an isolated probe of the real bundled HS2 engine before notarization, without loading user configuration, registering shortcuts, or manipulating windows. It also verifies that configuration bootstrap preserves a customized file. The full release still must pass Developer ID signing, notarization, stapling, and Gatekeeper assessment before publication.

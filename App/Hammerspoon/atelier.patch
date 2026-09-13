@@ -1,0 +1,577 @@
+--- a/Hammerspoon-2-Info.plist	
++++ b/Hammerspoon-2-Info.plist	
+@@ -23,7 +23,7 @@
+ 			<key>CFBundleTypeRole</key>
+ 			<string>Editor</string>
+ 			<key>CFBundleURLName</key>
+-			<string>app.hammerspoon2.Hammerspoon</string>
++			<string>com.elevenideas.Atelier</string>
+ 			<key>CFBundleURLSchemes</key>
+ 			<array>
+ 				<string>hammerspoon2</string>
+--- a/Hammerspoon 2/Managers/ManagerManager.swift	
++++ b/Hammerspoon 2/Managers/ManagerManager.swift	
+@@ -68,7 +68,9 @@
+     }
+ 
+     func boot() throws {
++        AtelierHost.stop(engine)
+         try engine.resetContext()
++        try AtelierHost.install(in: engine)
+ 
+         let configDir = settings.configLocation.deletingLastPathComponent()
+         var configDirExists = ObjCBool(booleanLiteral: false)
+@@ -85,10 +87,19 @@
+             AKError("No config file found at: \(settings.configLocation.path)")
+             return
+         }
+-        try engine.evalFromURL(settings.configLocation, wrapInIIFE: false)
++do {
++    try engine.evalFromURL(settings.configLocation, wrapInIIFE: false)
++} catch {
++    AtelierHost.stop(engine)
++    engine.shutdown()
++    AtelierStatus.shared.state = "Configuration error"
++    AtelierStatus.shared.error = error.localizedDescription
++    throw error
++}
+     }
+ 
+     func shutdown() {
++        AtelierHost.stop(engine)
+         engine.shutdown()
+         NSApp.terminate(self)
+     }
+--- a/Hammerspoon 2/Managers/SettingsManager.swift	
++++ b/Hammerspoon 2/Managers/SettingsManager.swift	
+@@ -127,13 +127,13 @@
+         var defaultValue: Any {
+             switch(self) {
+             case .configLocation:
+-                return URL(filePath: NSString("~/.config/Hammerspoon2/init.js").expandingTildeInPath)
++                return AtelierHost.configURL
+             case .consoleHistoryLength:
+                 return 100
+             case .relaunchOnReload:
+                 return false
+             case .dockMenuBehaviour:
+-                return DockMenubarType.both.rawValue
++                return DockMenubarType.menuBar.rawValue
+             case .hasCompletedOnboarding:
+                 return false
+             case .garbageLoggingEnabled:
+--- a/Hammerspoon 2/Lifecycle/Hammerspoon_2App.swift	
++++ b/Hammerspoon 2/Lifecycle/Hammerspoon_2App.swift	
+@@ -6,7 +6,6 @@
+ //
+ 
+ import SwiftUI
+-import Sparkle
+ 
+ @_documentation(visibility: private)
+ class AppDelegate: NSObject, NSApplicationDelegate {
+@@ -19,12 +18,18 @@
+         ConsoleCompletionEngine.shared.prewarm()
+         let managerManager = ManagerManager.shared
+         do {
++            try AtelierHost.prepare()
+             try managerManager.boot()
+         } catch {
+-            fatalError(error.localizedDescription)
++            AtelierHost.showError(error)
+         }
+     }
+ 
++    func applicationWillTerminate(_ notification: Notification) {
++        AtelierHost.stop(ManagerManager.shared.engine)
++        ManagerManager.shared.engine.shutdown()
++    }
++
+     func application(_ application: NSApplication, open urls: [URL]) {
+         for url in urls {
+             if url.isFileURL, url.pathExtension.lowercased() == "spoon2" {
+@@ -113,24 +118,34 @@
+     @Environment(\.openSettings) private var openSettings
+     @Environment(\.openWindow) private var openWindow
+ 
++    @State private var atelierStatus = AtelierStatus.shared
++
+     @State private var settingsManager = SettingsManager.shared
+ 
+-    private let updaterController: SPUStandardUpdaterController
+ 
+     init() {
+-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
++        AtelierHost.commandLine()
+     }
+ 
+     var body: some Scene {
+-        MenuBarExtra("Hammerspoon 2", systemImage: "hammer", isInserted: $settingsManager.dockMenuBehaviour.showMenuItem) { // FIXME: Use the real logo here
++        MenuBarExtra("Atelier", systemImage: "hammer", isInserted: $settingsManager.dockMenuBehaviour.showMenuItem) { // FIXME: Use the real logo here
+             let managerManager = ManagerManager.shared
++            Text(atelierStatus.state)
++            if !atelierStatus.error.isEmpty { Text(atelierStatus.error).lineLimit(3) }
++            Divider()
+ 
+             Button("Reload Config") {
+-                try? managerManager.reload()
++                do { try managerManager.reload() } catch { AtelierHost.showError(error) }
+             }
+ 
+             Divider()
+ 
++Button("Open Configuration") { AtelierHost.openConfiguration() }
++Button("Configuration Reference") { AtelierHost.openReference() }
++Button("Pause Atelier Defaults") { AtelierHost.stop(managerManager.engine) }
++Button("Resume Atelier Defaults") { managerManager.engine.eval("atelier.start().catch(console.error)") }
++Divider()
++
+             Button("Settings") {
+                 NSApplication.shared.activate(ignoringOtherApps: true)
+                 openSettings()
+@@ -143,7 +158,7 @@
+ 
+             Divider()
+ 
+-            CheckForUpdatesView(updater: updaterController.updater)
++            Button("Download Atelier Releases") { AtelierHost.openReleases() }
+ 
+             Divider()
+ 
+@@ -163,16 +178,16 @@
+         .commands {
+             // About
+             CommandGroup(replacing: CommandGroupPlacement.appInfo) {
+-                Button("About Hammerspoon 2") {
++                Button("About Atelier") {
+                     openWindow(id: "about")
+                 }
+ 
+-                CheckForUpdatesView(updater: updaterController.updater)
++                Button("Download Atelier Releases") { AtelierHost.openReleases() }
+             }
+ 
+             CommandMenu("Debug") {
+                 Button("Reload Config") {
+-                    try? ManagerManager.shared.reload()
++                    do { try ManagerManager.shared.reload() } catch { AtelierHost.showError(error) }
+                 }
+ 
+                 Button("Open Console") {
+@@ -182,7 +197,7 @@
+             }
+         }
+ 
+-        Window("About Hammerspoon 2", id: "about") {
++        Window("About Atelier", id: "about") {
+             AboutView()
+                 .containerBackground(.thickMaterial, for: .window)
+                 .windowResizeBehavior(.disabled)
+@@ -199,7 +214,7 @@
+         }
+         .restorationBehavior(.disabled)
+ 
+-        Window("Welcome to Hammerspoon 2", id: "onboarding") {
++        Window("Welcome to Atelier", id: "onboarding") {
+             OnboardingView()
+         }
+         .windowResizability(.contentSize)
+--- a/Hammerspoon 2/Utilities/Sparkle.swift	
++++ b/Hammerspoon 2/Utilities/Sparkle.swift	
+@@ -1,42 +1 @@
+-//
+-//  Sparkle.swift
+-//  Hammerspoon 2
+-//
+-//  Created by Chris Jones on 09/10/2025.
+-//
+-
+-import SwiftUI
+-import Sparkle
+-import Combine
+-
+-// This view model class publishes when new updates can be checked by the user
+-@_documentation(visibility: private)
+-final class CheckForUpdatesViewModel: ObservableObject {
+-    @Published var canCheckForUpdates = false
+-
+-    init(updater: SPUUpdater) {
+-        updater.publisher(for: \.canCheckForUpdates)
+-            .assign(to: &$canCheckForUpdates)
+-    }
+-}
+-
+-// This is the view for the Check for Updates menu item
+-// Note this intermediate view is necessary for the disabled state on the menu item to work properly before Monterey.
+-// See https://stackoverflow.com/questions/68553092/menu-not-updating-swiftui-bug for more info
+-@_documentation(visibility: private)
+-struct CheckForUpdatesView: View {
+-    @ObservedObject private var checkForUpdatesViewModel: CheckForUpdatesViewModel
+-    private let updater: SPUUpdater
+-
+-    init(updater: SPUUpdater) {
+-        self.updater = updater
+-
+-        // Create our view model for our CheckForUpdatesView
+-        self.checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: updater)
+-    }
+-
+-    var body: some View {
+-        Button("Check for Updates…", action: updater.checkForUpdates)
+-            .disabled(!checkForUpdatesViewModel.canCheckForUpdates)
+-    }
+-}
++// Atelier releases are downloaded through the app menu. No upstream updater runs.
+--- a/Hammerspoon 2/Windows/Settings/SettingsConfigView.swift	
++++ b/Hammerspoon 2/Windows/Settings/SettingsConfigView.swift	
+@@ -6,7 +6,6 @@
+ //
+ 
+ import SwiftUI
+-import Sparkle
+ 
+ @_documentation(visibility: private)
+ enum ConfigFilePickerValues: String, CaseIterable, Identifiable {
+@@ -22,11 +21,7 @@
+ 
+     @ScaledMetric(relativeTo: .body) var iconSize: CGFloat = 12
+ 
+-    private let updaterController: SPUStandardUpdaterController
+ 
+-    init() {
+-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+-    }
+ 
+     fileprivate func handleConfigFilePickerChange() {
+         if configFilePicker == .select {
+--- a/Hammerspoon 2/Windows/Settings/SettingsAdvancedView.swift	
++++ b/Hammerspoon 2/Windows/Settings/SettingsAdvancedView.swift	
+@@ -6,20 +6,13 @@
+ //
+ 
+ import SwiftUI
+-import Sparkle
+ 
+ @_documentation(visibility: private)
+ struct SettingsAdvancedView: View {
+     @State private var settingsManager = SettingsManager.shared
+-    @State private var automaticallyChecksForUpdates: Bool = false
+     @ScaledMetric(relativeTo: .body) var iconSize: CGFloat = 12
+ 
+-    private let updaterController: SPUStandardUpdaterController
+ 
+-    init() {
+-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+-        self._automaticallyChecksForUpdates = State(initialValue: updaterController.updater.automaticallyChecksForUpdates)
+-    }
+ 
+     var body: some View {
+         HStack {
+@@ -27,15 +20,6 @@
+             VStack {
+                 Grid {
+                     GridRow {
+-                        Text("Automatically check for updates:")
+-                            .gridColumnAlignment(.trailing)
+-                        Toggle("Automatically check for updates", isOn: $automaticallyChecksForUpdates)
+-                            .labelsHidden()
+-                            .onChange(of: automaticallyChecksForUpdates) { _, newValue in
+-                                updaterController.updater.automaticallyChecksForUpdates = newValue
+-                            }
+-                    }
+-                    GridRow {
+                         Text("Relaunch app on config reload:")
+                             .gridColumnAlignment(.trailing)
+                         Toggle("Relaunch app on config reload", isOn: Bindable(settingsManager).relaunchOnReload)
+--- a/Hammerspoon 2/Windows/OnboardingView.swift	
++++ b/Hammerspoon 2/Windows/OnboardingView.swift	
+@@ -24,11 +24,11 @@
+ 
+     var body: some View {
+         VStack(alignment: .leading, spacing: 16) {
+-            Text("Welcome to Hammerspoon 2")
++            Text("Welcome to Atelier")
+                 .font(.title)
+                 .fontWeight(.bold)
+ 
+-            Text("Hammerspoon 2 automates macOS using JavaScript. Your automations live in a config file, which is loaded on startup and whenever you reload it.")
++            Text("Atelier includes Hammerspoon 2 and configurable defaults for Desktops, Groups, and Quick Apps. Your automations live in a config file, which is loaded on startup and whenever you reload it.")
+                 .foregroundStyle(.secondary)
+                 .fixedSize(horizontal: false, vertical: true)
+ 
+@@ -50,7 +50,10 @@
+                 }
+             }
+ 
+-            Link("Open the API documentation", destination: docsURL)
++            Text("Grant Accessibility access to Atelier for window and Desktop controls, then choose Reload Config after granting access.")
++                .foregroundStyle(.secondary)
++            Button("Grant Accessibility Access") { AtelierHost.requestAccessibility() }
++            Link("Open the Hammerspoon 2 API documentation", destination: docsURL)
+ 
+             if let errorMessage {
+                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+--- a/Hammerspoon 2/Modules/hs.ipc/HSIPCModule.swift	
++++ b/Hammerspoon 2/Modules/hs.ipc/HSIPCModule.swift	
+@@ -54,7 +54,7 @@
+ 
+     /// Start the IPC server.
+     ///
+-    /// The server listens on a named XPC Mach service (`net.tenshu.Hammerspoon-2.ipc`).
++    /// The server listens on a named XPC Mach service (`com.elevenideas.Atelier.ipc`).
+     /// In release builds, only processes signed with the same Team ID can connect.
+     /// Calling `start()` when already running logs a warning and does nothing.
+     ///
+--- a/Hammerspoon 2/Modules/hs.ipc/HSIPCServer.swift	
++++ b/Hammerspoon 2/Modules/hs.ipc/HSIPCServer.swift	
+@@ -11,7 +11,7 @@
+ 
+ @safe @MainActor
+ final class HSIPCServer: NSObject {
+-    static let serviceName = "net.tenshu.Hammerspoon-2.ipc"
++    static let serviceName = "com.elevenideas.Atelier.ipc"
+ 
+     private(set) var isListening = false
+ 
+--- a/Hammerspoon 2/Modules/hs.urlevent/HSURLEventModule.swift	
++++ b/Hammerspoon 2/Modules/hs.urlevent/HSURLEventModule.swift	
+@@ -13,13 +13,13 @@
+ 
+ /// Handle URL events received by Hammerspoon 2.
+ ///
+-/// The module responds to `hammerspoon2://` URLs and, when Hammerspoon 2 is
++/// The module responds to `atelier://` URLs and, when Hammerspoon 2 is
+ /// configured as the system default handler, also to `http://`, `https://`,
+ /// and `mailto:` URLs.
+ ///
+-/// ## Responding to custom hammerspoon2:// events
++/// ## Responding to custom atelier:// events
+ ///
+-/// URLs take the form `hammerspoon2://eventName?key=value&key2=value2`.
++/// URLs take the form `atelier://eventName?key=value&key2=value2`.
+ /// The host component (`eventName`) selects the registered callback.
+ ///
+ /// ```js
+@@ -57,11 +57,11 @@
+ /// ```
+ @objc protocol HSURLEventModuleAPI: JSExport {
+ 
+-    // MARK: hammerspoon2:// event binding
++    // MARK: atelier:// event binding
+ 
+-    /// Register or remove a callback for a named `hammerspoon2://` URL event.
++    /// Register or remove a callback for a named `atelier://` URL event.
+     ///
+-    /// The URL format is `hammerspoon2://eventName?key=value`. The host
++    /// The URL format is `atelier://eventName?key=value`. The host
+     /// component (`eventName`) selects the callback to invoke.
+     ///
+     /// - Parameters:
+@@ -223,7 +223,7 @@
+         let senderPID = -1
+ 
+         switch scheme {
+-        case "hammerspoon2":
++        case "atelier":
+             let eventName = url.host ?? ""
+             if let cb = bindings[eventName] {
+                 _ = cb.call(withArguments: [eventName, params, senderPID, fullURL])
+--- a/Hammerspoon 2/Engine/JSEngine.swift	
++++ b/Hammerspoon 2/Engine/JSEngine.swift	
+@@ -156,7 +156,13 @@
+             // confusing than every line number being off by one.
+             script = "(function(){" + script + "\n})();"
+         }
+-        return context?.evaluateScript(script, withSourceURL: url)
++context?.exception = nil
++let result = context?.evaluateScript(script, withSourceURL: url)
++if let exception = context?.exception {
++    throw NSError(domain: "Atelier.Configuration", code: 1,
++                  userInfo: [NSLocalizedDescriptionKey: "\(url.path): \(exception.toString() ?? "JavaScript error")"])
++}
++return result
+     }
+ 
+     func resetContext() throws {
+--- a/Hammerspoon 2/Engine/ModuleRoot.swift	
++++ b/Hammerspoon 2/Engine/ModuleRoot.swift	
+@@ -199,13 +199,13 @@
+ 
+     // MARK: - Console
+     @objc func openConsole() {
+-        if let url = URL(string:"hammerspoon2://openConsole") {
++        if let url = URL(string:"atelier://openConsole") {
+             NSWorkspace.shared.open(url)
+         }
+     }
+ 
+     @objc func closeConsole() {
+-        if let url = URL(string:"hammerspoon2://closeConsole") {
++        if let url = URL(string:"atelier://closeConsole") {
+             NSWorkspace.shared.open(url)
+         }
+     }
+--- a/HammerspoonOSAScriptHelper/HSOSAScriptShared.swift	
++++ b/HammerspoonOSAScriptHelper/HSOSAScriptShared.swift	
+@@ -8,7 +8,7 @@
+ // This is for data that needs to be shared between the HammerspoonOSAScriptHelper XPC helper, and Hammerspoon itself
+ // This file is compiled into both binaries.
+ 
+-let HSOSAScriptServiceName = "net.tenshu.Hammerspoon-2.HammerspoonOSAScriptHelper"
++let HSOSAScriptServiceName = "com.elevenideas.Atelier.HammerspoonOSAScriptHelper"
+ 
+ nonisolated struct HSOSARequest: Codable {
+     let language: String
+--- a/hs2/main.swift	
++++ b/hs2/main.swift	
+@@ -2,7 +2,7 @@
+ //  main.swift
+ //  hs2 — Hammerspoon 2 interactive REPL
+ //
+-//  Connects to Hammerspoon 2 via XPC (service name: net.tenshu.Hammerspoon-2.ipc),
++//  Connects to Hammerspoon 2 via XPC (service name: com.elevenideas.Atelier.ipc),
+ //  evaluates JavaScript, and optionally streams log messages with colour-coded levels.
+ //
+ //  Security: in release builds the XPC connection is rejected by Hammerspoon 2 unless
+@@ -99,7 +99,7 @@
+     private let connection: NSXPCConnection
+ 
+     init() {
+-        let c = NSXPCConnection(machServiceName: "net.tenshu.Hammerspoon-2.ipc")
++        let c = NSXPCConnection(machServiceName: "com.elevenideas.Atelier.ipc")
+         c.remoteObjectInterface = NSXPCInterface(with: HSIPCServerProtocol.self)
+         c.exportedInterface = NSXPCInterface(with: HSIPCClientProtocol.self)
+         c.exportedObject = HSIPCLogDelegate()
+--- a/Hammerspoon 2.xcodeproj/project.pbxproj	
++++ b/Hammerspoon 2.xcodeproj/project.pbxproj	
+@@ -9,7 +9,6 @@
+ /* Begin PBXBuildFile section */
+ 		4F40387346E3F191717B23E5 /* DefaultConfig in Resources */ = {isa = PBXBuildFile; fileRef = 4FBAC53B433E2BE28A375D63 /* DefaultConfig */; };
+ 		4F463EA02EA7A669000A2135 /* AXSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 4F463E9F2EA7A669000A2135 /* AXSwift */; };
+-		4F488B302E97E79800A2B5F4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4F488B2F2E97E79800A2B5F4 /* Sparkle */; };
+ 		4F59E3502EFC986100954462 /* hammerspoon.d.ts in Resources */ = {isa = PBXBuildFile; fileRef = 4F59E34F2EFC985500954462 /* hammerspoon.d.ts */; };
+ 		4F59E3512EFC986100954462 /* api.json in Resources */ = {isa = PBXBuildFile; fileRef = 4F59E34E2EFC984900954462 /* api.json */; };
+ 		4F59E3522EFC986200954462 /* js in Resources */ = {isa = PBXBuildFile; fileRef = 4F59E3532EFC986200954462 /* js */; };
+@@ -163,7 +162,6 @@
+ 			isa = PBXFrameworksBuildPhase;
+ 			buildActionMask = 2147483647;
+ 			files = (
+-				4F488B302E97E79800A2B5F4 /* Sparkle in Frameworks */,
+ 				4F463EA02EA7A669000A2135 /* AXSwift in Frameworks */,
+ 				4FACE0022F12345678900000 /* JavaScriptCoreExtras in Frameworks */,
+ 				4FBB01002F70123400DEAD01 /* ScriptingBridge.framework in Frameworks */,
+@@ -292,7 +290,6 @@
+ 			);
+ 			name = "Hammerspoon 2";
+ 			packageProductDependencies = (
+-				4F488B2F2E97E79800A2B5F4 /* Sparkle */,
+ 				4F463E9F2EA7A669000A2135 /* AXSwift */,
+ 				4FACE0032F12345678900000 /* JavaScriptCoreExtras */,
+ 			);
+@@ -403,7 +400,6 @@
+ 			mainGroup = 4F56417A2E8333830099EB4C;
+ 			minimizedProjectReferenceProxies = 1;
+ 			packageReferences = (
+-				4F488B2E2E97E79800A2B5F4 /* XCRemoteSwiftPackageReference "Sparkle" */,
+ 				4F463E9E2EA7A669000A2135 /* XCRemoteSwiftPackageReference "AXSwift" */,
+ 				4FACE0012F12345678900000 /* XCRemoteSwiftPackageReference "javascript-core-extras" */,
+ 				4FCE0A012F00000000000001 /* XCRemoteSwiftPackageReference "swift-commandlinekit" */,
+@@ -684,7 +680,7 @@
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.2;
+ 				OTHER_DOCC_FLAGS = "--source-service github --source-service-base-url https://github.com/hammerspoon/Hammerspoon2/blob/main --checkout-path \"$PROJECT_DIR\"";
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.Atelier";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				REGISTER_APP_GROUPS = YES;
+ 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+@@ -745,7 +741,7 @@
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.2;
+ 				OTHER_DOCC_FLAGS = "--source-service github --source-service-base-url https://github.com/hammerspoon/Hammerspoon2/blob/main --checkout-path \"$PROJECT_DIR\"";
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.Atelier";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				REGISTER_APP_GROUPS = YES;
+ 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+@@ -774,7 +770,7 @@
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2Tests";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.AtelierTests";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+ 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+@@ -795,7 +791,7 @@
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2Tests";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.AtelierTests";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+ 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+@@ -825,7 +821,7 @@
+ 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2.HammerspoonOSAScriptHelper";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.Atelier.HammerspoonOSAScriptHelper";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				REGISTER_APP_GROUPS = YES;
+ 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+@@ -864,7 +860,7 @@
+ 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2.HammerspoonOSAScriptHelper";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.Atelier.HammerspoonOSAScriptHelper";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				REGISTER_APP_GROUPS = YES;
+ 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+@@ -895,7 +891,7 @@
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2.hs2";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.Atelier.hs2";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				SKIP_INSTALL = YES;
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+@@ -919,7 +915,7 @@
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				MACOSX_DEPLOYMENT_TARGET = 26.0;
+ 				MARKETING_VERSION = 1.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = "net.tenshu.Hammerspoon-2.hs2";
++				PRODUCT_BUNDLE_IDENTIFIER = "com.elevenideas.Atelier.hs2";
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				SKIP_INSTALL = YES;
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+@@ -990,14 +986,6 @@
+ 				kind = branch;
+ 			};
+ 		};
+-		4F488B2E2E97E79800A2B5F4 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+-			isa = XCRemoteSwiftPackageReference;
+-			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+-			requirement = {
+-				kind = upToNextMajorVersion;
+-				minimumVersion = 2.8.0;
+-			};
+-		};
+ 		4FACE0012F12345678900000 /* XCRemoteSwiftPackageReference "javascript-core-extras" */ = {
+ 			isa = XCRemoteSwiftPackageReference;
+ 			repositoryURL = "https://github.com/cmsj/javascript-core-extras";
+@@ -1022,11 +1010,6 @@
+ 			package = 4F463E9E2EA7A669000A2135 /* XCRemoteSwiftPackageReference "AXSwift" */;
+ 			productName = AXSwift;
+ 		};
+-		4F488B2F2E97E79800A2B5F4 /* Sparkle */ = {
+-			isa = XCSwiftPackageProductDependency;
+-			package = 4F488B2E2E97E79800A2B5F4 /* XCRemoteSwiftPackageReference "Sparkle" */;
+-			productName = Sparkle;
+-		};
+ 		4FACE0032F12345678900000 /* JavaScriptCoreExtras */ = {
+ 			isa = XCSwiftPackageProductDependency;
+ 			package = 4FACE0012F12345678900000 /* XCRemoteSwiftPackageReference "javascript-core-extras" */;

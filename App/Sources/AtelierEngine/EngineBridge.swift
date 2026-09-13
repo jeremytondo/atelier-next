@@ -3,7 +3,6 @@ import ApplicationServices
 import CoreGraphics
 import Darwin
 import Foundation
-import NativeMenuDispatch
 import QuickAppSupport
 import SpaceControlCore
 
@@ -212,28 +211,6 @@ final class EngineBridge {
     guard AXIsProcessTrusted() else {
       throw BridgeError(
         message: "Accessibility permission required for the helper's responsible app")
-    }
-    if command == "fill" || command == "focus" {
-      guard let wid = request["window"] as? UInt32, let pid = request["pid"] as? Int32,
-        let window = element(pid: pid, window: wid)
-      else { throw BridgeError(message: "Exact window no longer exists") }
-      if let expected = request["space"] as? String, spaces(wid) != [expected] {
-        throw BridgeError(message: "Window changed Space")
-      }
-      if command == "focus" {
-        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        NSRunningApplication(processIdentifier: pid)?.activate(options: [])
-        guard wait(until: { focusedID() == wid }) else {
-          throw BridgeError(message: "Could not verify exact window focus")
-        }
-      } else {
-        guard focusedID() == wid else { throw BridgeError(message: "Fill target lost focus") }
-        _ = try NativeMenuDispatcher.dispatch(
-          identifier: "_zoomFill:", commandName: "Fill", processID: pid, window: window)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.12))
-      }
-      return ["focused": focusedID(), "frame": frame(window) ?? [:]]
     }
     let before = runtime.snapshot()
     guard let target = resolver.resolve(in: before),
