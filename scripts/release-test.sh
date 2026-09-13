@@ -34,8 +34,6 @@ for channel in dev stable; do
 done
 expect_failure "$root/scripts/release-plan.sh" stable banana
 expect_failure "$root/scripts/release-plan.sh" dev patch
-expect_failure "$root/scripts/release.sh" stable
-expect_failure "$root/scripts/release.sh" dev --pr 2
 expect_failure "$root/scripts/build-app.sh" --identity
 jq '.tag = "v9.9.9"' "$temporary/stable.json" > "$temporary/bad-plan.json"
 expect_failure "$root/scripts/validate-release-plan.sh" "$temporary/bad-plan.json"

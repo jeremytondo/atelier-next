@@ -39,20 +39,20 @@ description = "Show reference checkout revisions and local changes"
 run = "scripts/refs.sh status"
 
 [tasks."release:patch"]
-description = "Dispatch and watch a stable patch release from main"
-run = "scripts/release.sh patch"
+description = "Dispatch a stable patch release from main and return its link"
+run = "gh workflow run release.yml --ref main -f bump=patch"
 
 [tasks."release:minor"]
-description = "Dispatch and watch a stable minor release from main"
-run = "scripts/release.sh minor"
+description = "Dispatch a stable minor release from main and return its link"
+run = "gh workflow run release.yml --ref main -f bump=minor"
 
 [tasks."release:major"]
-description = "Dispatch and watch a stable major release from main"
-run = "scripts/release.sh major"
+description = "Dispatch a stable major release from main and return its link"
+run = "gh workflow run release.yml --ref main -f bump=major"
 
 [tasks."release:dev"]
-description = "Dispatch and watch the rolling dev release from main"
-run = "scripts/release.sh dev"
+description = "Dispatch the rolling dev release from main and return its link"
+run = "gh workflow run release.yml --ref main -f bump=dev"
 
 [tasks."release:plan"]
 description = "Print release metadata without publishing: dev or stable patch|minor|major"

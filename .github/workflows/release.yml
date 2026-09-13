@@ -1,7 +1,7 @@
 # Both channels are manually dispatched from main: mutable dev and permanent
 # stable SemVer releases. Never cancel midway through updating release assets.
 name: Atelier Release
-run-name: Atelier Release ${{ format('[{0}:{1}]', inputs.bump, inputs.request_id) }}
+run-name: Atelier Release (${{ inputs.bump }})
 
 on:
   workflow_dispatch:
@@ -12,10 +12,6 @@ on:
         default: dev
         options: [dev, patch, minor, major]
         required: true
-      request_id:
-        description: Dispatcher correlation ID (optional for the GitHub UI)
-        type: string
-        required: false
 
 permissions:
   contents: read

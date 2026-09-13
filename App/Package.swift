@@ -25,7 +25,7 @@ let package = Package(
       name: "Atelier", dependencies: ["AtelierCore", "NativeMenuDispatch", "QuickAppSupport"]),
     .executableTarget(name: "AtelierTools"),
     .testTarget(name: "AtelierCoreTests", dependencies: ["AtelierCore"]),
-    .testTarget(name: "AtelierRuntimeTests", dependencies: ["Atelier", "AtelierCore"]),
+    .testTarget(name: "AtelierRuntimeTests", dependencies: ["Atelier", "AtelierCore", "AtelierTools"]),
     .testTarget(name: "QuickAppSupportTests", dependencies: ["QuickAppSupport"]),
     .testTarget(name: "SpaceControlCoreTests", dependencies: ["SpaceControlCore"]),
   ],

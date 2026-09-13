@@ -1,6 +1,16 @@
 import AppKit
 import Carbon.HIToolbox
 
+if CommandLine.arguments.dropFirst().first == "--engine-fixture" {
+  do {
+    try runEngineFixture(arguments: Array(CommandLine.arguments.dropFirst(2)))
+  } catch {
+    FileHandle.standardError.write(Data("Engine fixture failed: \(error)\n".utf8))
+    exit(1)
+  }
+  exit(0)
+}
+
 MainActor.assumeIsolated {
   let args = CommandLine.arguments
   if args.count > 2, args[1] == "--icon" {
