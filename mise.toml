@@ -26,6 +26,18 @@ run = "xcodebuildmcp swift-package test --package-path \"$MISE_PROJECT_ROOT/App\
 description = "Run app tests and release automation checks"
 depends = ["test", "release:check"]
 
+[tasks.refs]
+description = "Fetch missing read-only reference source into repos/ (gitignored)"
+run = "scripts/refs.sh fetch"
+
+[tasks."refs:update"]
+description = "Update reference checkouts from upstream main (requires clean checkouts)"
+run = "scripts/refs.sh update"
+
+[tasks."refs:status"]
+description = "Show reference checkout revisions and local changes"
+run = "scripts/refs.sh status"
+
 [tasks."release:patch"]
 description = "Dispatch and watch a stable patch release from main"
 run = "scripts/release.sh patch"

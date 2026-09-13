@@ -6,6 +6,10 @@ Prototypes and explorations for the next version of Atelier.
 
 [Atelier for macOS](App/README.md) is the standalone macOS app, with native Spaces, Groups, and configurable Quick Apps. Build and install with `mise run dev`; see the app README for permissions and updates, and [releasing](docs/releases.md) for rolling dev builds and stable semantic releases.
 
+## Reference source
+
+`mise run refs` creates a shallow checkout of [Hammerspoon 2](https://github.com/cmsj/Hammerspoon2) under `repos/hammerspoon2`. This directory is gitignored and used only for research. `mise run refs:update` fast-forwards it to upstream `main`, refusing local edits or commits; `mise run refs:status` shows the current revision and checkout state. Existing checkouts are left unchanged by `mise run refs`.
+
 ## Prototypes
 
 - [Hammerspoon 2 Spaces, Groups, and Quick Apps](Prototypes/Hammerspoon2/README.md) — ATE-35 HS2 runtime with native Space operations, Fill-on-focus Groups, and configurable centered app toggles. Window movement between Spaces is currently disabled.

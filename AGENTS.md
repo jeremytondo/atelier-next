@@ -57,8 +57,11 @@ production source:
 - Do not import, extend, or make production depend on prototype code.
 - Do not rewrite old findings. Capture new evidence separately.
 
-Reference checkouts under `repos/`, when present, are read-only. Never edit
-them, import from them, or copy them wholesale into the product.
+Reference checkouts under `repos/` are read-only research material. Use
+`mise run refs` to fetch missing checkouts and `mise run refs:update` to
+refresh them from upstream. Never edit their source, import from them, or
+copy them wholesale into the product. They must remain gitignored and
+independent of app builds and releases.
 
 ## Safety
 
