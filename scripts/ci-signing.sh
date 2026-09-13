@@ -34,7 +34,7 @@ security create-keychain -p "$keychain_password" "$keychain"
 security set-keychain-settings -lut 7200 "$keychain"
 security unlock-keychain -p "$keychain_password" "$keychain"
 security import "$credential_dir/developer-id.p12" -k "$keychain" \
-  -P "$ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security > /dev/null
+  -P "$ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
 security list-keychains -d user -s "$keychain" ${original_keychains[@]+"${original_keychains[@]}"}
 rm "$credential_dir/developer-id.p12"

@@ -76,7 +76,16 @@ else
   if [[ -z $identity ]]; then
     identity=$(awk '/"Developer ID Application:/ && !found {print $2; found=1}' "$temporary/identities")
   fi
-  [[ -n $identity && $identity != - ]] || die 'No Developer ID Application signing identity is available.'
+  if [[ -z $identity || $identity == - ]]; then
+    # Show public metadata only. Including invalid identities distinguishes an
+    # incomplete export from a certificate whose trust chain cannot be verified.
+    echo 'Signing identities (including invalid identities):' >&2
+    security find-identity -p codesigning ${signing_keychain[@]+"${signing_keychain[@]}"} >&2 || true
+    echo 'Certificate labels in the signing keychain:' >&2
+    security find-certificate -a ${signing_keychain[@]+"${signing_keychain[@]}"} \
+      | sed -n 's/^[[:space:]]*"labl"<blob>=/  /p' >&2 || true
+    die 'No valid Developer ID Application identity is available. The .p12 must include its certificate and matching private key, with a valid Apple certificate chain.'
+  fi
   awk -v identity="$identity" '
     /"Developer ID Application:/ { name=$0; sub(/^[^"]*"/, "", name); sub(/".*$/, "", name);
       if ($2 == identity || name == identity) found=1 }
