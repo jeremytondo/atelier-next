@@ -1,5 +1,6 @@
 // Manual ATE-40 trials use the existing native experiment, one new journal per
-// invocation. Creation never switches, cleans up, or retries a native request.
+// invocation. Optional entry uses one native adjacent action; never replay a
+// failed request or infer that failure means no Desktop was created.
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
@@ -8,6 +9,8 @@ const {execFileSync} = require("node:child_process");
 
 const help = `Usage:
   mise run desktop:create [-- /absolute/new-trial-directory]
+  mise run desktop:create -- --enter
+  mise run desktop:create -- --raw
   mise run desktop:create -- --check
   mise run desktop:status [-- /absolute/trial-directory]
   mise run desktop:diagnose -- /absolute/trial-directory
@@ -15,7 +18,13 @@ const help = `Usage:
 
 Quit Atelier before creation or cleanup. Use your disposable GUI session with
 one display. Creation uses ATE-40's WMBridge call and leaves the result in place
-for manual switching. It does not open Mission Control or switch Desktops.
+for manual switching. It briefly allocates a process-owned virtual display to
+refresh Dock, checks that the original display modes return unchanged, and
+places the new Desktop immediately after the current one. --enter also enters
+it using the enabled native next-Desktop shortcut. No Mission Control is opened.
+--raw runs only the original WMBridge call, without placement or Dock refresh.
+New numbered shortcut registrations are not repaired; use adjacent switching
+or Mission Control to reach Desktops beyond Dock's previously registered range.
 
 Creation prints the saved trial path and commands to inspect or remove its ID.
 --check, status, and diagnose are read only. After an error, inspect the trial before making
@@ -58,9 +67,12 @@ function topology(report, log) {
 
 function main(args, {invoke = native, log = console.log,
   root = path.resolve(__dirname, "../../.build/ate-40-manual")} = {}) {
-  const [command, argument] = args;
+  const enter = args.includes("--enter"), raw = args.includes("--raw");
+  const positional = args.filter(arg => !["--enter", "--raw"].includes(arg));
+  const [command, argument] = positional;
   if (args.includes("--help")) { log(help); return 0; }
-  if (args.length > 2 || !["create", "status", "diagnose", "cleanup"].includes(command) ||
+  if (positional.length > 2 || (enter && raw) || ((enter || raw) && (command !== "create" || argument === "--check")) ||
+    !["create", "status", "diagnose", "cleanup"].includes(command) ||
     (["cleanup", "diagnose"].includes(command) && !argument) ||
     (argument && !(command === "create" && argument === "--check") && !path.isAbsolute(argument))) {
     log(help); return 64;
@@ -77,7 +89,7 @@ function main(args, {invoke = native, log = console.log,
   if (command !== "create") {
     const directory = path.resolve(argument);
     privateDirectory(directory);
-    const report = invoke([command === "status" ? "reconcile" : command,
+    const report = invoke([command === "status" ? "reconcile" : command === "cleanup" ? "cleanup-ready" : command,
       path.join(directory, "creation"), ...(command === "cleanup" ? ["--disposable-session"] : [])]);
     const name = `${command}-${Date.now()}-${randomUUID()}.json`;
     save(directory, name, report);
@@ -123,18 +135,22 @@ function main(args, {invoke = native, log = console.log,
       throw new Error("WMBridge capability probe failed; no creation requested");
     }
     log(`Creating once on ${probe.screens[0].name ?? "the current display"}…`);
-    const report = invoke(["create", path.join(directory, "creation"),
-      displays[0]["Display Identifier"], "--disposable-session"]);
+    const report = invoke([raw ? "create" : "create-ready", path.join(directory, "creation"),
+      displays[0]["Display Identifier"], "--disposable-session", ...(enter ? ["--enter"] : [])]);
     save(directory, "cli-result.json", report);
     log(`WMBridge returned Space ID: ${report.createdID ?? "unknown"}`);
     log(`Result: ${report.status}`);
     topology(report, log);
-    if (report.status !== "managed-type0-confirmed") {
-      log("Creation is uncertain. Inspect this trial before running create again.");
+    if (report.error || ![raw ? "managed-type0-confirmed" : enter ? "native-entry-confirmed" : "dock-registration-confirmed"].includes(report.status)) {
+      log("The requested flow was not confirmed. Inspect this trial before running create again.");
       return 2;
     }
-    log("Confirmed in the internal Desktop list. Left in place for your manual test.");
-    log("Try Mission Control and your usual Desktop switching, then report whether you can enter it and type.");
+    if (raw) log("Confirmed in WindowServer only. Left in place for your manual test.");
+    else {
+      log(`Dock's Desktop count: ${report.dockSpaceCount?.count ?? "unknown"}`);
+      log(enter ? "Entered using the native next-Desktop shortcut." : "Ready immediately to the right of the current Desktop.");
+      log("Use native adjacent switching or Mission Control; new numbered bindings may be unavailable.");
+    }
     return 0;
   } catch (error) {
     save(directory, "cli-error.json", {error: error.message});

@@ -11,6 +11,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSDictionary *)spaceOwners:(uint64_t)spaceID;
 + (NSDictionary *)dockSpaceCount;
 + (NSArray *)navigationHotKeys;
++ (NSDictionary *)detectDisplays;
++ (NSDictionary *)startVirtualDisplay:(BOOL)configure reference:(BOOL)reference;
++ (void)stopVirtualDisplay;
 + (NSDictionary *)placementCapabilities;
 + (NSDictionary *)placeSpace:(uint64_t)spaceID display:(NSString *)display index:(uint32_t)index;
 + (NSDictionary *)activateSpace:(uint64_t)spaceID display:(NSString *)display hiding:(NSArray<NSNumber *> *)hidden;

@@ -25,28 +25,38 @@ let help = """
 Usage:
   wmbridge-experiment [probe]
   wmbridge-experiment trace-probe
+  wmbridge-experiment occupancy SPACE-ID
   wmbridge-experiment preflight DISPLAY-ID
   wmbridge-experiment create /absolute/new-run-directory DISPLAY-ID --disposable-session
+  wmbridge-experiment create-ready /absolute/new-run-directory DISPLAY-ID --disposable-session [--enter] [--test-typing]
   wmbridge-experiment reconcile /absolute/run-directory
   wmbridge-experiment diagnose /absolute/run-directory
   wmbridge-experiment followup /absolute/create-directory /absolute/new-followup-directory MODE --disposable-session
   wmbridge-experiment typing-check /absolute/new-directory EXPECTED-ID --disposable-session
   wmbridge-experiment cleanup /absolute/run-directory --disposable-session [--display RECONCILED-ID]
+  wmbridge-experiment cleanup-ready /absolute/run-directory --disposable-session
   wmbridge-experiment serve /absolute/private-state-directory --disposable-session
   wmbridge-experiment serve-script /absolute/private-state-directory requests.jsonl --disposable-session
 Each run permits exactly one create attempt. Reconcile never replays a mutation.
 Cleanup refuses active, occupied, uncertain, or non-owned Desktops; never retries dispatch.
 Follow-up modes: place-current, reorder-roundtrip, activate-roundtrip,
   native-adjacent-roundtrip, native-select-roundtrip,
-  refresh-display, refresh-empty, refresh-mirror-mode.
-Follow-ups open Mission Control for observation and close it. Round trips restore
+  refresh-display, refresh-empty, refresh-mirror-mode, refresh-detect,
+  refresh-virtual, refresh-virtual-active, refresh-virtual-reference, refresh-virtual-pulse.
+Most follow-ups open Mission Control for observation and close it; virtual-reference
+  and virtual-pulse only inspect its visibility. Round trips restore
   the starting order/current ID. They require the original creation journal and
   a new output directory; inspect all reports after an interruption.
 """
 if command == "--help" { print(help); exit(0) }
 guard (["probe", "trace-probe"].contains(command) && args.count <= 1) ||
   (command == "preflight" && args.count == 2) ||
+  (command == "occupancy" && args.count == 2) ||
   (command == "create" && args.count == 4 && args[3] == "--disposable-session") ||
+  (command == "create-ready" && (4...6).contains(args.count) && args[3] == "--disposable-session" &&
+    args.dropFirst(4).allSatisfy { ["--enter", "--test-typing"].contains($0) } &&
+    (!args.contains("--test-typing") || args.contains("--enter"))) ||
+  (command == "cleanup-ready" && args.count == 3 && args[2] == "--disposable-session") ||
   (command == "cleanup" && args.count == 3 && args[2] == "--disposable-session") ||
   (command == "cleanup" && args.count == 5 && args[2] == "--disposable-session" && args[3] == "--display") ||
   (command == "serve" && args.count == 3 && args[2] == "--disposable-session") ||
@@ -77,6 +87,8 @@ if command == "serve" || command == "serve-script" {
         }
         switch command {
         case "wmbridgeProbe": return NativeBridge.probe() as? [String: Any]
+        case "startDockInputTrace": return try startDockInputTrace()
+        case "stopDockInputTrace": return stopDockInputTrace()
         case "wmbridgeCreate":
           guard let display = request["display"] as? String else { throw TrialError("display required") }
           return try runCreate(path: runPath(), display: display, engineOwnsLock: true)
@@ -85,6 +97,10 @@ if command == "serve" || command == "serve-script" {
         case "fixtureTyping":
           guard let id = request["spaceID"] as? String, let spaceID = UInt64(id) else { throw TrialError("spaceID required") }
           return try typingFixture(directory: state.directory, spaceID: spaceID)
+        case "create", "delete":
+          guard request["nativeControl"] as? Bool == true else { throw TrialError("Native mutation is diagnostic-only; nativeControl required") }
+          try prepareNativeControl(command: command, path: runPath(), request: request)
+          return nil
         case "hello", "snapshot", "probe", "membership", "switch": return nil
         default: throw TrialError("Command excluded from the WMBridge experiment")
         }
@@ -107,7 +123,12 @@ DispatchQueue.main.async {
       let report: [String: Any]
       switch command {
       case "preflight": report = try runCreate(path: "", display: args[1], preflightOnly: true)
+      case "occupancy":
+        guard let id = UInt64(args[1]), id > 0 else { throw TrialError("Space ID required") }
+        report = NativeBridge.occupancy(id) as! [String: Any]
       case "create": report = try runCreate(path: args[1], display: args[2])
+      case "create-ready": report = try runReady(path: args[1], display: args[2], enter: args.contains("--enter"), testTyping: args.contains("--test-typing"))
+      case "cleanup-ready": report = try runReadyCleanup(path: args[1])
       case "cleanup": report = try runCleanup(path: args[1], reconciledDisplay: args.count == 5 ? args[4] : nil)
       case "diagnose": report = try diagnose(path: args[1])
       case "followup": report = try runFollowup(creationPath: args[1], outputPath: args[2], mode: args[3])

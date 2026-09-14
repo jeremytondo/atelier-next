@@ -1,19 +1,25 @@
 # WMBridge Desktop creation experiment
 
-ATE-40 is an isolated feasibility experiment. Read [the findings](FINDINGS.md)
-before running it. On the tested macOS 26.5.2 configuration, the operation added
-type-0 census entries that native navigation did not recognize. Do not adopt it
-as Atelier's production create command.
+ATE-40 is an isolated feasibility experiment. Read [the original findings](FINDINGS.md)
+and the [latest end-to-end evidence](Evidence/2026-09-14-ready-flow.md) before
+running it. On this macOS 26.5.2 session, WMBridge creation plus a short-lived
+virtual display refresh produces a Desktop that native adjacent switching can
+enter. This remains prototype research; production creation is unchanged.
 
 For a manual trial, quit Atelier and run this from the `ate-40` workspace in
 your disposable GUI session with one display:
 
 ```sh
-mise run desktop:create
+mise run desktop:create -- --enter
 ```
 
-The command detects the display, requests creation once, prints the returned
-Space ID, and leaves it in place for manual switching. It saves private logs
+The command detects the display, requests creation once, places the new Desktop
+immediately after the current one, and briefly creates/releases a private virtual
+display to make Dock reconcile its Desktop list. It verifies the original display
+configuration and Dock's count. `--enter` uses the enabled native next-Desktop
+shortcut; omit it to keep the current Desktop active. New numbered shortcut
+registrations remain unavailable, so use adjacent switching or Mission Control.
+`--raw` retains the original WMBridge-only creation trial. It saves private logs
 under `.build/ate-40-manual/` and prints commands to inspect and clean up that
 specific trial. Check whether Mission Control shows the new Desktop, whether
 you can enter it with your usual controls, and whether you can type in a saved
@@ -34,8 +40,9 @@ demonstrates direct activation, a visible fixture, and saved keyboard input on
 the omitted Space before Mission Control could show it. The subsequent
 [real display-change trial](Evidence/2026-09-14-display-refresh-confirmed.md)
 made it visible and verified native thumbnail/adjacent entry with saved typing.
-Numbered entry and a creation-time refresh without a mode change remain unresolved.
-Diagnosis now also reads
+The [end-to-end follow-up](Evidence/2026-09-14-ready-flow.md) supplies a refresh
+without changing the original resolution and confirms native adjacent entry with
+saved typing. Numbered registration remains a separate limitation. Diagnosis reads
 Dock's own Desktop count and CoreGraphics' physical/virtual mirror relationships;
 neither requires opening Mission Control.
 
@@ -106,7 +113,10 @@ require a private state directory so shortcut recovery cannot use the user's
 normal journal. Experiment commands are `wmbridgeProbe`, `wmbridgeCreate`,
 `wmbridgeReconcile`, `wmbridgeCleanup`, and the saved `fixtureTyping` check; see
 the command dispatch and [HS2 controller](controller.js). Mission Control
-creation, deletion, and reorder commands are excluded from this host.
+reorder remains excluded. Native creation/deletion are available only as explicit
+diagnostic controls with `nativeControl: true`, a private `runDirectory`, and
+display/current guards. Removal additionally requires the saved successful create
+response, native UUID, and fresh occupancy checks; see `NativeControl.swift`.
 
 `wmbridge:host` accepts a JSON options file for [host-test.js](host-test.js).
 It copies the installed Atelier app into the private state directory, replaces

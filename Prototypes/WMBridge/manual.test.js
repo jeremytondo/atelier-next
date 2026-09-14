@@ -17,6 +17,7 @@ function fixture(t, overrides = {}) {
     calls.push(args);
     if (overrides[args[0]]) return overrides[args[0]](args);
     if (args[0] === "probe") return probe;
+    if (args[0] === "create-ready") return {status: "dock-registration-confirmed", createdID: "42"};
     if (args[0] === "create") return {status: "managed-type0-confirmed", createdID: "42"};
     return {status: "removed", createdID: "42"};
   }};
@@ -26,9 +27,9 @@ function fixture(t, overrides = {}) {
 test("manual creation dispatches exactly once and leaves the returned ID for the user", t => {
   const f = fixture(t);
   assert.equal(main(["create"], f.options), 0);
-  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
   const directory = path.dirname(f.calls[1][1]);
-  assert.deepEqual(f.calls[1], ["create", path.join(directory, "creation"), "A", "--disposable-session"]);
+  assert.deepEqual(f.calls[1], ["create-ready", path.join(directory, "creation"), "A", "--disposable-session"]);
   assert.equal(fs.statSync(directory).mode & 0o777, 0o700);
   assert.equal(fs.statSync(path.join(directory, "cli-result.json")).mode & 0o777, 0o600);
   assert.equal(JSON.parse(fs.readFileSync(path.join(directory, "cli-result.json"))).createdID, "42");
@@ -37,9 +38,9 @@ test("manual creation dispatches exactly once and leaves the returned ID for the
 });
 
 test("native failure preserves evidence without retrying or cleaning up", t => {
-  const f = fixture(t, {create: () => { throw new Error("watchdog expired; result unknown"); }});
+  const f = fixture(t, {"create-ready": () => { throw new Error("watchdog expired; result unknown"); }});
   assert.throws(() => main(["create"], f.options), /watchdog expired/);
-  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
   const directory = path.dirname(f.calls[1][1]);
   assert.match(fs.readFileSync(path.join(directory, "cli-error.json"), "utf8"), /result unknown/);
   assert.throws(() => main(["create", directory], f.options), /EEXIST/);
@@ -47,9 +48,9 @@ test("native failure preserves evidence without retrying or cleaning up", t => {
 });
 
 test("uncertain creation returns failure while retaining the exact returned ID", t => {
-  const f = fixture(t, {create: () => ({status: "uncertain", createdID: "18446744073709551614"})});
+  const f = fixture(t, {"create-ready": () => ({status: "uncertain", createdID: "18446744073709551614"})});
   assert.equal(main(["create"], f.options), 2);
-  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
   assert.ok(f.output.some(line => line.includes("18446744073709551614")));
 });
 
@@ -74,11 +75,11 @@ test("check and status without a trial are read only and allocate no trial", t =
 });
 
 test("inspection and cleanup target only the explicitly supplied trial", t => {
-  const f = fixture(t, {cleanup: () => ({status: "cleanup-refused", createdID: "42"})});
+  const f = fixture(t, {"cleanup-ready": () => ({status: "cleanup-refused", createdID: "42"})});
   assert.equal(main(["status", f.root], f.options), 0);
   assert.equal(main(["cleanup", f.root], f.options), 2);
   assert.deepEqual(f.calls, [["reconcile", path.join(f.root, "creation")],
-    ["cleanup", path.join(f.root, "creation"), "--disposable-session"]]);
+    ["cleanup-ready", path.join(f.root, "creation"), "--disposable-session"]]);
   assert.equal(fs.readdirSync(f.root).length, 2);
 });
 
@@ -96,4 +97,33 @@ test("diagnosis is read only and preserves the saved-configuration disagreement"
   assert.deepEqual(f.calls, [["diagnose", path.join(f.root, "creation")]]);
   assert.ok(f.output.includes("Returned ID in saved configuration: false"));
   assert.ok(f.output.includes("This list does not establish Mission Control visibility."));
+});
+
+test("entry is explicit and raw creation remains independently runnable", t => {
+  const entry = fixture(t, {"create-ready": () => ({status: "native-entry-confirmed", createdID: "42"})});
+  assert.equal(main(["create", "--enter"], entry.options), 0);
+  assert.deepEqual(entry.calls.map(call => call[0]), ["probe", "create-ready"]);
+  assert.deepEqual(entry.calls[1].slice(-2), ["--disposable-session", "--enter"]);
+  const raw = fixture(t);
+  assert.equal(main(["create", "--raw"], raw.options), 0);
+  assert.deepEqual(raw.calls.map(call => call[0]), ["probe", "create"]);
+});
+
+test("refresh and entry failure never trigger another create, navigation, or cleanup", t => {
+  for (const status of ["created-refresh-unconfirmed", "dock-registration-confirmed"]) {
+    const f = fixture(t, {"create-ready": () => ({status, createdID: "42", error: "Destination not verified"})});
+    assert.equal(main(["create", "--enter"], f.options), 2);
+    assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
+    const saved = JSON.parse(fs.readFileSync(path.join(path.dirname(f.calls[1][1]), "cli-result.json")));
+    assert.equal(saved.createdID, "42");
+    assert.equal(saved.error, "Destination not verified");
+  }
+});
+
+test("conflicting entry/raw and mutation flags on read-only commands are rejected", t => {
+  const f = fixture(t);
+  for (const args of [["create", "--enter", "--raw"], ["create", "--check", "--enter"], ["status", "--enter"]]) {
+    assert.equal(main(args, f.options), 64);
+  }
+  assert.deepEqual(f.calls, []);
 });

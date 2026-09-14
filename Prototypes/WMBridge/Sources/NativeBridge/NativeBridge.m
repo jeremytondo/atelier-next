@@ -9,6 +9,7 @@
 static NSString *const performName = @"performWithWMBridgeDelegate";
 static NSString *const readName = @"SLSBridgedCopyManagedDisplaySpacesOperation";
 static NSString *const createName = @"SLSBridgedSpaceCreateOperation";
+static id ownedVirtualDisplay;
 
 static void *skyHandle(void) {
   static void *handle;
@@ -41,6 +42,66 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
 
 @implementation NativeBridge
 + (BOOL)loadAppKit { return pthread_main_np() && NSApplicationLoad(); }
++ (NSDictionary *)detectDisplays {
+  // On the inspected OS this no-argument routine probes each existing display's
+  // IOKit service. It has no reliable return value; callbacks establish effect.
+  void (*detect)(void) = dlsym(skyHandle(), "SLSDetectDisplays");
+  if (!pthread_main_np() || !detect) return @{@"mutationDispatched": @NO, @"error": @"Display detection unavailable"};
+  detect();
+  return @{@"mutationDispatched": @YES, @"operation": @"SLSDetectDisplays"};
+}
++ (NSDictionary *)startVirtualDisplay:(BOOL)configure reference:(BOOL)reference {
+  @autoreleasepool {
+  // Only this process owns the object. Drain factory autoreleases here so stop
+  // releases it immediately; retaining it longer can show macOS display setup UI.
+  Class descriptorClass = NSClassFromString(@"CGVirtualDisplayDescriptor");
+  Class displayClass = NSClassFromString(@"CGVirtualDisplay");
+  if (!pthread_main_np() || ownedVirtualDisplay ||
+      !signatureMatches(displayClass, @"initWithDescriptor:", @"@", @[@"@"]) ||
+      !signatureMatches(displayClass, @"displayID", @"I", @[]) ||
+      !signatureMatches(descriptorClass, @"setName:", @"v", @[@"@"]) ||
+      !signatureMatches(descriptorClass, @"setQueue:", @"v", @[@"@"]))
+    return @{@"mutationDispatched": @NO, @"error": @"Virtual display ABI unavailable"};
+  NSArray *properties = @[@"setMaxPixelsWide:", @"setMaxPixelsHigh:", @"setVendorID:", @"setProductID:", @"setSerialNum:"];
+  for (NSString *selector in properties) if (!signatureMatches(descriptorClass, selector, @"v", @[@"I"]))
+    return @{@"mutationDispatched": @NO, @"error": @"Virtual descriptor ABI unavailable", @"selector": selector};
+  Class modeClass = NSClassFromString(@"CGVirtualDisplayMode"), settingsClass = NSClassFromString(@"CGVirtualDisplaySettings");
+  if (reference && !signatureMatches(settingsClass, @"setIsReference:", @"v", @[@"B"]))
+    return @{@"mutationDispatched": @NO, @"error": @"Reference display ABI unavailable",
+      @"settingsABI": signatures(@"CGVirtualDisplaySettings", @[@"setIsReference:"])};
+  if (configure && (!signatureMatches(modeClass, @"initWithWidth:height:refreshRate:", @"@", @[@"I", @"I", @"d"]) ||
+      !signatureMatches(settingsClass, @"setModes:", @"v", @[@"@"]) || !signatureMatches(settingsClass, @"setHiDPI:", @"v", @[@"I"]) ||
+      !(signatureMatches(displayClass, @"applySettings:", @"B", @[@"@"]) || signatureMatches(displayClass, @"applySettings:", @"c", @[@"@"]))))
+    return @{@"mutationDispatched": @NO, @"error": @"Virtual mode ABI unavailable",
+      @"modeABI": signatures(@"CGVirtualDisplayMode", @[@"initWithWidth:height:refreshRate:"]),
+      @"settingsABI": signatures(@"CGVirtualDisplaySettings", @[@"setModes:", @"setHiDPI:"]),
+      @"displayABI": signatures(@"CGVirtualDisplay", @[@"applySettings:"])};
+  id descriptor = [[descriptorClass alloc] init];
+  ((void (*)(id, SEL, id))objc_msgSend)(descriptor, NSSelectorFromString(@"setName:"), @"ATE-40 transient callback probe");
+  ((void (*)(id, SEL, id))objc_msgSend)(descriptor, NSSelectorFromString(@"setQueue:"), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+  uint32_t serial = arc4random_uniform(UINT32_MAX - 1) + 1;
+  uint32_t values[] = {1600, 1000, 0xf0f0, 40, serial};
+  for (NSUInteger i = 0; i < properties.count; i++)
+    ((void (*)(id, SEL, uint32_t))objc_msgSend)(descriptor, NSSelectorFromString(properties[i]), values[i]);
+  CFTypeRef allocated = (__bridge_retained CFTypeRef)[displayClass alloc];
+  ownedVirtualDisplay = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, id))objc_msgSend)(allocated, NSSelectorFromString(@"initWithDescriptor:"), descriptor));
+  uint32_t displayID = ownedVirtualDisplay ? ((uint32_t (*)(id, SEL))objc_msgSend)(ownedVirtualDisplay, NSSelectorFromString(@"displayID")) : 0;
+  BOOL accepted = NO;
+  if (configure && ownedVirtualDisplay) {
+    CFTypeRef modeAllocated = (__bridge_retained CFTypeRef)[modeClass alloc];
+    id mode = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, uint32_t, uint32_t, double))objc_msgSend)(modeAllocated,
+      NSSelectorFromString(@"initWithWidth:height:refreshRate:"), 128, 128, 60.0));
+    id settings = [[settingsClass alloc] init];
+    ((void (*)(id, SEL, id))objc_msgSend)(settings, NSSelectorFromString(@"setModes:"), @[mode]);
+    ((void (*)(id, SEL, uint32_t))objc_msgSend)(settings, NSSelectorFromString(@"setHiDPI:"), 0);
+    if (reference) ((void (*)(id, SEL, BOOL))objc_msgSend)(settings, NSSelectorFromString(@"setIsReference:"), YES);
+    accepted = ((BOOL (*)(id, SEL, id))objc_msgSend)(ownedVirtualDisplay, NSSelectorFromString(@"applySettings:"), settings);
+  }
+  return @{@"mutationDispatched": @YES, @"created": @(ownedVirtualDisplay != nil), @"displayID": @(displayID),
+    @"vendorID": @0xf0f0, @"productID": @40, @"serial": @(serial), @"reference": @(reference), @"modesApplied": @(configure), @"settingsAccepted": @(accepted)};
+  }
+}
++ (void)stopVirtualDisplay { ownedVirtualDisplay = nil; }
 + (NSDictionary *)traceProbe {
   // Opt-in, process-local observation: forward the exact ABI to the original
   // implementation and restore all methods even if the probe raises. No Dock
@@ -279,6 +340,7 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
     NSNumber *pid = window[(id)kCGWindowOwnerPID];
     identities[windowID.stringValue] = @{@"pid": pid ?: NSNull.null,
       @"bundle": pid ? ([NSRunningApplication runningApplicationWithProcessIdentifier:pid.intValue].bundleIdentifier ?: @"") : @"",
+      @"bounds": window[(id)kCGWindowBounds] ?: NSNull.null,
       @"layer": window[(id)kCGWindowLayer] ?: NSNull.null};
   }
   NSRunningApplication *front = NSWorkspace.sharedWorkspace.frontmostApplication;
@@ -346,6 +408,9 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
     report[@"signatures"] = @{
       readName: signatures(readName, @[@"init", performName]),
       createName: signatures(createName, @[@"initWithOptions:values:", performName]),
+      @"CGVirtualDisplayMode": signatures(@"CGVirtualDisplayMode", @[@"initWithWidth:height:refreshRate:"]),
+      @"CGVirtualDisplaySettings": signatures(@"CGVirtualDisplaySettings", @[@"setModes:", @"setHiDPI:"]),
+      @"CGVirtualDisplay": signatures(@"CGVirtualDisplay", @[@"applySettings:"]),
       @"SLSBridgedWindowManagementOperationPropertyListArrayResult":
         signatures(@"SLSBridgedWindowManagementOperationPropertyListArrayResult", @[@"propertyListArray"]),
       @"SLSBridgedWindowManagementOperationSpaceIDResult":

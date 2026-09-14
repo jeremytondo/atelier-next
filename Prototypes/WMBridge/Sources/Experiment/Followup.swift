@@ -4,62 +4,6 @@ import AppKit
 import NativeBridge
 import Trial
 
-private final class DisplayRefreshEvents {
-  private let lock = NSLock()
-  private var values: [[String: Any]] = []
-  func append(_ display: CGDirectDisplayID, _ flags: CGDisplayChangeSummaryFlags) {
-    lock.lock(); defer { lock.unlock() }
-    values.append(["displayID": display, "flags": flags.rawValue])
-  }
-  func snapshot() -> [[String: Any]] { lock.lock(); defer { lock.unlock() }; return values }
-}
-
-// Reapply the selected mode on the sole screen (optionally a mirror source). No
-// alternate resolution, position, mirroring setting, or permanent setting is used.
-private func refreshUnchangedDisplay(empty: Bool, permitMirror: Bool) -> [String: Any] {
-  guard NSScreen.screens.count == 1,
-    let number = NSScreen.screens[0].deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
-    (empty || permitMirror || CGDisplayIsInMirrorSet(number.uint32Value) == 0),
-    let mode = CGDisplayCopyDisplayMode(number.uint32Value) else {
-    return ["mutationDispatched": false, "error": "A sole non-mirrored display with a readable mode is required"]
-  }
-  let display = number.uint32Value, bounds = CGDisplayBounds(number.uint32Value)
-  var online = [CGDirectDisplayID](repeating: 0, count: 32), count: UInt32 = 0
-  guard CGGetOnlineDisplayList(32, &online, &count) == .success else { return ["mutationDispatched": false, "error": "Display query failed"] }
-  let mirrors = online.prefix(Int(count)).map { ["id": $0, "mirrors": CGDisplayMirrorsDisplay($0), "modeID": CGDisplayCopyDisplayMode($0)?.ioDisplayModeID ?? 0] }
-  guard !permitMirror || (CGDisplayMirrorsDisplay(display) == 0 && online.prefix(Int(count)).allSatisfy {
-    $0 == display || CGDisplayMirrorsDisplay($0) == display
-  }) else { return ["mutationDispatched": false, "error": "Only a single mirror group with this display as its source is supported"] }
-  let events = DisplayRefreshEvents()
-  let context = Unmanaged.passUnretained(events).toOpaque()
-  let callback: CGDisplayReconfigurationCallBack = { display, flags, context in
-    guard let context else { return }
-    Unmanaged<DisplayRefreshEvents>.fromOpaque(context).takeUnretainedValue().append(display, flags)
-  }
-  let registration = CGDisplayRegisterReconfigurationCallback(callback, context)
-  guard registration == .success else { return ["mutationDispatched": false, "error": "Could not observe display refresh"] }
-  defer { CGDisplayRemoveReconfigurationCallback(callback, context); withExtendedLifetime(events) {} }
-  var config: CGDisplayConfigRef?
-  let begin = CGBeginDisplayConfiguration(&config)
-  guard begin == .success, let config else { return ["mutationDispatched": false, "beginError": begin.rawValue] }
-  let configure = empty ? CGError.success : CGConfigureDisplayWithDisplayMode(config, display, mode, nil)
-  guard configure == .success else {
-    CGCancelDisplayConfiguration(config)
-    return ["mutationDispatched": false, "configureError": configure.rawValue]
-  }
-  let complete = CGCompleteDisplayConfiguration(config, .forSession)
-  RunLoop.current.run(until: Date().addingTimeInterval(0.4))
-  let after = CGDisplayCopyDisplayMode(display)
-  let mirrorsAfter = online.prefix(Int(count)).map { ["id": $0, "mirrors": CGDisplayMirrorsDisplay($0), "modeID": CGDisplayCopyDisplayMode($0)?.ioDisplayModeID ?? 0] }
-  return ["mutationDispatched": true, "completeError": complete.rawValue, "displayID": display,
-    "mirrorGroupBefore": mirrors, "mirrorGroupAfter": mirrorsAfter, "mirrorGroupUnchanged": NSArray(array: mirrors).isEqual(to: mirrorsAfter),
-    "emptyTransaction": empty,
-    "modeID": mode.ioDisplayModeID, "width": mode.width, "height": mode.height,
-    "pixelWidth": mode.pixelWidth, "pixelHeight": mode.pixelHeight,
-    "bounds": NSStringFromRect(bounds), "callbacks": events.snapshot(),
-    "modeAndBoundsUnchanged": after.map { CFEqual(mode, $0) && CGDisplayBounds(display) == bounds } ?? false]
-}
-
 func missionControlInventory(select index: Int? = nil, inspectOnly: Bool = false) throws -> [String: Any] {
   guard AXIsProcessTrusted(), let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
     throw TrialError("Mission Control inventory requires existing Accessibility trust and Dock")
@@ -129,7 +73,7 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
       let index = topology[0].spaces.firstIndex(where: { $0.id == id }),
       let uuid = saved?["uuid"] as? String, !uuid.isEmpty,
       records[index]["uuid"] as? String == uuid else { throw TrialError("Owned Space changed UUID/type/display, is active, or has fullscreen neighbors") }
-    guard ["place-current", "reorder-roundtrip", "activate-roundtrip", "native-adjacent-roundtrip", "native-select-roundtrip", "refresh-display", "refresh-empty", "refresh-mirror-mode"].contains(mode) else { throw TrialError("Unknown follow-up mode") }
+    guard ["place-current", "reorder-roundtrip", "activate-roundtrip", "native-adjacent-roundtrip", "native-select-roundtrip", "refresh-display", "refresh-empty", "refresh-mirror-mode", "refresh-detect", "refresh-virtual", "refresh-virtual-active", "refresh-virtual-reference", "refresh-virtual-pulse"].contains(mode) else { throw TrialError("Unknown follow-up mode") }
     let home = topology[0].currentSpaceID, ids = topology[0].spaces.map(\.id)
     guard mode != "native-adjacent-roundtrip" || ids.firstIndex(of: home).map({ $0 + 1 == index }) == true else {
       throw TrialError("The owned Space must be immediately right of the current Desktop")
@@ -137,11 +81,11 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
     let trial = try Journal(path: outputPath, create: true)
     var report: [String: Any] = ["mode": mode, "ownedID": stringID, "spaceUUID": uuid, "before": before,
       "home": String(home), "originalIndex": index, "date": ISO8601DateFormatter().string(from: Date())]
-    if mode.hasPrefix("native-") {
+    if mode.hasPrefix("native-") || mode == "refresh-detect" || mode.hasPrefix("refresh-virtual") {
       // Do not open/close an overview immediately before testing a shortcut;
       // its exit animation can suppress the very input under test.
       let count = NativeBridge.dockSpaceCount() as! [String: Any]
-      guard count["status"] as? Int == 0, count["count"] as? Int == ids.count,
+      guard count["status"] as? Int == 0, (mode.hasPrefix("refresh-") || count["count"] as? Int == ids.count),
         try missionControlInventory(inspectOnly: true)["visible"] as? Bool == false else {
         throw TrialError("Native entry requires a closed overview and agreement between Dock and WindowServer counts")
       }
@@ -152,7 +96,7 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
     try trial.write("intent.json", report.merging(["targetIndex": targetIndex, "creationPath": creationPath, "mayApplyAfterInterruption": true]) { _, new in new })
     let isActivation = ["activate-roundtrip", "native-adjacent-roundtrip", "native-select-roundtrip"].contains(mode)
     let sent: [String: Any]
-    if mode.hasPrefix("refresh-") { sent = refreshUnchangedDisplay(empty: mode == "refresh-empty", permitMirror: mode == "refresh-mirror-mode") }
+    if mode.hasPrefix("refresh-") { sent = refreshDisplays(mode: mode) }
     else if mode == "native-adjacent-roundtrip" {
       guard let binding = (NativeBridge.navigationHotKeys() as? [[String: Any]])?.first(where: { $0["id"] as? Int == 81 }),
         binding["status"] as? Int == 0, binding["enabled"] as? Bool == true,
@@ -182,12 +126,13 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
         }
       }
       report["afterDispatch"] = try nativeCensus()
+      report["dockCountAfterDispatch"] = NativeBridge.dockSpaceCount()
       report["observationAfterDispatch"] = NativeBridge.observation()
       if isActivation {
         do { report["typing"] = try typingFixture(directory: trial.directory, spaceID: id) }
         catch { report["typingError"] = error.localizedDescription }
       }
-      report["missionControlAfter"] = try missionControlInventory()
+      report["missionControlAfter"] = try missionControlInventory(inspectOnly: ["refresh-virtual-reference", "refresh-virtual-pulse"].contains(mode))
       report["afterMissionControl"] = try nativeCensus()
     } catch { report["observationError"] = error.localizedDescription }
     if sent["mutationDispatched"] as? Bool == true && (isActivation || targetIndex != index) {
