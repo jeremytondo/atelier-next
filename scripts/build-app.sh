@@ -2,7 +2,8 @@
 # Build a standalone app. Distribution is fail-closed: Developer ID, a secure
 # timestamp, notarization, stapling, and Gatekeeper verification must all pass.
 set -euo pipefail
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$root"
 
 usage() {
@@ -18,7 +19,6 @@ Release plans require Developer ID signing and notarization credentials.
 --app-only retains signing and bundle probes but omits the local ZIP.
 USAGE
 }
-die() { echo "error: $*" >&2; exit 1; }
 arguments=("$@")
 install_app=false; launch=false; skip_build=false; app_only=false
 identity=${ATELIER_SIGN_IDENTITY:-}
@@ -52,13 +52,9 @@ built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [[ -n $plan ]]; then
   [[ $app_only == false ]] || die '--app-only cannot be used for releases'
   [[ -z $build_number ]] || die '--build-number cannot override a release plan'
-  "$root/scripts/validate-release-plan.sh" "$plan"
-  channel=$(jq -r .channel "$plan")
-  version=$(jq -r .version "$plan")
-  marketing_version=$(jq -r .marketing_version "$plan")
-  build_number=$(jq -r .build_number "$plan")
-  built_at=$(jq -r .built_at "$plan")
-  [[ $(jq -r .commit "$plan") == "$commit" ]] || die 'release plan does not match this checkout'
+  checkout_commit=$commit
+  load_release_plan "$plan"
+  [[ $commit == "$checkout_commit" ]] || die 'release plan does not match this checkout'
 fi
 build_number=${build_number:-${built_at//[-:TZ]/}}
 [[ $build_number =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || die 'build number must contain one to three numeric components'
@@ -77,13 +73,13 @@ if [[ -n ${ATELIER_SIGN_KEYCHAIN:-} ]]; then signing_keychain=("$ATELIER_SIGN_KE
 security find-identity -v -p codesigning ${signing_keychain[@]+"${signing_keychain[@]}"} > "$temporary/identities"
 if [[ $channel == local ]]; then
   if [[ -z $identity ]]; then
-    identity=$(awk '/"Apple Development:/ && !found {print $2; found=1}' "$temporary/identities")
+    identity=$(signing_identity 'Apple Development' "$temporary/identities")
     identity=${identity:--}
   fi
   timestamp=--timestamp=none
 else
   if [[ -z $identity ]]; then
-    identity=$(awk '/"Developer ID Application:/ && !found {print $2; found=1}' "$temporary/identities")
+    identity=$(signing_identity 'Developer ID Application' "$temporary/identities")
   fi
   if [[ -z $identity || $identity == - ]]; then
     # Show public metadata only. Including invalid identities distinguishes an

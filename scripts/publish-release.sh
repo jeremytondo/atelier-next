@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Only verified packages reach GitHub. Stable assets are never overwritten;
 # dev publication is serialized by the workflow and rejects an obsolete source branch.
+# shellcheck disable=SC2154  # release-plan fields are defined by load_release_plan
 set -euo pipefail
-die() { echo "error: $*" >&2; exit 1; }
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 [[ $# -eq 1 && -d $1 ]] || die 'usage: mise run release:publish ASSET_DIRECTORY'
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 assets=$(cd "$1" && pwd -P)
 manifest="$assets/manifest.json"
-"$root/scripts/validate-release-plan.sh" "$manifest"
+load_release_plan "$manifest"
 jq -e '.asset == "Atelier-macos-arm64.zip" and .architecture == "arm64" and
   .minimum_macos == "27.0" and .signing == "developer-id" and .notarized == true' "$manifest" > /dev/null || die 'expected a notarized arm64 release manifest'
 for asset in Atelier-macos-arm64.zip manifest.json checksums.txt; do
@@ -16,13 +17,8 @@ done
 [[ $(awk '{print $2}' "$assets/checksums.txt") == $'Atelier-macos-arm64.zip\nmanifest.json' ]] || die 'checksums must cover exactly the ZIP and manifest'
 (cd "$assets" && shasum -a 256 --check checksums.txt) || die 'release asset checksum mismatch'
 
-channel=$(jq -r .channel "$manifest")
-tag=$(jq -r .tag "$manifest")
-version=$(jq -r .version "$manifest")
-commit=$(jq -r .commit "$manifest")
-source_ref=$(jq -r .source_ref "$manifest")
 cd "$root"
-export GH_REPO=${GITHUB_REPOSITORY:-${GH_REPO:-jeremytondo/atelier-next}}
+export GH_REPO=$repository
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-publish.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT
 if [[ $channel == dev ]]; then

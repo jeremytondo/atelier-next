@@ -3,11 +3,11 @@
 # Fetch only creates missing checkouts. Updates preserve local work by requiring
 # a clean upstream branch and refusing divergent history before merging.
 set -euo pipefail
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 checkout="$root/repos/hammerspoon2"
 upstream=https://github.com/cmsj/Hammerspoon2.git
 mode=${1:-fetch}
-die() { echo "error: $*" >&2; exit 1; }
 [[ $# -le 1 ]] || die 'usage: mise run refs | refs:update | refs:status'
 case "$mode" in fetch|update|status) ;; *) die 'expected fetch, update, or status' ;; esac
 
