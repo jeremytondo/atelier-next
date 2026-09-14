@@ -173,6 +173,7 @@ function create(hs, host) {
     for (const {key} of spaceKeys) key.disable();
     try {
       const result = await bridge.request(command, {...args, display:display.id, current:display.current});
+      if (result.creation) console.log("Atelier: Desktop " + result.created + " created; slide requested after " + Math.round(result.creation.millisecondsToEntryDispatch) + " ms, entered after " + Math.round(result.creation.millisecondsTotal) + " ms");
       await refresh(epoch); return result;
     } finally {
       if (valid(epoch)) for (const {key} of spaceKeys) if (!key.enable()) { api.stop(); report(new Error("Could not restore Desktop shortcuts; choose Resume")); break; }

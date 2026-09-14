@@ -70,4 +70,5 @@ private let displayB = DisplaySpaceSnapshot(
   #expect(decoded.count == 1)
   #expect(decoded[0].currentSpaceID == 1)
   #expect(decoded[0].spaces.map(\.isFullscreen) == [false, true, true])
+  #expect(decoded[0].spaces.map(\.rawType) == [0, 4, nil])
 }

@@ -242,7 +242,7 @@ mv "$app" "$output/Atelier.app"
 if [[ $app_only == false ]]; then mv "$temporary/$archive_name" "$output/$archive_name"; fi
 if [[ $channel != local ]]; then
   jq --slurpfile hs2 App/Hammerspoon/upstream.json \
-    '. + {architecture: "arm64", minimum_macos: "26.0", signing: "developer-id", notarized: true,
+    '. + {architecture: "arm64", minimum_macos: "27.0", signing: "developer-id", notarized: true,
     hammerspoon2: $hs2[0], asset: "Atelier-macos-arm64.zip"}' "$plan" > "$output/manifest.json"
   (cd "$output" && shasum -a 256 Atelier-macos-arm64.zip manifest.json > checksums.txt)
 fi

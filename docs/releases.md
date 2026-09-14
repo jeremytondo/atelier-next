@@ -1,6 +1,6 @@
 # Builds and releases
 
-Atelier uses ATC's release channels: a rolling `dev` prerelease and permanent `vMAJOR.MINOR.PATCH` stable releases. Both channels can release a pushed repository branch and publish only when manually requested through mise or GitHub's **Run workflow** button. Pushes to `main` run checks only. Build automation is shell, macOS tools, and mise; it has no Python dependency. Xcode is required only on build machines. Distributed apps target Apple silicon and macOS 26 or later.
+Atelier uses ATC's release channels: a rolling `dev` prerelease and permanent `vMAJOR.MINOR.PATCH` stable releases. Both channels can release a pushed repository branch and publish only when manually requested through mise or GitHub's **Run workflow** button. Pushes to `main` run checks only. Build automation is shell, macOS tools, and mise; it has no Python dependency. Xcode is required only on build machines. Distributed apps target Apple silicon and macOS 27 or later.
 
 ## Install on another Mac
 

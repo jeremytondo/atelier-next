@@ -15,8 +15,6 @@ final class MissionControlAccessibility {
   private static let missionControlAction: UInt32 = 32
   private static let previousSpaceAction: UInt32 = 79
   private static let nextSpaceAction: UInt32 = 81
-  private static let firstDesktopAction: UInt32 = 118
-  private static let maximumSymbolicDesktop = 16
   private static let presentationSettleTime: TimeInterval = 0.35
   private static let minimumExpandedThumbnailHeight: CGFloat = 48
   private static let thumbnailSettleTime: TimeInterval = 0.25
@@ -74,143 +72,6 @@ final class MissionControlAccessibility {
         MissionControlError(message: "The native Spaces bar did not expand"))
     }
     return .success(currentIndex + 1)
-  }
-
-  func createDesktop(
-    on target: TargetDisplay,
-    before: [DisplaySpaceSnapshot]
-  ) -> Result<UInt64, MissionControlError> {
-    if !isVisible() {
-      guard runtime.postSymbolicHotKey(Self.missionControlAction) else {
-        return .failure(
-          MissionControlError(message: "Could not invoke macOS's Mission Control action"))
-      }
-      guard waitForMissionControlRoot(timeout: 3) != nil else {
-        return .failure(
-          MissionControlError(
-            message: "Dock did not expose the Mission Control accessibility hierarchy"))
-      }
-
-      // Mission Control's AX hierarchy appears before its entrance animation
-      // is visually complete. Let its presentation land before adding.
-      RunLoop.current.run(
-        until: Date().addingTimeInterval(Self.presentationSettleTime)
-      )
-    }
-
-    guard ensureExpandedSpacesBar(on: target, topology: before) else {
-      return .failure(
-        MissionControlError(message: "Could not expand the native Spaces bar before creation"))
-    }
-
-    guard let settledRoot = waitForMissionControlRoot(timeout: 1),
-      let display = missionControlDisplay(in: settledRoot, displayID: target.displayID),
-      let addButton = firstDescendant(of: display, identifier: "mc.spaces.add")
-    else {
-      return .failure(
-        MissionControlError(
-          message: "Could not find the native Add Desktop button for the target display"))
-    }
-    guard AXUIElementPerformAction(addButton, kAXPressAction as CFString) == .success else {
-      return .failure(
-        MissionControlError(message: "The native Add Desktop button rejected AXPress"))
-    }
-
-    guard
-      let (added, after) = waitForAddedDesktop(
-        displayIdentifier: target.topologyIdentifier,
-        before: before,
-        timeout: 3
-      )
-    else {
-      return .failure(
-        MissionControlError(message: "macOS did not report exactly one new ordinary Desktop"))
-    }
-
-    guard
-      let fullIndex = SpaceTopology.fullIndex(
-        of: added.id,
-        on: target.topologyIdentifier,
-        displays: after
-      ),
-      let expectedCount = after.first(where: {
-        $0.identifier == target.topologyIdentifier
-      })?.spaces.count,
-      waitForExpandedSpaceButton(
-        displayID: target.displayID,
-        index: fullIndex,
-        expectedCount: expectedCount,
-        timeout: 3
-      ) != nil
-    else {
-      return .failure(
-        MissionControlError(
-          message: "Created Desktop \(added.id), but its Mission Control thumbnail did not settle"
-        ))
-    }
-
-    guard
-      let createdNumber = after.first(where: {
-        $0.identifier == target.topologyIdentifier
-      })?.regularDesktops.firstIndex(where: { $0.id == added.id }).map({ $0 + 1 })
-    else {
-      return .failure(
-        MissionControlError(message: "Could not resolve the created Desktop number"))
-    }
-    switch activateDesktop(number: createdNumber, on: target, topology: after) {
-    case .success:
-      break
-    case .failure(let error):
-      return .failure(
-        MissionControlError(
-          message: "Created Desktop \(createdNumber), but could not activate it: \(error.message)"))
-    }
-    return .success(added.id)
-  }
-
-  func selectDesktop(
-    _ desktop: ManagedSpaceSnapshot,
-    on target: TargetDisplay,
-    topology: [DisplaySpaceSnapshot]
-  ) -> Result<Void, MissionControlError> {
-    guard isVisible() else {
-      return .failure(MissionControlError(message: "Mission Control is no longer open"))
-    }
-    guard
-      let fullIndex = SpaceTopology.fullIndex(
-        of: desktop.id,
-        on: target.topologyIdentifier,
-        displays: topology
-      ),
-      let expectedCount = topology.first(where: {
-        $0.identifier == target.topologyIdentifier
-      })?.spaces.count,
-      let button = waitForStableSpaceButton(
-        displayID: target.displayID,
-        index: fullIndex,
-        expectedCount: expectedCount,
-        timeout: 2
-      )
-    else {
-      return .failure(
-        MissionControlError(
-          message: "Could not resolve Desktop \(desktop.id) in Mission Control"))
-    }
-
-    guard AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else {
-      return .failure(
-        MissionControlError(message: "Desktop \(desktop.id) rejected Mission Control selection"))
-    }
-    guard waitForCurrentSpace(desktop.id, on: target.topologyIdentifier, timeout: 3) else {
-      return .failure(
-        MissionControlError(message: "Could not verify the switch to Desktop \(desktop.id)"))
-    }
-    guard waitForMissionControlToClose(timeout: 3) || closeMissionControl(timeout: 2) else {
-      return .failure(
-        MissionControlError(
-          message: "Switched to Desktop \(desktop.id), but Mission Control did not close cleanly"))
-    }
-    return .success(())
   }
 
   func activateAdjacentDesktop(
@@ -272,57 +133,6 @@ final class MissionControlAccessibility {
         MissionControlError(message: "The active Desktop thumbnail did not remain expanded"))
     }
     return .success(nextIndex + 1)
-  }
-
-  func activateDesktop(
-    number: Int,
-    on target: TargetDisplay,
-    topology: [DisplaySpaceSnapshot]
-  ) -> Result<Int, MissionControlError> {
-    guard isVisible() else {
-      return .failure(MissionControlError(message: "Mission Control is no longer open"))
-    }
-    guard
-      let destination = SpaceTopology.desktop(
-        number: number,
-        on: target.topologyIdentifier,
-        displays: topology
-      )
-    else {
-      return .failure(MissionControlError(message: "Desktop \(number) does not exist"))
-    }
-    guard
-      topology.first(where: { $0.identifier == target.topologyIdentifier })?.currentSpaceID
-        != destination.id
-    else {
-      return .success(number)
-    }
-    guard
-      let globalNumber = SpaceTopology.globalDesktopNumber(
-        for: destination.id,
-        displays: topology
-      ), globalNumber <= Self.maximumSymbolicDesktop
-    else {
-      return .failure(
-        MissionControlError(message: "Desktop \(number) has no native symbolic shortcut route"))
-    }
-
-    let action = Self.firstDesktopAction + UInt32(globalNumber - 1)
-    guard runtime.postSymbolicHotKey(action),
-      waitForCurrentSpace(destination.id, on: target.topologyIdentifier, timeout: 3),
-      waitForMissionControlRoot(timeout: 2) != nil
-    else {
-      return .failure(
-        MissionControlError(
-          message: "macOS did not keep Mission Control open while activating Desktop \(number)"))
-    }
-
-    let updatedTopology = runtime.snapshot()
-    guard ensureExpandedSpacesBar(on: target, topology: updatedTopology) else {
-      return .failure(
-        MissionControlError(message: "The active Desktop thumbnail did not remain expanded"))
-    }
-    return .success(number)
   }
 
   func enterActiveDesktop(
@@ -689,29 +499,6 @@ final class MissionControlAccessibility {
     RunLoop.current.run(until: Date().addingTimeInterval(0.12))
     up.post(tap: .cghidEventTap)
     return true
-  }
-
-  private func waitForAddedDesktop(
-    displayIdentifier: String,
-    before: [DisplaySpaceSnapshot],
-    timeout: TimeInterval
-  ) -> (ManagedSpaceSnapshot, [DisplaySpaceSnapshot])? {
-    var result: (ManagedSpaceSnapshot, [DisplaySpaceSnapshot])?
-    _ = waitUntil(timeout: timeout) {
-      let after = self.runtime.snapshot()
-      guard
-        let added = SpaceTopology.addedDesktop(
-          on: displayIdentifier,
-          before: before,
-          after: after
-        )
-      else {
-        return false
-      }
-      result = (added, after)
-      return true
-    }
-    return result
   }
 
   private func waitForMissionControlRoot(timeout: TimeInterval) -> AXUIElement? {

@@ -112,7 +112,7 @@ unset FAKE_ENCODED_BRANCH
 asset_dir="$temporary/assets"
 make_assets() {
   printf 'packaged app\n' > "$asset_dir/Atelier-macos-arm64.zip"
-  jq '. + {architecture: "arm64", minimum_macos: "26.0", signing: "developer-id", notarized: true,
+  jq '. + {architecture: "arm64", minimum_macos: "27.0", signing: "developer-id", notarized: true,
     asset: "Atelier-macos-arm64.zip"}' "$temporary/$1.json" > "$asset_dir/manifest.json"
   (cd "$asset_dir" && shasum -a 256 Atelier-macos-arm64.zip manifest.json > checksums.txt)
   : > "$FAKE_GH_LOG"

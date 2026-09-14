@@ -65,6 +65,54 @@ run = "scripts/timed.sh bundle-check scripts/build-app.sh --skip-build --app-onl
 description = "Fetch missing read-only reference source into repos/ (gitignored)"
 run = "scripts/refs.sh fetch"
 
+[tasks."wmbridge:probe"]
+description = "Run the isolated, read-only ATE-40 WMBridge capability probe"
+run = "node Prototypes/WMBridge/run.js probe"
+
+[tasks."wmbridge:build"]
+description = "Build the isolated ATE-40 experiment"
+run = "xcodebuildmcp swift-package build --package-path Prototypes/WMBridge"
+
+[tasks."wmbridge:test"]
+description = "Test ATE-40 confirmation and no-replay behavior without native mutations"
+run = ["xcodebuildmcp swift-package test --package-path Prototypes/WMBridge", "node --test Prototypes/WMBridge/*.test.js"]
+
+[tasks."wmbridge:run"]
+description = "Run an explicit ATE-40 experiment command (see --help)"
+run = 'node Prototypes/WMBridge/run.js "$@"'
+
+[tasks."wmbridge:record"]
+description = "Record one explicit ATE-40 mutation trial in a disposable session"
+run = 'node Prototypes/WMBridge/record.js "$@"'
+
+[tasks."wmbridge:host"]
+description = "Run an explicit ATE-40 scenario in a private copy of the installed HS2 host"
+run = 'node Prototypes/WMBridge/host.js "$@"'
+
+[tasks."desktop:create"]
+description = "Create one ATE-40 Desktop candidate and leave it for manual testing"
+run = 'node Prototypes/WMBridge/manual.js create "$@"'
+
+[tasks."desktop:prepare"]
+description = "Prepare a temporary windowless Desktop helper to avoid startup delay"
+run = "node Prototypes/WMBridge/session.js prepare"
+
+[tasks."desktop:stop"]
+description = "Stop this workspace's prepared Desktop helper without removing Desktops"
+run = "node Prototypes/WMBridge/session.js stop"
+
+[tasks."desktop:status"]
+description = "Read current Spaces or inspect a saved manual Desktop trial"
+run = 'node Prototypes/WMBridge/manual.js status "$@"'
+
+[tasks."desktop:cleanup"]
+description = "Remove the inactive, unoccupied Desktop owned by a specified manual trial"
+run = 'node Prototypes/WMBridge/manual.js cleanup "$@"'
+
+[tasks."desktop:diagnose"]
+description = "Read Space values, trace the read delegate, and compare saved Desktop configuration"
+run = 'node Prototypes/WMBridge/manual.js diagnose "$@"'
+
 [tasks."refs:update"]
 description = "Update reference checkouts from upstream main (requires clean checkouts)"
 run = "scripts/refs.sh update"

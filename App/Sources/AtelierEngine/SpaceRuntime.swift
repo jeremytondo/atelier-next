@@ -85,13 +85,14 @@ final class SpaceRuntime {
   private var temporarilyEnabled: Set<UInt32> = []
   private var restoreWorkItem: DispatchWorkItem?
   private var recovery: [ShortcutRecoveryRecord] = []
-  private let journal = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-    "Library/Application Support/Atelier/temporary-shortcuts.json")
+  private let journal: URL
   private var bootTime: Double {
     Date().timeIntervalSince1970 - ProcessInfo.processInfo.systemUptime
   }
 
-  init() throws {
+  init(stateDirectory: URL? = nil) throws {
+    journal = (stateDirectory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+      "Library/Application Support/Atelier")).appendingPathComponent("temporary-shortcuts.json")
     let path = "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight"
     guard let handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL) else {
       throw PrototypeError.privateAPI("Could not open SkyLight.framework")

@@ -9,7 +9,7 @@ assets=$(cd "$1" && pwd -P)
 manifest="$assets/manifest.json"
 "$root/scripts/validate-release-plan.sh" "$manifest"
 jq -e '.asset == "Atelier-macos-arm64.zip" and .architecture == "arm64" and
-  .minimum_macos == "26.0" and .signing == "developer-id" and .notarized == true' "$manifest" > /dev/null || die 'expected a notarized arm64 release manifest'
+  .minimum_macos == "27.0" and .signing == "developer-id" and .notarized == true' "$manifest" > /dev/null || die 'expected a notarized arm64 release manifest'
 for asset in Atelier-macos-arm64.zip manifest.json checksums.txt; do
   [[ -s $assets/$asset ]] || die "missing or empty release asset: $asset"
 done
@@ -40,7 +40,7 @@ files=("$assets/Atelier-macos-arm64.zip" "$manifest" "$assets/checksums.txt")
 {
   printf 'Version: `%s`  \nCommit: [`%s`](https://github.com/%s/commit/%s)\n\n' "$version" "${commit:0:8}" "$GH_REPO" "$commit"
   printf 'Source branch:\n\n    %s\n\n' "${source_ref#refs/heads/}"
-  printf 'Requires Apple silicon and macOS 26 or later. Signed with Developer ID and notarized by Apple.\n\n'
+  printf 'Requires Apple silicon and macOS 27 or later. Signed with Developer ID and notarized by Apple.\n\n'
   printf 'Download `Atelier-macos-arm64.zip`, quit Atelier, and move the extracted app into `/Applications`. Your configuration is preserved.\n'
   if [[ $channel == dev ]]; then
     printf '\nThis rolling prerelease is replaced by successful manually requested dev builds from any branch. Stable releases retain their versioned downloads.\n'

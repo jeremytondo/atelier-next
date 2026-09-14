@@ -2,9 +2,14 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Darwin
+import DesktopBridge
 import Foundation
 import QuickAppSupport
 import SpaceControlCore
+
+/// Opt-in command seam for isolated native experiments. A nil result delegates
+/// to the normal engine. Installed Atelier supplies no extension.
+public typealias NativeCommandExtension = @MainActor (String, [String: Any]) throws -> [String: Any]?
 
 struct BridgeError: LocalizedError {
   let message: String
@@ -26,12 +31,14 @@ final class EngineBridge {
   private let connection: Int32
   private let membership: Membership
   private let windowID: WindowID
+  private let commandExtension: NativeCommandExtension?
 
   let quickAssignment = SpaceAssignmentCoordinator()
   var quickStates: [String: QuickAppState] = [:]
 
-  init() throws {
-    runtime = try SpaceRuntime()
+  init(stateDirectory: URL? = nil, commandExtension: NativeCommandExtension? = nil) throws {
+    self.commandExtension = commandExtension
+    runtime = try SpaceRuntime(stateDirectory: stateDirectory)
     guard
       let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
       let ax = dlopen(
@@ -153,6 +160,22 @@ final class EngineBridge {
     ]
   }
 
+  private func creationSeams() -> DesktopCreationSeams {
+    DesktopCreationSeams(
+      topology: { self.runtime.snapshot() },
+      missionControlVisible: { self.missionControl.isVisible() },
+      dockCount: { DesktopBridge.dockDesktopCount()?.intValue },
+      create: {
+        let report = DesktopBridge.createDesktop()
+        if let id = (report["createdID"] as? NSNumber)?.uint64Value { return .created(id) }
+        let reason = report["error"] as? String ?? "Desktop creation failed"
+        return report["dispatched"] as? Bool == true ? .uncertain(reason) : .refused(reason)
+      },
+      enterDesktop: { number in self.runtime.postSymbolicHotKey(UInt32(117 + number)) },
+      now: { ProcessInfo.processInfo.systemUptime },
+      pause: { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) })
+  }
+
   func wait(_ timeout: Double = 3, until condition: () -> Bool) -> Bool {
     let end = Date().addingTimeInterval(timeout)
     repeat {
@@ -193,6 +216,7 @@ final class EngineBridge {
   }
 
   private func execute(_ command: String, _ request: [String: Any]) throws -> [String: Any] {
+    if let result = try commandExtension?(command, request) { return result }
     if command == "hello" {
       return ["protocolVersion": 1, "pid": getpid(), "trusted": AXIsProcessTrusted()]
     }
@@ -265,10 +289,18 @@ final class EngineBridge {
       : []
     defer { cleanup() }
     if command == "create" {
-      let created = try missionControl.createDesktop(on: target, before: before).get()
-      _ = try missionControl.enterActiveDesktop(on: target, topology: runtime.snapshot()).get()
+      guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
+        throw BridgeError(message: "Desktop creation requires macOS 27")
+      }
+      if let reason = DesktopBridge.unavailableReason() { throw BridgeError(message: reason) }
+      let created = try DesktopCreation.createAndEnter(
+        on: target.topologyIdentifier, seams: creationSeams())
       var result = snapshot()
-      result["created"] = String(created)
+      result["created"] = String(created.id)
+      result["creation"] = [
+        "millisecondsToEntryDispatch": created.secondsToEntryDispatch * 1000,
+        "millisecondsTotal": created.secondsTotal * 1000,
+      ]
       return result
     }
     if !missionControl.isVisible() {
@@ -311,12 +343,12 @@ final class EngineBridge {
 }
 
 @MainActor
-public func runAtelierEngine() throws {
+public func runAtelierEngine(stateDirectory: URL? = nil, commandExtension: NativeCommandExtension? = nil) throws {
   setbuf(stdout, nil)
   let processLock = try SingletonProcessLock()
   let app = NSApplication.shared
   app.setActivationPolicy(.accessory)
-  let bridge = try EngineBridge()
+  let bridge = try EngineBridge(stateDirectory: stateDirectory, commandExtension: commandExtension)
   signal(SIGTERM, SIG_IGN)
   signal(SIGINT, SIG_IGN)
   let signals = [SIGTERM, SIGINT].map { number in
