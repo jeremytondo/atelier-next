@@ -127,7 +127,7 @@ fi
 mkdir "$temporary/native"
 "$root/scripts/snapshot-native.sh" "$temporary/native"
 binaries="$temporary/native/helpers"
-for executable in atelier-config atelier-engine atelier-tools; do
+for executable in atelier-engine atelier-tools; do
   [[ -x $binaries/$executable ]] || die "missing release executable: $executable"
   [[ $(lipo -archs "$binaries/$executable") == arm64 ]] || die "expected an arm64 executable: $executable"
 done
@@ -140,7 +140,6 @@ ditto "$hs2_app" "$app"
 mkdir -p "$contents/MacOS" "$contents/Helpers" "$contents/Resources"
 mv "$contents/MacOS/Hammerspoon 2" "$contents/MacOS/Atelier"
 ditto "$binaries/atelier-engine" "$contents/Helpers/atelier-engine"
-ditto "$binaries/atelier-config" "$contents/Helpers/atelier-config"
 ditto App/Resources/Atelier "$contents/Resources/Atelier"
 rm -rf "$contents/Resources/DefaultConfig"
 ditto App/Resources/DefaultConfig "$contents/Resources/DefaultConfig"
@@ -190,7 +189,7 @@ for directory in "$contents/Frameworks" "$contents/XPCServices"; do
       --preserve-metadata=identifier,entitlements "$path"
   done < <(find "$directory" -depth \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' -o -name '*.dylib' \) -print0)
 done
-for path in "$contents/Helpers/atelier-engine" "$contents/Helpers/atelier-config" "$contents/MacOS/hs2"; do
+for path in "$contents/Helpers/atelier-engine" "$contents/MacOS/hs2"; do
   codesign --force --sign "$identity" --options runtime "$timestamp" "$path"
 done
 app_entitlements=App/Hammerspoon/entitlements.plist

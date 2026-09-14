@@ -80,7 +80,7 @@ The `atelier.start(options)` object is Atelier's stable configuration contract. 
 
 The native welcome screen appears before your first configuration execution. Grant Accessibility, or choose **Continue Without Access**. Defaults report missing access while independent scripts can run. After granting access later, choose **Accessibility Help** to check permission and reload automatically. A running Hammerspoon copy produces a startup conflict warning, with **Continue Anyway**, **Quit Atelier**, and **Don't warn again**. An installed but stopped copy is informational.
 
-Existing `init.js` always wins, including empty or invalid files. If absent, Atelier copies the current bundled default file once. It does not import TOML, JSON, or prototype configuration.
+Existing `init.js` always wins, including empty or invalid files. If absent, Atelier copies the current bundled default file once. It does not import configuration from earlier formats.
 
 A synchronous configuration exception keeps objects created before the failure active. A syntax error loads nothing. The error stays in the menu and Console; fix the file and choose **Reload Config**. Invalid defaults options, missing Accessibility, shortcut conflicts, and helper failures stop only Atelier Defaults. Reload replaces the entire context in process, retaining Console logs. If the previous helper will not stop within the bounded shutdown period, reload reports an error and leaves that context available for another attempt. Closing native windows leaves Atelier running in the menu bar.
 

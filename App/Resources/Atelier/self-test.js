@@ -32,8 +32,8 @@ async function exerciseDefaults() {
     const {Timers} = require(atelierHost.modules + "/bridge.js");
     globalThis.atelierProbeTimers = new Timers(hs);
     globalThis.atelierProbe = require(atelierHost.modules + "/index.js").create(hs, {
-      helper:atelierHost.helper.replace(/atelier-engine$/, "atelier-config"),
-      helperArguments:["--self-test-helper"], bundleID:atelierHost.bundleID, version:"self-test",
+      helper:atelierHost.helper, helperArguments:["--self-test-helper"],
+      bundleID:atelierHost.bundleID, version:"self-test",
     });
     await atelierProbe.start({spaces:false, groups:false, overlay:false, quickApps:[], bindings:{"reload-config":"none"}});
     if (atelierProbe.state !== "Running") throw new Error("Defaults startup failed");

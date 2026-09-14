@@ -45,7 +45,7 @@ enum AtelierHost {
     static func install(in engine: any JSEngineProtocol, generation: UUID? = nil) throws {
         var engine = engine
         engine["atelierHost"] = [
-            "helper": Bundle.main.bundleURL.appendingPathComponent(probeHelper ? "Contents/Helpers/atelier-config" : "Contents/Helpers/atelier-engine").path,
+            "helper": Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/atelier-engine").path,
             "helperArguments": probeHelper ? ["--self-test-helper"] : [],
             "bundleID": Bundle.main.bundleIdentifier ?? "com.elevenideas.Atelier",
             "modules": resources.appendingPathComponent("Atelier").path,

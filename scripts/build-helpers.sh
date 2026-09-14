@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Serialize SwiftPM Debug tests and Release builds in their shared build tree.
-# Only the three Release executables are retained for verified assembly reuse.
+# Only the Release executables are retained for verified assembly reuse.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 if [[ ${1:-} != --locked ]]; then
@@ -24,7 +24,7 @@ fi
 mkdir -p "$root/.build/native"
 stage=$(mktemp -d "$root/.build/native/helpers-stage.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
-for executable in atelier-config atelier-engine atelier-tools; do
+for executable in atelier-engine atelier-tools; do
   binary="$root/App/.build/release/$executable"
   test -x "$binary"
   [[ $(lipo -archs "$binary") == arm64 ]]

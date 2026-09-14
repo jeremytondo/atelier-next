@@ -1,15 +1,6 @@
+// Build-time icon rendering and a disposable window fixture for manual trials.
+// Never bundled in the installed app.
 import AppKit
-import Carbon.HIToolbox
-
-if CommandLine.arguments.dropFirst().first == "--engine-fixture" {
-  do {
-    try runEngineFixture(arguments: Array(CommandLine.arguments.dropFirst(2)))
-  } catch {
-    FileHandle.standardError.write(Data("Engine fixture failed: \(error)\n".utf8))
-    exit(1)
-  }
-  exit(0)
-}
 
 MainActor.assumeIsolated {
   let args = CommandLine.arguments
@@ -50,41 +41,6 @@ MainActor.assumeIsolated {
     }
     exit(0)
   }
-  if args.count > 3, args[1] == "--key" {
-    let key = UInt16(args[2])!
-    let flags = UInt64(args[3])!
-    let down = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: true)!
-    let up = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: false)!
-    down.flags = CGEventFlags(rawValue: flags)
-    up.flags = []
-    down.post(tap: .cghidEventTap)
-    Thread.sleep(forTimeInterval: 0.03)
-    up.post(tap: .cghidEventTap)
-    exit(0)
-  }
-  if args.count > 2, args[1] == "--modifiers" {
-    let flags = CGEventFlags(rawValue: UInt64(args[2])!)
-    for code: CGKeyCode in [55, 58] {
-      let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: !flags.isEmpty)!
-      event.flags = flags
-      event.post(tap: .cghidEventTap)
-    }
-    exit(0)
-  }
-  if args.count > 1, args[1] == "--windows" {
-    let descriptions =
-      CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], 0)
-      as? [[String: Any]] ?? []
-    let filtered = descriptions.filter {
-      ($0[kCGWindowOwnerName as String] as? String) == "Atelier"
-    }
-    print(
-      String(
-        data: try! JSONSerialization.data(withJSONObject: filtered, options: .prettyPrinted),
-        encoding: .utf8)!)
-    exit(0)
-  }
-  // Disposable local fixture, never bundled in the installed app.
   let app = NSApplication.shared
   app.setActivationPolicy(.regular)
   let main = NSMenu()

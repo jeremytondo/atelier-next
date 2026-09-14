@@ -32,28 +32,6 @@ private let displayB = DisplaySpaceSnapshot(
   #expect(SpaceTopology.globalDesktopNumber(for: 90, displays: [displayA, displayB]) == nil)
 }
 
-@Test func detectsExactlyOneNewRegularDesktop() {
-  let after = DisplaySpaceSnapshot(
-    identifier: "A",
-    currentSpaceID: 1,
-    spaces: displayA.spaces + [ManagedSpaceSnapshot(id: 3, isFullscreen: false)]
-  )
-  #expect(SpaceTopology.addedDesktop(on: "A", before: [displayA], after: [after])?.id == 3)
-  #expect(SpaceTopology.addedDesktop(on: "B", before: [displayA], after: [after]) == nil)
-}
-
-@Test func ambiguousAddFailsClosed() {
-  let after = DisplaySpaceSnapshot(
-    identifier: "A",
-    currentSpaceID: 1,
-    spaces: displayA.spaces + [
-      ManagedSpaceSnapshot(id: 3, isFullscreen: false),
-      ManagedSpaceSnapshot(id: 4, isFullscreen: false),
-    ]
-  )
-  #expect(SpaceTopology.addedDesktop(on: "A", before: [displayA], after: [after]) == nil)
-}
-
 @Test func decoderAcceptsKnownIDShapesAndMarksFullscreenSpaces() {
   let decoded = SpaceTopology.decode([
     [

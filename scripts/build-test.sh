@@ -75,7 +75,7 @@ if [[ $1 == macos ]]; then
   done
 else
   mkdir -p "$FAKE_BUILD_ROOT/App/.build/release"
-  for binary in atelier-config atelier-engine atelier-tools; do
+  for binary in atelier-engine atelier-tools; do
     printf 'binary\n' > "$FAKE_BUILD_ROOT/App/.build/release/$binary"
     chmod +x "$FAKE_BUILD_ROOT/App/.build/release/$binary"
   done
