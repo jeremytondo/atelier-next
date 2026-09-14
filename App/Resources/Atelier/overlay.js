@@ -1,4 +1,5 @@
 "use strict";
+// ATE-37 disposable benchmark: exercise the JS-only pull-request path.
 // HS2 0.0.12 canvas positions use AppKit's y-up coordinates; screen frames use
 // y-down coordinates. Input event flags are reliable on this pinned build.
 // Each canvas belongs to one display/Space; hiding retains HS2's native window.
