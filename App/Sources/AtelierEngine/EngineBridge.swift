@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Darwin
+import DesktopBridge
 import Foundation
 import QuickAppSupport
 import SpaceControlCore
@@ -159,6 +160,22 @@ final class EngineBridge {
     ]
   }
 
+  private func creationSeams() -> DesktopCreationSeams {
+    DesktopCreationSeams(
+      topology: { self.runtime.snapshot() },
+      missionControlVisible: { self.missionControl.isVisible() },
+      dockCount: { DesktopBridge.dockDesktopCount()?.intValue },
+      create: {
+        let report = DesktopBridge.createDesktop()
+        if let id = (report["createdID"] as? NSNumber)?.uint64Value { return .created(id) }
+        let reason = report["error"] as? String ?? "Desktop creation failed"
+        return report["dispatched"] as? Bool == true ? .uncertain(reason) : .refused(reason)
+      },
+      enterDesktop: { number in self.runtime.postSymbolicHotKey(UInt32(117 + number)) },
+      now: { ProcessInfo.processInfo.systemUptime },
+      pause: { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) })
+  }
+
   func wait(_ timeout: Double = 3, until condition: () -> Bool) -> Bool {
     let end = Date().addingTimeInterval(timeout)
     repeat {
@@ -272,10 +289,18 @@ final class EngineBridge {
       : []
     defer { cleanup() }
     if command == "create" {
-      let created = try missionControl.createDesktop(on: target, before: before).get()
-      _ = try missionControl.enterActiveDesktop(on: target, topology: runtime.snapshot()).get()
+      guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
+        throw BridgeError(message: "Desktop creation requires macOS 27")
+      }
+      if let reason = DesktopBridge.unavailableReason() { throw BridgeError(message: reason) }
+      let created = try DesktopCreation.createAndEnter(
+        on: target.topologyIdentifier, seams: creationSeams())
       var result = snapshot()
-      result["created"] = String(created)
+      result["created"] = String(created.id)
+      result["creation"] = [
+        "millisecondsToEntryDispatch": created.secondsToEntryDispatch * 1000,
+        "millisecondsTotal": created.secondsTotal * 1000,
+      ]
       return result
     }
     if !missionControl.isVisible() {

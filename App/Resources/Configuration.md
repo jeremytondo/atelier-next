@@ -36,7 +36,7 @@ You can omit `atelier.start()` entirely and use only your own HS2 automations. T
 | Binding name | Default shortcut | Action |
 | --- | --- | --- |
 | `desktop-1` … `desktop-10` | Option–1 … Option–0 | Select ordinary Desktop on the focused window's display, pointer fallback |
-| `desktop-create` | Option–grave | Create and enter Desktop |
+| `desktop-create` | Option–grave | Create a Desktop at the end and enter it; one display, up to Desktop 16 |
 | `desktop-left`, `desktop-right` | Control–Option–Left/Right | Reorder current Desktop |
 | `desktop-delete` | Control–Option–Delete | Delete current Desktop; refuse the last Desktop |
 | `group` | Command–Option–G | Create or repair Group on current Desktop |
