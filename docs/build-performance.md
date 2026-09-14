@@ -119,8 +119,30 @@ and the bundle check 4.7 seconds. Compiler time also varied materially, so the
 109-second reduction from the first implementation run cannot be attributed
 entirely to scheduling. Subsequent diagnostics record CPU identity/count too.
 
-Before claiming the issue's performance completion criteria, measure cold
-native, repeated warm, JS-only, docs-only, and manual dev-release workflows.
+## Manual branch dev release
+
+[Run 34799685091](https://github.com/jeremytondo/atelier-next/actions/runs/34799685091)
+published commit `624d96b8dad60d54c9700fcc6ed0dc337e4d1ea0` from
+`ate-37-build-workflows`, without merging into `main`. Workflow elapsed was
+326 seconds and total job execution was 314 seconds: packaging 298 seconds,
+publication 16 seconds. The audited release took 520 seconds elapsed and 503
+job seconds. This is one observation, not a controlled comparison or percentile.
+
+No executable build caches were restored. Diagnostics show one host compilation
+(209.7 seconds), Debug native tests (72.5 seconds), Release helpers (50.9 seconds),
+and a bundle check (4.2 seconds). Distribution packaging then took 31.8 seconds,
+including a 23.7-second notarization wait, and reused the gate's verified host
+and helper outputs. Developer ID signing, full runtime/XPC and configuration
+probes, notarization, stapling, and Gatekeeper all passed. Upload and download
+of the release artifact took two seconds and one second respectively.
+
+The published ZIP was 9,355,805 bytes. Downloaded ZIP/manifest checksums passed,
+and the manifest's `source_ref`, source commit, and remote `dev` tag identified
+the selected branch commit. PR checks also passed on that commit in
+[run 34799676182](https://github.com/jeremytondo/atelier-next/actions/runs/34799676182).
+
+Before claiming the issue's performance completion criteria, complete hosted
+JS-only and docs-only samples and repeat comparable cold/warm/release workflows.
 Retain run URLs, `ci:report` JSON, diagnostic artifacts, compressed cache bytes,
 restore/save step durations, and the first relevant test completion timestamp.
 Repeat comparable cases before drawing conclusions about variation. The full
