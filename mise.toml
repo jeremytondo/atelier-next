@@ -40,7 +40,7 @@ depends = ["hs2:build", "helpers:build"]
 
 [tasks."native:check"]
 description = "Sequence Debug tests before Release helper compilation"
-depends = ["test:native"]
+depends = ["test:native", "hs2:build"]
 run = "scripts/build-helpers.sh"
 
 [tasks."bundle:check"]
