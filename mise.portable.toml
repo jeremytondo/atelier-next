@@ -8,9 +8,9 @@ actionlint = "1.7.12"
 
 [tasks.check]
 run = [
-  "scripts/timed.sh js-test node --test App/Tests/JavaScript/*.test.js",
-  "scripts/timed.sh shell-lint shellcheck scripts/*.sh",
-  "scripts/timed.sh workflow-lint actionlint .github/workflows/*.yml",
-  "scripts/timed.sh release-test scripts/release-test.sh",
-  "scripts/timed.sh build-test scripts/build-test.sh",
+  "node --test App/Tests/JavaScript/*.test.js",
+  "shellcheck scripts/*.sh",
+  "actionlint .github/workflows/*.yml",
+  "scripts/release-test.sh",
+  "scripts/build-test.sh",
 ]

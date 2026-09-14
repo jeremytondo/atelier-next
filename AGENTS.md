@@ -54,15 +54,11 @@ rather than enumerate details that can drift.
 - Run the smallest relevant mise checks while iterating. Before publishing
   a PR, run `mise run check`, the same gate CI uses.
 
-## Experiments and Reference Source
+## Reference Source
 
-Everything under `Prototypes/` is historical research material, not
-production source:
-
-- Read findings before code.
-- Treat findings as evidence, not decisions.
-- Do not import, extend, or make production depend on prototype code.
-- Do not rewrite old findings. Capture new evidence separately.
+Research findings and experiment evidence live in Linear tickets and pull
+requests, not in the repository. Do not add prototype trees, dated evidence
+files, or research writeups to the checkout.
 
 Reference checkouts under `repos/` are read-only research material. Use
 `mise run refs` to fetch missing checkouts and `mise run refs:update` to

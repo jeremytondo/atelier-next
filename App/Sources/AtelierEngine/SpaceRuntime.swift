@@ -1,6 +1,5 @@
 import AppKit
 import ApplicationServices
-import AtelierCore
 import Carbon.HIToolbox
 import CoreGraphics
 import Darwin
@@ -18,7 +17,7 @@ private enum PrototypeError: LocalizedError {
     case .accessibilityPermission:
       "Enable Atelier in System Settings > Privacy & Security > Accessibility."
     case .alreadyRunning:
-      "Another Atelier engine or the Hammerspoon prototype is running. Stop it before resuming Atelier."
+      "Another Atelier engine is running. Stop it before resuming Atelier."
     case .hotKey(let message), .privateAPI(let message):
       message
     }
@@ -90,9 +89,9 @@ final class SpaceRuntime {
     Date().timeIntervalSince1970 - ProcessInfo.processInfo.systemUptime
   }
 
-  init(stateDirectory: URL? = nil) throws {
-    journal = (stateDirectory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-      "Library/Application Support/Atelier")).appendingPathComponent("temporary-shortcuts.json")
+  init() throws {
+    journal = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+      "Library/Application Support/Atelier/temporary-shortcuts.json")
     let path = "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight"
     guard let handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL) else {
       throw PrototypeError.privateAPI("Could not open SkyLight.framework")
@@ -245,25 +244,15 @@ final class SpaceRuntime {
 struct TargetDisplay {
   let displayID: CGDirectDisplayID
   let topologyIdentifier: String
-  let source: String
 }
 
+/// The focused window's display, falling back to the pointer's display.
 final class TargetDisplayResolver {
-  func resolve(
-    in topology: [DisplaySpaceSnapshot],
-    preferPointer: Bool = false
-  ) -> TargetDisplay? {
-    if preferPointer, let target = pointerDisplay(in: topology) {
-      return target
-    }
+  func resolve(in topology: [DisplaySpaceSnapshot]) -> TargetDisplay? {
     if let displayID = focusedWindowDisplayID(),
       let identifier = topologyIdentifier(for: displayID, in: topology)
     {
-      return TargetDisplay(
-        displayID: displayID,
-        topologyIdentifier: identifier,
-        source: "focused window"
-      )
+      return TargetDisplay(displayID: displayID, topologyIdentifier: identifier)
     }
     return pointerDisplay(in: topology)
   }
@@ -275,11 +264,7 @@ final class TargetDisplayResolver {
     else {
       return nil
     }
-    return TargetDisplay(
-      displayID: displayID,
-      topologyIdentifier: identifier,
-      source: "pointer"
-    )
+    return TargetDisplay(displayID: displayID, topologyIdentifier: identifier)
   }
 
   private func focusedWindowDisplayID() -> CGDirectDisplayID? {

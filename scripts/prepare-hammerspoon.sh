@@ -26,7 +26,7 @@ trap 'exit 143' TERM
 archive="$root/.build/downloads/hs2-$revision.tar.gz"
 if [[ ! -f $archive ]]; then
   temporary="$stage/download.tar.gz"
-  "$root/scripts/timed.sh" upstream-download curl --fail --silent --show-error --location --retry 3 \
+  curl --fail --silent --show-error --location --retry 3 \
     "https://codeload.github.com/cmsj/Hammerspoon2/tar.gz/$revision" -o "$temporary"
   [[ $(shasum -a 256 "$temporary" | awk '{print $1}') == "$checksum" ]] || { echo 'HS2 archive checksum mismatch' >&2; exit 1; }
   mv "$temporary" "$archive"

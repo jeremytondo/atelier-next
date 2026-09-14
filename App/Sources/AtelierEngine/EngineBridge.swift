@@ -7,10 +7,6 @@ import Foundation
 import QuickAppSupport
 import SpaceControlCore
 
-/// Opt-in command seam for isolated native experiments. A nil result delegates
-/// to the normal engine. Installed Atelier supplies no extension.
-public typealias NativeCommandExtension = @MainActor (String, [String: Any]) throws -> [String: Any]?
-
 struct BridgeError: LocalizedError {
   let message: String
   var errorDescription: String? { message }
@@ -31,14 +27,12 @@ final class EngineBridge {
   private let connection: Int32
   private let membership: Membership
   private let windowID: WindowID
-  private let commandExtension: NativeCommandExtension?
 
   let quickAssignment = SpaceAssignmentCoordinator()
   var quickStates: [String: QuickAppState] = [:]
 
-  init(stateDirectory: URL? = nil, commandExtension: NativeCommandExtension? = nil) throws {
-    self.commandExtension = commandExtension
-    runtime = try SpaceRuntime(stateDirectory: stateDirectory)
+  init() throws {
+    runtime = try SpaceRuntime()
     guard
       let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
       let ax = dlopen(
@@ -216,7 +210,6 @@ final class EngineBridge {
   }
 
   private func execute(_ command: String, _ request: [String: Any]) throws -> [String: Any] {
-    if let result = try commandExtension?(command, request) { return result }
     if command == "hello" {
       return ["protocolVersion": 1, "pid": getpid(), "trusted": AXIsProcessTrusted()]
     }
@@ -245,9 +238,6 @@ final class EngineBridge {
     }
     if let expected = request["current"] as? String, expected != String(display.currentSpaceID) {
       throw BridgeError(message: "Active Space changed before operation")
-    }
-    if command == "send" {
-      throw BridgeError(message: "Window movement between Spaces is not supported")
     }
     if command == "switch" {
       guard let number = request["number"] as? Int,
@@ -343,12 +333,12 @@ final class EngineBridge {
 }
 
 @MainActor
-public func runAtelierEngine(stateDirectory: URL? = nil, commandExtension: NativeCommandExtension? = nil) throws {
+public func runAtelierEngine() throws {
   setbuf(stdout, nil)
   let processLock = try SingletonProcessLock()
   let app = NSApplication.shared
   app.setActivationPolicy(.accessory)
-  let bridge = try EngineBridge(stateDirectory: stateDirectory, commandExtension: commandExtension)
+  let bridge = try EngineBridge()
   signal(SIGTERM, SIG_IGN)
   signal(SIGINT, SIG_IGN)
   let signals = [SIGTERM, SIGINT].map { number in

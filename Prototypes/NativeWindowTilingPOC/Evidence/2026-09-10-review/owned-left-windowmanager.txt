@@ -1,2 +1,0 @@
-Timestamp               Ty Process[PID:TID]
-2026-09-10 18:37:54.087 Df WindowManager[384:1028] [com.apple.windowmanagement:app] Add Tiled Window (clientRequest): 'native-window-tiling-poc(0x2ae46): ATE-13 · Native …': leftHalf@1.00, untiledFrame:(375.0, 141.0, 720.0, 452.0)

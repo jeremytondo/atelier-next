@@ -31,8 +31,8 @@ public struct DisplaySpaceSnapshot: Equatable, Sendable {
 
 public enum SpaceTopology {
   /// Converts the undocumented dictionaries returned by
-  /// SLSCopyManagedDisplaySpaces into the deliberately small model used by
-  /// the prototype. A TileLayoutManager marks a full-screen/tiled Space.
+  /// SLSCopyManagedDisplaySpaces into this deliberately small model. A
+  /// TileLayoutManager marks a full-screen/tiled Space.
   public static func decode(_ rawDisplays: [[String: Any]]) -> [DisplaySpaceSnapshot] {
     rawDisplays.compactMap { rawDisplay in
       guard let identifier = rawDisplay["Display Identifier"] as? String,
@@ -95,32 +95,6 @@ public enum SpaceTopology {
       }
     }
     return nil
-  }
-
-  /// Returns the one new regular Desktop on the requested display. Any
-  /// ambiguous topology change fails closed instead of guessing.
-  public static func addedDesktop(
-    on displayIdentifier: String,
-    before: [DisplaySpaceSnapshot],
-    after: [DisplaySpaceSnapshot]
-  ) -> ManagedSpaceSnapshot? {
-    guard let oldDisplay = before.first(where: { $0.identifier == displayIdentifier }),
-      let newDisplay = after.first(where: { $0.identifier == displayIdentifier })
-    else {
-      return nil
-    }
-    let oldIDs = Set(oldDisplay.regularDesktops.map(\.id))
-    let added = newDisplay.regularDesktops.filter { !oldIDs.contains($0.id) }
-    return added.count == 1 ? added[0] : nil
-  }
-
-  public static func fullIndex(
-    of spaceID: UInt64,
-    on displayIdentifier: String,
-    displays: [DisplaySpaceSnapshot]
-  ) -> Int? {
-    displays.first(where: { $0.identifier == displayIdentifier })?
-      .spaces.firstIndex(where: { $0.id == spaceID })
   }
 
   private static func integer(_ value: Any?) -> UInt64? {
