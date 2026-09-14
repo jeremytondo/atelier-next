@@ -110,6 +110,15 @@ helper bytes, taking two seconds per restore step; extraction plus verification
 took 1.50 and 1.09 seconds. This observed saving supports retaining the compact
 output caches. It does not establish a median or p95.
 
+The [revised parallel-job run](https://github.com/jeremytondo/atelier-next/actions/runs/34798401611)
+also passed: 233 seconds elapsed, 241 seconds total job execution, with warm
+tool caches but misses for both revised native input keys. Portable and native
+jobs started five seconds apart after classification. The host build took
+171.7 seconds, Debug test invocation 50.2 seconds, Release helpers 45.8 seconds,
+and the bundle check 4.7 seconds. Compiler time also varied materially, so the
+109-second reduction from the first implementation run cannot be attributed
+entirely to scheduling. Subsequent diagnostics record CPU identity/count too.
+
 Before claiming the issue's performance completion criteria, measure cold
 native, repeated warm, JS-only, docs-only, and manual dev-release workflows.
 Retain run URLs, `ci:report` JSON, diagnostic artifacts, compressed cache bytes,

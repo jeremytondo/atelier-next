@@ -8,10 +8,14 @@ case "${1:-}" in
   start) date +%s > "$root/.build/metrics/job-start" ;;
   tools)
     {
-      printf 'Runner: %s %s %s\n' "${RUNNER_OS:-local}" "${RUNNER_ARCH:-$(uname -m)}" "${ImageVersion:-local}"
+      printf 'Runner: %s %s %s %s\n' "${RUNNER_OS:-local}" "${RUNNER_ARCH:-$(uname -m)}" "${ImageVersion:-local}" "${RUNNER_NAME:-local}"
       mise --version
       mise ls --current
-      if [[ $(uname -s) == Darwin ]]; then "$root/scripts/toolchain.sh"; fi
+      if [[ $(uname -s) == Darwin ]]; then
+        printf 'CPU: '; sysctl -n machdep.cpu.brand_string
+        printf 'Logical CPUs: '; sysctl -n hw.logicalcpu
+        "$root/scripts/toolchain.sh"
+      fi
     } > "$root/.build/metrics/tools.txt" ;;
   summary)
     summary=${GITHUB_STEP_SUMMARY:-/dev/stdout}
