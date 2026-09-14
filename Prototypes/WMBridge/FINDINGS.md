@@ -1,3 +1,22 @@
+# ATE-40 verdict — updated September 14, 2026
+
+**Proceed with a small production adapter, gated to macOS 27.** On macOS 27.0
+(26A428), arm64, SIP fully enabled, one nonmirrored display, raw WMBridge
+creation registers with Dock automatically: Mission Control shows the new
+Desktop, the newly required highest numbered shortcut enters it through the
+production engine's existing switch, native adjacent entry works, and saved
+typing lands on the new Desktop. No Mission Control overview or display setup
+UI appeared in the reviewed recordings. See
+[the macOS 27 evidence](Evidence/2026-09-14-macos-27.md) and
+[the prepared-entry measurements](Evidence/2026-09-14-prepared-entry.md).
+
+The September 13 verdict below stands for macOS 26.5.2. On that build the
+created Desktop needed a transient virtual display before Dock showed it, and
+new numbered shortcuts were never registered. Two displays, fullscreen
+neighbors, and the mirrored configuration on macOS 27 remain untested.
+
+---
+
 # ATE-40 local verdict — September 13, 2026
 
 **Do not adopt this operation on the tested configuration.** Two calls produced
