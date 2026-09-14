@@ -21,10 +21,12 @@ do not follow it blindly or deviate from it silently.
 
 ## Maintainability
 
-Hammerspoon 2 is Atelier's application and automation foundation. Implement
-customizable defaults through its JavaScript APIs first. Add native mechanisms
-only for demonstrated gaps, keep upstream integration patches small, and preserve
-user-owned configuration across updates.
+Atelier owns its native app shell. Hammerspoon 2 supplies the in-process
+JavaScript runtime, automation APIs, and Console; the native Space helper stays
+out of process. Implement customizable defaults through JavaScript APIs first.
+Compose by excluding upstream shell files and adding Atelier source; keep
+remaining upstream patches small. Add native mechanisms only for demonstrated
+gaps, and preserve user-owned configuration across updates.
 
 Long-term maintainability is a core priority. Prefer shared, plainly named
 logic over duplication, and change an existing design when that produces a

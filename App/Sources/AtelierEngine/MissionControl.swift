@@ -404,7 +404,11 @@ final class MissionControlAccessibility {
       x: offset < 0 ? destinationFrame.minX + 4 : destinationFrame.maxX - 4,
       y: destinationFrame.midY
     )
-    guard drag(from: CGPoint(x: sourceFrame.midX, y: sourceFrame.midY), to: destinationPoint) else {
+    // Dock preserves the grab offset inside the thumbnail. Match the left-edge
+    // insertion target with a left-edge grab; a center grab can skip a slot or
+    // drop back into the original position.
+    let sourcePoint = CGPoint(x: sourceFrame.minX + 4, y: sourceFrame.midY)
+    guard drag(from: sourcePoint, to: destinationPoint) else {
       return .failure(MissionControlError(message: "Could not synthesize the Desktop drag"))
     }
 

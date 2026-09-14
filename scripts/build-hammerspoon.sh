@@ -40,7 +40,7 @@ trap 'rm -rf "$stage"' EXIT
 ditto "$app" "$stage/Hammerspoon 2.app"
 cp "$root/.build/hammerspoon2/LICENSE" "$stage/Hammerspoon2-LICENSE"
 mkdir "$stage/Licenses"
-for dependency in AXSwift javascript-core-extras swift-commandlinekit xctest-dynamic-overlay; do
+for dependency in AXSwift javascript-core-extras swift-commandlinekit xctest-dynamic-overlay swift-issue-reporting Sparkle; do
   cp "$root/.build/hs2-derived/SourcePackages/checkouts/$dependency/LICENSE" "$stage/Licenses/$dependency.txt"
   test -s "$stage/Licenses/$dependency.txt"
 done

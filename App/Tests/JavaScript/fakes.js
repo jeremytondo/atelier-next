@@ -1,9 +1,9 @@
 "use strict";
 // Small fakes of the HS2 boundaries used by Atelier; no macOS state is touched.
 function fakeHS() {
-  const tasks = [], timers = [], keys = [], watched = [];
+  const tasks = [], timers = [], keys = [], watched = [], removedWatchers = [];
   const snapshot = {trusted:true, focused:0, targetDisplay:"Main", missionControl:false, displays:[{id:"Main",current:"1",spaces:[{id:"1",fullscreen:false}]}],windows:[]};
-  const state = {tasks, timers, keys, watched, snapshot, replies:true, trusted:true, failBinding:null, requests:[]};
+  const state = {tasks, timers, keys, watched, removedWatchers, snapshot, replies:true, trusted:true, failBinding:null, requests:[]};
   const timer = callback => { const value = {callback, stopped:false, stop() { this.stopped = true; }}; timers.push(value); return value; };
   const hs = {
     timer:{doAfter:(_, callback) => timer(callback), doEvery:(_, callback) => timer(callback)},
@@ -29,7 +29,7 @@ function fakeHS() {
       keys.push(key); return key;
     }},
     application:{fromPID:() => null}, window:{focusedWindow:() => null},
-    ax:{addWatcher:(...args) => watched.push(args), removeWatcher:() => {}},
+    ax:{applicationElement:() => null, addWatcher:(...args) => watched.push(args), removeWatcher:(...args) => removedWatchers.push(args)},
     notify:{show:() => {}}, reload:() => { state.reloaded = true; },
   };
   return {hs, state};

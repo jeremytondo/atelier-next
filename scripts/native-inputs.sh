@@ -6,11 +6,11 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$root"
 kind=${1:?usage: native-inputs.sh prepare|host|helpers}
 common=(scripts/tree-digest.sh scripts/build-state.sh scripts/with-lock.sh scripts/native-inputs.sh)
-integration=(App/Hammerspoon/upstream.json App/Hammerspoon/*.patch App/Hammerspoon/AtelierHost.swift App/Hammerspoon/Atelier.xcscheme)
+integration=(App/Hammerspoon/upstream.json App/Hammerspoon/*.patch App/Hammerspoon/Shell App/Hammerspoon/ShellCore App/Hammerspoon/IPC App/Hammerspoon/Atelier.xcscheme)
 case "$kind" in
   prepare) paths=("${integration[@]}" scripts/prepare-hammerspoon.sh "${common[@]}") ;;
   host) paths=("${integration[@]}" .xcodebuildmcp/config.yaml scripts/prepare-hammerspoon.sh scripts/build-hammerspoon.sh scripts/toolchain.sh scripts/timed.sh mise.toml "${common[@]}") ;;
-  helpers) paths=(App/Package.swift App/Package.resolved App/Sources .xcodebuildmcp/config.yaml scripts/build-helpers.sh scripts/toolchain.sh scripts/timed.sh mise.toml "${common[@]}") ;;
+  helpers) paths=(App/Package.swift App/Package.resolved App/Sources App/Hammerspoon/ShellCore .xcodebuildmcp/config.yaml scripts/build-helpers.sh scripts/toolchain.sh scripts/timed.sh mise.toml "${common[@]}") ;;
   *) exit 2 ;;
 esac
 {
