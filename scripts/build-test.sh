@@ -4,7 +4,19 @@
 set -euo pipefail
 project=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-build-tests.XXXXXX")
-trap 'rm -rf "$temporary"' EXIT
+cleanup() {
+  local status=$? log
+  if ((status != 0)); then
+    for log in "$temporary/prepare.log" "$temporary/host.log" "$temporary/helpers.log"; do
+      if [[ -f $log ]]; then
+        echo "Build-test diagnostics: ${log##*/}" >&2
+        cat "$log" >&2
+      fi
+    done
+  fi
+  rm -rf "$temporary"
+}
+trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 expect_failure() {
   if "$@" > "$temporary/failure.log" 2>&1; then fail "unexpected success: $*"; fi

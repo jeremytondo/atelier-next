@@ -48,7 +48,7 @@ mkdir "$shell/Atelier"
 cp "$root"/App/Hammerspoon/Shell/*.swift "$root"/App/Hammerspoon/ShellCore/*.swift "$shell/Atelier/"
 cp "$root"/App/Hammerspoon/IPC/*.swift "$shell/Modules/hs.ipc/"
 cp "$root"/App/Hammerspoon/IPC/*.swift "$stage/source/hs2/"
-[[ $(rg -l '^@main$' "$shell" -g '*.swift' | wc -l | tr -d ' ') == 1 ]] || { echo 'Expected exactly one app entry point' >&2; exit 1; }
+[[ $(grep -rl --include='*.swift' '^@main$' "$shell" | wc -l | tr -d ' ') == 1 ]] || { echo 'Expected exactly one app entry point' >&2; exit 1; }
 mkdir -p "$stage/source/Hammerspoon 2.xcodeproj/xcshareddata/xcschemes"
 cp "$root/App/Hammerspoon/Atelier.xcscheme" "$stage/source/Hammerspoon 2.xcodeproj/xcshareddata/xcschemes/"
 # Xcode creates this empty directory while resolving the locked packages. Make
