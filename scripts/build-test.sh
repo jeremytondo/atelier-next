@@ -67,7 +67,10 @@ cat > "$temporary/bin/ditto" <<'DITTO'
 set -euo pipefail
 if [[ -d $1 ]]; then mkdir -p "$2"; cp -R "$1/." "$2/"; else cp "$1" "$2"; fi
 DITTO
-printf '#!/usr/bin/env bash\necho arm64\n' > "$temporary/bin/lipo"
+cat > "$temporary/bin/lipo" <<'LIPO'
+#!/usr/bin/env bash
+printf '%s\n' "${FAKE_ARCHS:-arm64}"
+LIPO
 chmod +x "$temporary/bin/"*
 export PATH="$temporary/bin:$PATH"
 prepare() { "$root/scripts/prepare-hammerspoon.sh" > "$temporary/prepare.log" 2>&1; }
@@ -106,6 +109,7 @@ prepare
 
 host; helpers
 host --verify; helpers --verify
+grep -q ' ARCHS=arm64 ' "$FAKE_BUILD_LOG" || fail 'host compilation did not restrict Release architectures'
 [[ $(wc -l < "$FAKE_BUILD_LOG") -eq 2 ]] || fail 'verified outputs recompiled'
 printf 'JS-only edit\n' > "$root/App/Resources/runtime.js"
 host; helpers
@@ -135,6 +139,10 @@ expect_failure helpers --verify
 helpers
 printf 'changed host\n' >> "$root/App/Hammerspoon/AtelierHost.swift"
 expect_failure host --verify
+for architectures in x86_64 'x86_64 arm64'; do
+  FAKE_ARCHS="$architectures" expect_failure host
+  expect_failure host --verify
+done
 FAKE_COMPILE_FAIL=true expect_failure host
 expect_failure host --verify
 host
