@@ -4,7 +4,6 @@
 // General Group focus, Fill, shortcuts, and observation live in HS2 JavaScript.
 import AppKit
 import ApplicationServices
-import QuickAppSupport
 
 struct QuickAppState {
   var pid: Int32

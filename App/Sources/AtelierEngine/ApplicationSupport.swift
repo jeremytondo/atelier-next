@@ -60,14 +60,6 @@ public struct TargetApplication: Sendable {
   }
 }
 
-private func copyAXAttribute(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
-  var value: CFTypeRef?
-  guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
-    return nil
-  }
-  return value
-}
-
 private func boolAXAttribute(_ element: AXUIElement, _ attribute: String) -> Bool {
   copyAXAttribute(element, attribute) as? Bool ?? false
 }

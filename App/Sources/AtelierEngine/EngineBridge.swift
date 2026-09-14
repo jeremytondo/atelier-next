@@ -4,7 +4,6 @@ import CoreGraphics
 import Darwin
 import DesktopBridge
 import Foundation
-import QuickAppSupport
 import SpaceControlCore
 
 struct BridgeError: LocalizedError {

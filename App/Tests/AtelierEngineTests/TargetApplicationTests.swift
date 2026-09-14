@@ -1,4 +1,4 @@
-import QuickAppSupport
+@testable import AtelierEngine
 import Testing
 
 @Test @MainActor func resolvesNamesBundleIDsAndPathsToTheSameApp() throws {
