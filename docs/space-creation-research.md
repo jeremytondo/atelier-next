@@ -5,16 +5,98 @@ Integrity Protection, and no Mission Control flash from normal Atelier actions.
 The user prefers a compact keyboard panel and ideally wants no visible Mission
 Control preparation step either. Native macOS commands must remain available.
 
-No creation mechanism reviewed so far satisfies all of those requirements and
-preferences. Shortening the Mission Control sequence cannot meet zero flash;
-Dock injection is ruled out by the SIP requirement. Pre-created Desktops remain
-a candidate, but their initial provisioning and replenishment are unresolved.
-The earlier recommendation to optimize the visible creation sequence is
-superseded by these constraints.
+The deeper follow-up found a concrete candidate: SkyLight's private window
+management bridge can reportedly create ordinary managed Desktops with SIP fully
+enabled, without Mission Control automation or Dock injection. Published device
+reports cover macOS 26.6.1 and 27 RC; the corresponding implementation is present
+in the installed 26.5.2 framework. Local behavioral reproduction is still needed.
+This changes the recommendation: investigate direct creation before accepting a
+reserve or visible preparation. Neither the earlier visible-sequence optimization
+nor the reserve is an accepted product design.
 
 This is research, not an implementation decision or a performance benchmark.
 The user explicitly requires real macOS Desktops. No Desktop/window mutations,
 app launches, preference changes, or security-setting changes were performed.
+
+**Follow-up discovery: the window management bridge**
+
+Two projects provide more than private API names:
+
+- KiwiDesk's August 18 device report describes creation with options `0` and
+  empty values on macOS 26.6.1 (`25G76`), with the new Desktop joining the managed
+  census. A separate app without Accessibility trust also created and destroyed
+  a Desktop. [Device report](https://github.com/KiwiCanopy/KiwiDesk/issues/889#issuecomment-5328619379),
+  [untrusted-app report](https://github.com/KiwiCanopy/KiwiDesk/issues/889#issuecomment-5328727628)
+- KiwiDesk merged a runtime-resolved wrapper on August 25. Its author reports
+  exercising the exact wrapper's create/destroy round trip on that same build.
+  The wrapper alone was not yet a user-facing feature in that PR.
+  [Merged PR 990](https://github.com/KiwiCanopy/KiwiDesk/pull/990)
+- Native Space Kit reports ordinary Desktop creation on macOS 27 RC (`26A428`),
+  arm64, SIP enabled. It checks that the returned ID becomes a new `type 0`
+  managed Space, and reports matching native Mission Control ordering. Its
+  tested layout is one display with ordinary Desktops. It cites KiwiDesk for
+  the dispatch pattern, so these are separate reported device exercises of a
+  shared approach, not independent discoveries.
+  [Pinned findings](https://github.com/Fjx-dylanZ/native-space-kit/blob/01b7e49718d500ed08add3e95533e2b9b41b2561/docs/findings.md)
+
+The reviewed Native Space Kit creation code initializes AppKit, resolves
+`SLSBridgedSpaceCreateOperation`, calls `initWithOptions:values:` with unsigned
+32-bit `0` and an empty dictionary, then calls `performWithWMBridgeDelegate`.
+Creation is synchronous and returns an object with a 64-bit `spaceID`. The code
+subsequently polls `SLSCopyManagedDisplaySpaces` for that exact ID and checks its
+type. It uses no Mission Control AX operation, input synthesis, or injection in
+this path. It preserves the returned ID even when confirmation times out.
+[Creation implementation](https://github.com/Fjx-dylanZ/native-space-kit/blob/01b7e49718d500ed08add3e95533e2b9b41b2561/src/native_space_kit.m#L370)
+
+The reports do not establish a universal zero-frame-flash guarantee. Native
+Space Kit describes screen recordings, with its explicit no-slide observation
+attached to activation; raw recordings and machine reports are not committed.
+Creation's lack of UI automation is promising, but must be checked visually
+through Atelier's actual process. Multiple displays, fullscreen neighbors,
+keyboard focus, and native commands after creation need local verification.
+Its create call has no explicit display argument, so placement is a first-class
+open question. Do not infer those behaviors from the managed census alone.
+
+**Local static confirmation of the bridge**
+
+Read-only `dyld_info -exports`, `-uuid`, and `-disassemble` inspection of
+`/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/SkyLight` on
+26.5.2 establishes:
+
+- Framework UUID: `6F1978A2-1B8A-3A44-903D-532EED7106EB`, arm64e.
+- `SLSBridgedSpaceCreateOperation` is exported, with named implementations of
+  `initWithOptions:values:`, `makeResultWithSpaceID:`, and `invokeFallback`.
+- The synchronous `performWithWMBridgeDelegate` implementation starts at
+  `0x186EC2940`. It obtains the bridge delegate and calls
+  `performSynchronousBridgedWindowManagementOperation:` at `0x186EC2968`.
+- `SLSSpaceCreate` starts at `0x186FCD65C`. It checks
+  `SLSWindowManagementClientOperationsEnabled`, then either constructs the
+  bridged creation operation or takes the older
+  `SLSWindowServerClientSpaceCreate` path. The bridged path reads `spaceID`.
+- Delegate lookup at `0x186EC0EF0` has a fallback delegate when no registered
+  delegate exists. Presence of the class therefore cannot prove that an
+  arbitrary command-line process has a functioning AppKit bridge.
+
+These observations support testing on the current Mac; they do not establish a
+minimum supported macOS version or that creation works here. No private
+operation was invoked. The newer bridge and its dispatch context are why old
+`CGSSpaceCreate` failures do not settle current feasibility. The separately
+entitled DockPPT service below remains an unsuitable route, but does not rule
+out this one.
+
+Atelier's existing engine already initializes `NSApplication.shared`, handles
+requests on the main actor, and runs AppKit's event loop. That is a plausible
+place for a small native capability exposed to HS2 JavaScript if the experiment
+passes; it is not yet proof that the required delegate is registered there.
+[Engine entry point](../App/Sources/AtelierEngine/EngineBridge.swift)
+
+The startup-reserve investigation did not establish a provisioning mechanism.
+Dock's `GetWorkspacesCountPreference` calls `allUserSpaces` and then `count`
+at `0x1000976C0` and `0x1000976D0`; that lead is a query, not a requested count.
+The reviewed `restore-spaces` implementation creates missing capacity through
+`hs.spaces.addSpaceToScreen`, which still opens Mission Control. Editing saved
+topology before login remains untested and is lower priority than the concrete
+bridge candidate. [Restoration source](https://github.com/tplobo/restore-spaces/blob/development/restore_spaces/rs/environment.lua#L235)
 
 **What makes the current implementation slow**
 
@@ -91,6 +173,7 @@ binary. Presence of a creation command alone does not establish caller access.
 
 | Tool or mechanism | Native Desktops? | Finding for Atelier |
 | --- | --- | --- |
+| SkyLight WMBridge / KiwiDesk / Native Space Kit | Reported and checked against managed topology | Concrete direct-creation candidate with SIP enabled. See the follow-up above; local behavior and zero flash remain unverified. |
 | Hammerspoon 2 | Yes, through Atelier's helper today | Refreshed upstream `main` at `c0bd4d6ecfcb30b426b5b12a4292a95ad418f8ad` has no `hs.spaces` module or Desktop creation API. Its AX and timer APIs can coordinate an improved sequence. Atelier pins 0.0.12 at `7a218ddfc3c6c49246bff3e538c9c46e29a59caf`. |
 | Hammerspoon 1 `hs.spaces` | Yes | Opens Mission Control, finds `mc.spaces.add`, presses it, and optionally closes the overview. Creation does not require our pointer expansion or repeated thumbnail waits. Useful prior art, not a tested timing guarantee on this Mac. |
 | Yabai | Yes | Creation calls its scripting addition, which constructs a Dock `ManagedSpace` and invokes Dock's internal add function. Requires partially disabled SIP. |
@@ -123,10 +206,11 @@ with changed add-Space patterns, but that June beta report does not establish
 27 RC compatibility. [Yabai changelog](https://github.com/asmvik/yabai/blob/dd845723416f5fe92af49fad5ebab00369e07edd/CHANGELOG.md),
 [27 beta report](https://github.com/asmvik/yabai/issues/2802)
 
-Old `CGSSpaceCreate` examples are another misleading lead. A low-level Space
-object is not evidence of a correctly registered ordinary Desktop with Dock's
-display ordering and lifecycle. The old Hammerspoon extension that offered
-direct creation is explicitly unmaintained; it documented Dock resets and broken
+Old `CGSSpaceCreate` examples need to be distinguished from the current bridge.
+A low-level Space object alone is not evidence of a correctly registered
+ordinary Desktop with Dock's display ordering and lifecycle. The old Hammerspoon
+extension that offered direct creation is explicitly unmaintained; it documented
+Dock resets and broken
 multi-display creation even on 10.11. It is historical evidence, not a validated
 route for 26/27. [Old extension](https://github.com/asmagill/hs._asm.undocumented.spaces)
 
@@ -150,7 +234,8 @@ new ordinary Desktop with Dock while SIP stays fully enabled, without exposing
 Mission Control or relying on a full-screen covering interface? A candidate
 must preserve native switching, ordering, display association, and window
 membership. A returned low-level Space ID alone is insufficient. No such
-candidate has been validated; this is not proof that none exists.
+candidate has been validated locally. The WMBridge reports now provide a
+specific candidate with evidence of ordinary managed creation elsewhere.
 
 If that investigation does not establish a route, a reserve requires an explicit
 product compromise about provisioning. The user's preference against visible
@@ -199,7 +284,24 @@ would additionally need session-scoped ownership, fresh occupancy checks,
 invalidation after topology changes, and the existing global numbered-shortcut
 limit. An apparently empty user Desktop is not automatically an Atelier reserve.
 
-The immediate recommendation is to resolve creation feasibility separately from
-the panel design. Do not adopt a reserve or a reduced-flash fallback as though it
-already satisfies the user's zero-flash requirement. No application behavior was
-changed during this discussion.
+**Next experiment and acceptance criteria**
+
+The immediate recommendation is a focused WMBridge creation experiment using
+disposable Desktops and saved fixture windows. Start with an isolated GUI test
+session or VM, then verify in Atelier's host context. Confirm SIP remains fully
+enabled, resolve method signatures, and verify a bridge read before mutation.
+Create one Desktop without switching, require exactly one new ordinary managed
+ID matching the return value, and record the screen throughout. Check that the
+current Desktop, focus, existing windows, and pointer remain unchanged.
+
+Next, enter the new Desktop through existing native commands, confirm typing
+goes to the intended fixture, and verify Mission Control shows it normally when
+explicitly opened for inspection. Test the target-display contract and fullscreen
+adjacency before wiring the compact panel. Only remove test-owned Desktops after
+fresh occupancy checks; preserve evidence and stop if cleanup is uncertain.
+
+A successful isolated trial establishes a route, not production reliability.
+Repeat on the supported OS/display configurations and confirm failure handling
+before adopting it. A failed or unavailable bridge must not silently fall back
+to visible Mission Control. Keep reserves as a deferred compromise while this
+candidate is evaluated. No application behavior was changed during this research.
