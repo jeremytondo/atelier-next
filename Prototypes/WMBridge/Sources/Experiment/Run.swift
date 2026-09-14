@@ -23,7 +23,7 @@ final class MutationLock {
   deinit { close(descriptor) }
 }
 
-func runCreate(path: String, display: String, preflightOnly: Bool = false, engineOwnsLock: Bool = false) throws -> [String: Any] {
+func runCreate(path: String, display requestedDisplay: String?, preflightOnly: Bool = false, engineOwnsLock: Bool = false) throws -> [String: Any] {
   let lock = try engineOwnsLock ? nil : MutationLock()
   return try withExtendedLifetime(lock) {
     guard NSScreen.screens.count == 1 else { throw TrialError("Placement is unproven: mutation currently requires exactly one screen") }
@@ -31,7 +31,7 @@ func runCreate(path: String, display: String, preflightOnly: Bool = false, engin
     guard probe["bridgeAnswered"] as? Bool == true, probe["bridgeMatchesCensus"] as? Bool == true,
       probe["createABIAvailable"] as? Bool == true else { throw TrialError("Bridge capability preflight failed") }
     let rawBefore = try nativeCensus(), before = try Creation.decode(rawBefore)
-    guard before.count == 1, before[0].identifier == display else { throw TrialError("Requested display does not match the only native display") }
+    let display = try Creation.targetDisplay(requested: requestedDisplay, screenCount: NSScreen.screens.count, census: before)
     let sip = commandOutput("/usr/bin/csrutil", ["status"])
     guard sip == "System Integrity Protection status: enabled." else { throw TrialError("Fully enabled SIP was not confirmed: \(sip)") }
     let session = CGSessionCopyCurrentDictionary() as? [String: Any]

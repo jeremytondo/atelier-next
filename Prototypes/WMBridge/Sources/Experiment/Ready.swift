@@ -44,14 +44,15 @@ func refreshVerified(_ refresh: [String: Any], count: Int) -> Bool {
   let dock = NativeBridge.dockSpaceCount() as! [String: Any]
   return refresh["mutationDispatched"] as? Bool == true && refresh["modeAndBoundsUnchanged"] as? Bool == true &&
     refresh["mirrorGroupUnchanged"] as? Bool == true && refresh["onlineDisplaysUnchanged"] as? Bool == true &&
-    refresh["setupUIObserved"] as? Bool == false &&
+    refresh["setupUIObserved"] as? Bool == false && refresh["setupQueryComplete"] as? Bool == true &&
     dock["status"] as? Int == 0 && dock["count"] as? Int == count
 }
 
-func runReady(path: String, display: String, enter: Bool, testTyping: Bool) throws -> [String: Any] {
+func runReady(path: String, display requestedDisplay: String?, enter: Bool, testTyping: Bool) throws -> [String: Any] {
   let lock = try MutationLock()
   return try withExtendedLifetime(lock) {
     let before = try nativeCensus(), original = try Creation.decode(before)
+    let display = try Creation.targetDisplay(requested: requestedDisplay, screenCount: NSScreen.screens.count, census: original)
     let dock = NativeBridge.dockSpaceCount() as! [String: Any]
     guard original.count == 1, original[0].identifier == display, original[0].spaces.allSatisfy({ $0.rawType == 0 }),
       dock["status"] as? Int == 0, dock["count"] as? Int == original[0].spaces.count,
@@ -64,6 +65,7 @@ func runReady(path: String, display: String, enter: Bool, testTyping: Bool) thro
     guard created["status"] as? String == "managed-type0-confirmed", let idString = created["createdID"] as? String,
       let id = UInt64(idString) else { return created }
     let journal = try Journal(path: path, create: false)
+    let setupObservation = DisplaySetupObservation()
     var report = created
     report["status"] = "created-refresh-unconfirmed"
     do {
@@ -93,7 +95,11 @@ func runReady(path: String, display: String, enter: Bool, testTyping: Bool) thro
       guard placed.count == 1, placed[0].identifier == display, placed[0].currentSpaceID == original[0].currentSpaceID,
         placed[0].spaces.filter({ $0.id != id }) == original[0].spaces,
         placed[0].spaces.firstIndex(where: { $0.id == id }) == homeIndex + 1 else { throw TrialError("Adjacent placement was not confirmed") }
-      let refresh = refreshDisplays(mode: "refresh-virtual-pulse")
+      let refresh = refreshDisplays(mode: "refresh-virtual-pulse", setupObservation: setupObservation, ready: {
+        guard let fresh = try? Creation.decode(nativeCensus()), fresh == placed else { return false }
+        let count = NativeBridge.dockSpaceCount() as! [String: Any]
+        return count["status"] as? Int == 0 && count["count"] as? Int == placed[0].spaces.count
+      })
       report["refresh"] = refresh
       try journal.write("ready-refresh.json", refresh)
       let ready = try Creation.decode(nativeCensus())
@@ -127,6 +133,14 @@ func runReady(path: String, display: String, enter: Bool, testTyping: Bool) thro
         if testTyping { report["typing"] = try typingFixture(directory: journal.directory, spaceID: id) }
       }
     } catch { report["error"] = error.localizedDescription }
+    // Keep the full observation window, overlapping it with native entry and
+    // typing instead of delaying the user's switch by a fixed second.
+    let setup = setupObservation.finish()
+    report["setupObservation"] = setup
+    if setup["setupUIObserved"] as? Bool == true || setup["queryComplete"] as? Bool != true {
+      report["error"] = "Display setup UI appeared or could not be observed; inspect the retained Desktop"
+    }
+    report["creationToCompletionMilliseconds"] = (ProcessInfo.processInfo.systemUptime - started) * 1000
     report["after"] = try nativeCensus()
     try journal.write("ready-result.json", report)
     return report

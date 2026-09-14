@@ -16,7 +16,13 @@ mise run desktop:create -- --enter
 The command detects the display, requests creation once, places the new Desktop
 immediately after the current one, and briefly creates/releases a private virtual
 display to make Dock reconcile its Desktop list. It verifies the original display
-configuration and Dock's count. `--enter` uses the enabled native next-Desktop
+configuration and Dock's count. Capability checking and creation share one native
+invocation; the probe is retained in `creation/intent.json`. Once display callbacks
+settle and Dock agrees with the fresh topology, entry can proceed while the
+one-second display setup UI observation continues. The command prints its elapsed
+time, including helper build/startup. See the
+[latency measurements](Evidence/2026-09-14-creation-latency.md).
+`--enter` uses the enabled native next-Desktop
 shortcut; omit it to keep the current Desktop active. New numbered shortcut
 registrations remain unavailable, so use adjacent switching or Mission Control.
 `--raw` retains the original WMBridge-only creation trial. It saves private logs

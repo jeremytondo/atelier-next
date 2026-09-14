@@ -27,9 +27,9 @@ function fixture(t, overrides = {}) {
 test("manual creation dispatches exactly once and leaves the returned ID for the user", t => {
   const f = fixture(t);
   assert.equal(main(["create"], f.options), 0);
-  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
-  const directory = path.dirname(f.calls[1][1]);
-  assert.deepEqual(f.calls[1], ["create-ready", path.join(directory, "creation"), "A", "--disposable-session"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["create-ready"]);
+  const directory = path.dirname(f.calls[0][1]);
+  assert.deepEqual(f.calls[0], ["create-ready", path.join(directory, "creation"), "auto", "--disposable-session"]);
   assert.equal(fs.statSync(directory).mode & 0o777, 0o700);
   assert.equal(fs.statSync(path.join(directory, "cli-result.json")).mode & 0o777, 0o600);
   assert.equal(JSON.parse(fs.readFileSync(path.join(directory, "cli-result.json"))).createdID, "42");
@@ -40,28 +40,25 @@ test("manual creation dispatches exactly once and leaves the returned ID for the
 test("native failure preserves evidence without retrying or cleaning up", t => {
   const f = fixture(t, {"create-ready": () => { throw new Error("watchdog expired; result unknown"); }});
   assert.throws(() => main(["create"], f.options), /watchdog expired/);
-  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
-  const directory = path.dirname(f.calls[1][1]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["create-ready"]);
+  const directory = path.dirname(f.calls[0][1]);
   assert.match(fs.readFileSync(path.join(directory, "cli-error.json"), "utf8"), /result unknown/);
   assert.throws(() => main(["create", directory], f.options), /EEXIST/);
-  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls.length, 1);
 });
 
 test("uncertain creation returns failure while retaining the exact returned ID", t => {
   const f = fixture(t, {"create-ready": () => ({status: "uncertain", createdID: "18446744073709551614"})});
   assert.equal(main(["create"], f.options), 2);
-  assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["create-ready"]);
   assert.ok(f.output.some(line => line.includes("18446744073709551614")));
 });
 
-test("ambiguous displays and missing capability refuse before creation", t => {
-  for (const failure of ["displays", "capability"]) {
-    const f = fixture(t);
-    if (failure === "displays") f.probe.censusAfter.push({...f.probe.censusAfter[0]});
-    else f.probe.createABIAvailable = false;
-    assert.throws(() => main(["create"], f.options));
-    assert.deepEqual(f.calls.map(call => call[0]), ["probe"]);
-  }
+test("native preflight refusal is preserved without a second invocation", t => {
+  const f = fixture(t, {"create-ready": () => { throw new Error("Creation requires exactly one screen"); }});
+  assert.throws(() => main(["create"], f.options), /exactly one screen/);
+  assert.deepEqual(f.calls.map(call => call[0]), ["create-ready"]);
+  assert.equal(fs.existsSync(path.join(path.dirname(f.calls[0][1]), "cli-result.json")), false);
 });
 
 test("check and status without a trial are read only and allocate no trial", t => {
@@ -102,19 +99,19 @@ test("diagnosis is read only and preserves the saved-configuration disagreement"
 test("entry is explicit and raw creation remains independently runnable", t => {
   const entry = fixture(t, {"create-ready": () => ({status: "native-entry-confirmed", createdID: "42"})});
   assert.equal(main(["create", "--enter"], entry.options), 0);
-  assert.deepEqual(entry.calls.map(call => call[0]), ["probe", "create-ready"]);
-  assert.deepEqual(entry.calls[1].slice(-2), ["--disposable-session", "--enter"]);
+  assert.deepEqual(entry.calls.map(call => call[0]), ["create-ready"]);
+  assert.deepEqual(entry.calls[0].slice(-2), ["--disposable-session", "--enter"]);
   const raw = fixture(t);
   assert.equal(main(["create", "--raw"], raw.options), 0);
-  assert.deepEqual(raw.calls.map(call => call[0]), ["probe", "create"]);
+  assert.deepEqual(raw.calls.map(call => call[0]), ["create"]);
 });
 
-test("refresh and entry failure never trigger another create, navigation, or cleanup", t => {
-  for (const status of ["created-refresh-unconfirmed", "dock-registration-confirmed"]) {
+test("refresh, entry, and later observation failure cannot report success or retry", t => {
+  for (const status of ["created-refresh-unconfirmed", "dock-registration-confirmed", "native-entry-confirmed"]) {
     const f = fixture(t, {"create-ready": () => ({status, createdID: "42", error: "Destination not verified"})});
     assert.equal(main(["create", "--enter"], f.options), 2);
-    assert.deepEqual(f.calls.map(call => call[0]), ["probe", "create-ready"]);
-    const saved = JSON.parse(fs.readFileSync(path.join(path.dirname(f.calls[1][1]), "cli-result.json")));
+    assert.deepEqual(f.calls.map(call => call[0]), ["create-ready"]);
+    const saved = JSON.parse(fs.readFileSync(path.join(path.dirname(f.calls[0][1]), "cli-result.json")));
     assert.equal(saved.createdID, "42");
     assert.equal(saved.error, "Destination not verified");
   }

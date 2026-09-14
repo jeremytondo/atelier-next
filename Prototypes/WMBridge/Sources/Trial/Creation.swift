@@ -11,6 +11,15 @@ public enum Observation: Equatable {
 }
 
 public enum Creation {
+  public static func targetDisplay(requested: String?, screenCount: Int,
+    census: [DisplaySpaceSnapshot]) throws -> String {
+    guard screenCount == 1, census.count == 1,
+      requested == nil || requested == census[0].identifier else {
+      throw TrialError("Creation requires exactly one screen and the matching native display")
+    }
+    return census[0].identifier
+  }
+
   public static func decode(_ raw: [[String: Any]]) throws -> [DisplaySpaceSnapshot] {
     func integer(_ value: Any?) -> UInt64? {
       guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),

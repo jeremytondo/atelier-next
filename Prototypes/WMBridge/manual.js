@@ -67,6 +67,7 @@ function topology(report, log) {
 
 function main(args, {invoke = native, log = console.log,
   root = path.resolve(__dirname, "../../.build/ate-40-manual")} = {}) {
+  const started = performance.now();
   const enter = args.includes("--enter"), raw = args.includes("--raw");
   const positional = args.filter(arg => !["--enter", "--raw"].includes(arg));
   const [command, argument] = positional;
@@ -124,22 +125,16 @@ function main(args, {invoke = native, log = console.log,
   log(`Inspect: mise run desktop:status -- ${quote(directory)}`);
   log(`Cleanup: mise run desktop:cleanup -- ${quote(directory)}`);
   try {
-    const probe = invoke(["probe"]);
-    save(directory, "probe.json", probe);
-    const displays = probe.censusAfter;
-    if (probe.screens?.length !== 1 || displays?.length !== 1 ||
-      typeof displays[0]["Display Identifier"] !== "string" || !displays[0]["Display Identifier"]) {
-      throw new Error("Creation requires exactly one screen and one native display");
-    }
-    if (!probe.bridgeAnswered || !probe.bridgeMatchesCensus || !probe.createABIAvailable) {
-      throw new Error("WMBridge capability probe failed; no creation requested");
-    }
-    log(`Creating once on ${probe.screens[0].name ?? "the current display"}…`);
+    // Native creation already checks capability, SIP, session, and topology.
+    // Resolve the sole display there too, avoiding a separate build/run launch.
+    log("Checking the display and creating once…");
     const report = invoke([raw ? "create" : "create-ready", path.join(directory, "creation"),
-      displays[0]["Display Identifier"], "--disposable-session", ...(enter ? ["--enter"] : [])]);
+      "auto", "--disposable-session", ...(enter ? ["--enter"] : [])]);
+    report.cliMilliseconds = performance.now() - started;
     save(directory, "cli-result.json", report);
     log(`WMBridge returned Space ID: ${report.createdID ?? "unknown"}`);
     log(`Result: ${report.status}`);
+    log(`Command time: ${(report.cliMilliseconds / 1000).toFixed(2)} s (includes build/startup)`);
     topology(report, log);
     if (report.error || ![raw ? "managed-type0-confirmed" : enter ? "native-entry-confirmed" : "dock-registration-confirmed"].includes(report.status)) {
       log("The requested flow was not confirmed. Inspect this trial before running create again.");

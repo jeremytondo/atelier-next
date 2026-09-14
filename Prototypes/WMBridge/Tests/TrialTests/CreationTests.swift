@@ -10,6 +10,36 @@ private func display(_ spaces: [ManagedSpaceSnapshot], _ name: String = "A", cur
   DisplaySpaceSnapshot(identifier: name, currentSpaceID: current, spaces: spaces)
 }
 
+@Test func automaticSelectionRequiresTheSameUnambiguousDisplayAsExplicitSelection() throws {
+  let one = [display([space(1)])]
+  #expect(try Creation.targetDisplay(requested: nil, screenCount: 1, census: one) == "A")
+  #expect(try Creation.targetDisplay(requested: "A", screenCount: 1, census: one) == "A")
+  for (requested, screens, census) in [
+    (nil, 0, one), (nil, 2, one), (nil, 1, []),
+    (nil, 1, one + [display([space(10)], "B", current: 10)]), ("B", 1, one),
+  ] as [(String?, Int, [DisplaySpaceSnapshot])] {
+    #expect(throws: TrialError.self) { try Creation.targetDisplay(requested: requested, screenCount: screens, census: census) }
+  }
+}
+
+@Test func refreshRequiresCompletedQuietCallbacksAndFreshState() {
+  var readiness = DisplayRefreshReadiness()
+  #expect(!readiness.isReady(at: 10, stateMatches: true))
+  readiness.record(display: 27, beginning: true, at: 10)
+  readiness.record(display: 3, beginning: true, at: 10)
+  readiness.record(display: 27, beginning: false, at: 10.01)
+  #expect(!readiness.isReady(at: 11, stateMatches: true)) // other display is still pending
+  readiness.record(display: 3, beginning: false, at: 11)
+  #expect(!readiness.isReady(at: 11.02, stateMatches: true))
+  #expect(!readiness.isReady(at: 11.1, stateMatches: false)) // counts/modes still disagree
+  #expect(readiness.isReady(at: 11.1, stateMatches: true))
+  readiness.record(display: 27, beginning: true, at: 11.11) // release starts a second batch
+  #expect(!readiness.isReady(at: 12, stateMatches: true))
+  readiness.record(display: 27, beginning: false, at: 12)
+  #expect(!readiness.isReady(at: 12.01, stateMatches: true))
+  #expect(readiness.isReady(at: 12.1, stateMatches: true))
+}
+
 @Test func creationRequiresAnExactInactiveTypeZeroAddition() {
   let original = [display([space(1), space(90, 4), space(2)])]
   let cases: [(String, UInt64, String, [DisplaySpaceSnapshot], Observation)] = [

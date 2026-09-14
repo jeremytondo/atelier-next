@@ -38,6 +38,8 @@ Usage:
   wmbridge-experiment serve /absolute/private-state-directory --disposable-session
   wmbridge-experiment serve-script /absolute/private-state-directory requests.jsonl --disposable-session
 Each run permits exactly one create attempt. Reconcile never replays a mutation.
+Use auto instead of DISPLAY-ID on create/create-ready to select the sole display
+  inside the same process as capability checking and creation.
 Cleanup refuses active, occupied, uncertain, or non-owned Desktops; never retries dispatch.
 Follow-up modes: place-current, reorder-roundtrip, activate-roundtrip,
   native-adjacent-roundtrip, native-select-roundtrip,
@@ -126,8 +128,8 @@ DispatchQueue.main.async {
       case "occupancy":
         guard let id = UInt64(args[1]), id > 0 else { throw TrialError("Space ID required") }
         report = NativeBridge.occupancy(id) as! [String: Any]
-      case "create": report = try runCreate(path: args[1], display: args[2])
-      case "create-ready": report = try runReady(path: args[1], display: args[2], enter: args.contains("--enter"), testTyping: args.contains("--test-typing"))
+      case "create": report = try runCreate(path: args[1], display: args[2] == "auto" ? nil : args[2])
+      case "create-ready": report = try runReady(path: args[1], display: args[2] == "auto" ? nil : args[2], enter: args.contains("--enter"), testTyping: args.contains("--test-typing"))
       case "cleanup-ready": report = try runReadyCleanup(path: args[1])
       case "cleanup": report = try runCleanup(path: args[1], reconciledDisplay: args.count == 5 ? args[4] : nil)
       case "diagnose": report = try diagnose(path: args[1])
