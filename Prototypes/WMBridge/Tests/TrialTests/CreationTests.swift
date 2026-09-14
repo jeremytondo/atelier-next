@@ -10,6 +10,31 @@ private func display(_ spaces: [ManagedSpaceSnapshot], _ name: String = "A", cur
   DisplaySpaceSnapshot(identifier: name, currentSpaceID: current, spaces: spaces)
 }
 
+@Test func nativeDockRegistrationRequiresSettledCountsWithinABound() throws {
+  for (counts, expected) in [([4], true), ([3, 3, 4], true), ([3], false),
+    ([4, 3, 4, 3, 4, 3, 4], false)] {
+    var time = 0.0, index = 0
+    let result = try DockRegistration.observe(expectedCount: 4, read: {
+      defer { index += 1 }
+      return counts[min(index, counts.count - 1)]
+    }, now: { time }, pause: { time += 0.025 })
+    #expect(result.confirmed == expected)
+    #expect(result.milliseconds >= 50 && result.milliseconds <= 175)
+  }
+}
+
+@Test func registrationReadFailureIsNotPermissionToRefresh() {
+  var time = 0.0, calls = 0
+  #expect(throws: TrialError.self) {
+    try DockRegistration.observe(expectedCount: 4, read: {
+      calls += 1
+      if calls == 2 { throw TrialError("Topology changed or count query failed") }
+      return 4
+    }, now: { time }, pause: { time += 0.025 })
+  }
+  #expect(calls == 2)
+}
+
 @Test func automaticSelectionRequiresTheSameUnambiguousDisplayAsExplicitSelection() throws {
   let one = [display([space(1)])]
   #expect(try Creation.targetDisplay(requested: nil, screenCount: 1, census: one) == "A")

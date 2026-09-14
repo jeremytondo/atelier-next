@@ -1,6 +1,6 @@
 // Composes the tested mechanisms without opening Mission Control. Creation and
-// refresh preserve the starting Desktop; optional entry uses one native adjacent
-// action because Dock does not register new numbered shortcuts on display rebuild.
+// placement preserve the starting Desktop. Observe native Dock registration
+// before using the display workaround; entry verifies one native adjacent action.
 import AppKit
 import NativeBridge
 import Trial
@@ -48,6 +48,24 @@ func refreshVerified(_ refresh: [String: Any], count: Int) -> Bool {
     dock["status"] as? Int == 0 && dock["count"] as? Int == count
 }
 
+func observeDockRegistration(expected: [[String: Any]]) throws -> [String: Any] {
+  let count = try Creation.decode(expected).flatMap(\.spaces).count
+  let observation = try DockRegistration.observe(expectedCount: count, read: {
+    guard NSArray(array: try nativeCensus()).isEqual(to: expected) else {
+      throw TrialError("Space identity, order, or current Desktop changed while waiting for Dock")
+    }
+    let dock = NativeBridge.dockSpaceCount() as! [String: Any]
+    guard dock["status"] as? Int == 0, let count = dock["count"] as? Int else {
+      throw TrialError("Dock's Desktop count is unavailable; no refresh was attempted")
+    }
+    return count
+  }, now: { ProcessInfo.processInfo.systemUptime }, pause: {
+    RunLoop.current.run(until: Date().addingTimeInterval(0.025))
+  })
+  return ["confirmed": observation.confirmed, "milliseconds": observation.milliseconds,
+    "counts": observation.counts, "expectedCount": count, "mutationDispatched": false]
+}
+
 func runReady(path: String, display requestedDisplay: String?, enter: Bool, testTyping: Bool) throws -> [String: Any] {
   let lock = try MutationLock()
   return try withExtendedLifetime(lock) {
@@ -65,7 +83,7 @@ func runReady(path: String, display requestedDisplay: String?, enter: Bool, test
     guard created["status"] as? String == "managed-type0-confirmed", let idString = created["createdID"] as? String,
       let id = UInt64(idString) else { return created }
     let journal = try Journal(path: path, create: false)
-    let setupObservation = DisplaySetupObservation()
+    var setupObservation: DisplaySetupObservation?
     var report = created
     report["status"] = "created-refresh-unconfirmed"
     do {
@@ -95,15 +113,31 @@ func runReady(path: String, display requestedDisplay: String?, enter: Bool, test
       guard placed.count == 1, placed[0].identifier == display, placed[0].currentSpaceID == original[0].currentSpaceID,
         placed[0].spaces.filter({ $0.id != id }) == original[0].spaces,
         placed[0].spaces.firstIndex(where: { $0.id == id }) == homeIndex + 1 else { throw TrialError("Adjacent placement was not confirmed") }
-      let refresh = refreshDisplays(mode: "refresh-virtual-pulse", setupObservation: setupObservation, ready: {
-        guard let fresh = try? Creation.decode(nativeCensus()), fresh == placed else { return false }
-        let count = NativeBridge.dockSpaceCount() as! [String: Any]
-        return count["status"] as? Int == 0 && count["count"] as? Int == placed[0].spaces.count
-      })
-      report["refresh"] = refresh
-      try journal.write("ready-refresh.json", refresh)
+      let rawPlaced = try nativeCensus()
+      guard try Creation.decode(rawPlaced) == placed else { throw TrialError("Topology changed before Dock registration") }
+      let registration = try observeDockRegistration(expected: rawPlaced)
+      report["nativeRegistration"] = registration
+      try journal.write("ready-registration.json", registration)
+      if registration["confirmed"] as? Bool == true {
+        report["registrationMethod"] = "native"
+        report["refresh"] = ["mutationDispatched": false, "reason": "Dock registered the Desktop without a display refresh"]
+      } else {
+        let setup = DisplaySetupObservation()
+        setupObservation = setup
+        let refresh = refreshDisplays(mode: "refresh-virtual-pulse", setupObservation: setup, ready: {
+          guard let fresh = try? Creation.decode(nativeCensus()), fresh == placed else { return false }
+          let count = NativeBridge.dockSpaceCount() as! [String: Any]
+          return count["status"] as? Int == 0 && count["count"] as? Int == placed[0].spaces.count
+        })
+        report["registrationMethod"] = "virtual-display"
+        report["refresh"] = refresh
+        try journal.write("ready-refresh.json", refresh)
+        guard refreshVerified(refresh, count: placed[0].spaces.count) else {
+          throw TrialError("Dock refresh or display restoration was not confirmed")
+        }
+      }
       let ready = try Creation.decode(nativeCensus())
-      guard ready == placed, refreshVerified(refresh, count: ready[0].spaces.count) else { throw TrialError("Dock refresh or display restoration was not confirmed") }
+      guard ready == placed else { throw TrialError("Topology changed during Dock registration") }
       report["status"] = "dock-registration-confirmed"
       report["dockSpaceCount"] = NativeBridge.dockSpaceCount()
       report["creationToReadyMilliseconds"] = (ProcessInfo.processInfo.systemUptime - started) * 1000
@@ -135,10 +169,12 @@ func runReady(path: String, display requestedDisplay: String?, enter: Bool, test
     } catch { report["error"] = error.localizedDescription }
     // Keep the full observation window, overlapping it with native entry and
     // typing instead of delaying the user's switch by a fixed second.
-    let setup = setupObservation.finish()
-    report["setupObservation"] = setup
-    if setup["setupUIObserved"] as? Bool == true || setup["queryComplete"] as? Bool != true {
-      report["error"] = "Display setup UI appeared or could not be observed; inspect the retained Desktop"
+    if let setupObservation {
+      let setup = setupObservation.finish()
+      report["setupObservation"] = setup
+      if setup["setupUIObserved"] as? Bool == true || setup["queryComplete"] as? Bool != true {
+        report["error"] = "Display setup UI appeared or could not be observed; inspect the retained Desktop"
+      }
     }
     report["creationToCompletionMilliseconds"] = (ProcessInfo.processInfo.systemUptime - started) * 1000
     report["after"] = try nativeCensus()
@@ -154,8 +190,19 @@ func runReadyCleanup(path: String) throws -> [String: Any] {
     guard report["status"] as? String == "removed" else { return report }
     let journal = try Journal(path: path, create: false)
     let before = try nativeCensus()
+    let registration = try observeDockRegistration(expected: before)
+    report["nativeRegistration"] = registration
+    if registration["confirmed"] as? Bool == true {
+      report["registrationMethod"] = "native"
+      report["refresh"] = ["mutationDispatched": false, "reason": "Dock reconciled removal without a display refresh"]
+      report["dockSpaceCount"] = NativeBridge.dockSpaceCount()
+      report["after"] = try nativeCensus()
+      try journal.write("cleanup-ready-result.json", report)
+      return report
+    }
     try journal.write("cleanup-refresh-intent.json", ["before": before, "mayApplyAfterInterruption": true])
     let refresh = refreshDisplays(mode: "refresh-virtual-pulse")
+    report["registrationMethod"] = "virtual-display"
     report["refresh"] = refresh
     let after = try nativeCensus()
     report["dockSpaceCount"] = NativeBridge.dockSpaceCount()

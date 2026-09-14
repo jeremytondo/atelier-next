@@ -29,7 +29,13 @@ func missionControlInventory(select index: Int? = nil, inspectOnly: Bool = false
   let launch = commandOutput("/usr/bin/open", ["-a", "Mission Control"])
   RunLoop.current.run(until: Date().addingTimeInterval(0.6))
   guard try visible() else { throw TrialError("Mission Control did not expose its AX hierarchy: \(launch)") }
-  let lists = try elements().filter { try attribute($0, "AXIdentifier") as? String == "mc.spaces.list" }
+  let hierarchy = try elements()
+  let lists = try hierarchy.filter { try attribute($0, "AXIdentifier") as? String == "mc.spaces.list" }
+  let identifiers = try hierarchy.map { element -> [String: Any] in
+    ["role": try attribute(element, kAXRoleAttribute, required: true) as? String ?? "",
+     "identifier": try attribute(element, "AXIdentifier") as? String ?? "",
+     "children": (try attribute(element, kAXChildrenAttribute) as? [AXUIElement])?.count ?? 0]
+  }
   let desktops = try lists.map { list -> [[String: Any]] in
     try (attribute(list, kAXChildrenAttribute) as? [AXUIElement] ?? []).map { element in
       ["title": try attribute(element, kAXTitleAttribute) as? String ?? "",
@@ -49,8 +55,14 @@ func missionControlInventory(select index: Int? = nil, inspectOnly: Bool = false
     CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: false)?.post(tap: .cghidEventTap)
   }
   RunLoop.current.run(until: Date().addingTimeInterval(0.35))
-  var result: [String: Any] = ["lists": desktops, "thumbnailCount": desktops.reduce(0) { $0 + $1.count }, "closed": try !visible()]
-  if let index { result["selectedIndex"] = index; result["selectionAXError"] = selectionError?.rawValue ?? AXError.illegalArgument.rawValue }
+  var result: [String: Any] = ["lists": desktops,
+    "thumbnailCount": lists.count == NSScreen.screens.count ? desktops.reduce(0) { $0 + $1.count } as Any : NSNull(),
+    "complete": lists.count == NSScreen.screens.count, "hierarchy": identifiers, "closed": try !visible()]
+  if let index {
+    result["selectedIndex"] = index
+    result["selectionDispatched"] = selectionError != nil
+    result["selectionAXError"] = selectionError.map { $0.rawValue as Any } ?? NSNull()
+  }
   return result
 }
 
@@ -111,7 +123,9 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
       sent = ["mutationDispatched": true, "input": "Native next-Desktop shortcut", "binding": binding]
     }
     else if mode == "native-select-roundtrip" {
-      sent = try missionControlInventory(select: index).merging(["mutationDispatched": true]) { _, new in new }
+      var selection = try missionControlInventory(select: index)
+      selection["mutationDispatched"] = selection["selectionDispatched"] as? Bool == true
+      sent = selection
     }
     else if isActivation { sent = NativeBridge.activateSpace(id, display: display, hiding: ids.filter { $0 != id }.map { NSNumber(value: $0) }) as! [String: Any] }
     else { sent = NativeBridge.placeSpace(id, display: display, index: UInt32(targetIndex)) as! [String: Any] }
@@ -129,7 +143,7 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
       report["afterDispatch"] = try nativeCensus()
       report["dockCountAfterDispatch"] = NativeBridge.dockSpaceCount()
       report["observationAfterDispatch"] = NativeBridge.observation()
-      if isActivation {
+      if isActivation && sent["mutationDispatched"] as? Bool == true {
         do { report["typing"] = try typingFixture(directory: trial.directory, spaceID: id) }
         catch { report["typingError"] = error.localizedDescription }
       }

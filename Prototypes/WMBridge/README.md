@@ -1,10 +1,11 @@
 # WMBridge Desktop creation experiment
 
 ATE-40 is an isolated feasibility experiment. Read [the original findings](FINDINGS.md)
-and the [latest end-to-end evidence](Evidence/2026-09-14-ready-flow.md) before
-running it. On this macOS 26.5.2 session, WMBridge creation plus a short-lived
-virtual display refresh produces a Desktop that native adjacent switching can
-enter. This remains prototype research; production creation is unchanged.
+and the [macOS 27 evidence](Evidence/2026-09-14-macos-27.md) before running it.
+On macOS 27.0 (26A428), raw WMBridge creation registers with Dock automatically;
+native numbered entry and saved typing both passed. On the earlier macOS 26.5.2
+session, a temporary virtual display was needed for Dock visibility. This remains
+prototype research; production creation is unchanged.
 
 For a manual trial, quit Atelier and run this from the `ate-40` workspace in
 your disposable GUI session with one display:
@@ -14,23 +15,34 @@ mise run desktop:create -- --enter
 ```
 
 The command detects the display, requests creation once, places the new Desktop
-immediately after the current one, and briefly creates/releases a private virtual
-display to make Dock reconcile its Desktop list. It verifies the original display
-configuration and Dock's count. Capability checking and creation share one native
+immediately after the current one, and waits briefly for Dock to register it.
+If the exact topology stays unchanged and Dock's count agrees for 50 ms, creation
+proceeds without a virtual display. Otherwise, after a 150 ms polling window,
+the existing display refresh repairs registration. Failed queries or changed
+topology stop the flow. Cleanup also checks for automatic reconciliation before
+refreshing. The command reports which route was used.
+Capability checking and creation share one native
 invocation; the probe is retained in `creation/intent.json`. Once display callbacks
-settle and Dock agrees with the fresh topology, entry can proceed while the
-one-second display setup UI observation continues. The command prints its elapsed
+settle on the refresh route and Dock agrees with the fresh topology, entry can
+proceed while the one-second display setup UI observation continues. The native
+route needs no display setup observation interval. The command prints its elapsed
 time, including helper build/startup. See the
 [latency measurements](Evidence/2026-09-14-creation-latency.md).
 `--enter` uses the enabled native next-Desktop
-shortcut; omit it to keep the current Desktop active. New numbered shortcut
-registrations remain unavailable, so use adjacent switching or Mission Control.
+shortcut; omit it to keep the current Desktop active. The older display-refresh
+route does not repair new numbered shortcuts; macOS 27 registered them itself
+in the recorded raw-creation trial.
 The [direct Dock investigation](Evidence/2026-09-14-direct-dock-investigation.md)
 records the service restrictions and additional alternatives examined. Its
 `mise run wmbridge:run -- dock-inspect` command reads the currently exposed Dock
 Accessibility actions without opening Mission Control. The creation guard now
 refuses incomplete Accessibility hierarchy reads instead of treating them as a
 closed overview.
+`mise run wmbridge:run -- mission-control-inspect --disposable-session` explicitly
+opens and closes Mission Control for a diagnostic inventory. On 26A428, Dock
+exposes the overview marker without thumbnail children, so that report is
+incomplete. The recorded visual count and native keyboard entry are separate
+evidence; an empty Accessibility list is not treated as zero Desktops.
 `--raw` retains the original WMBridge-only creation trial. It saves private logs
 under `.build/ate-40-manual/` and prints commands to inspect and clean up that
 specific trial. Check whether Mission Control shows the new Desktop, whether
@@ -54,7 +66,8 @@ the omitted Space before Mission Control could show it. The subsequent
 made it visible and verified native thumbnail/adjacent entry with saved typing.
 The [end-to-end follow-up](Evidence/2026-09-14-ready-flow.md) supplies a refresh
 without changing the original resolution and confirms native adjacent entry with
-saved typing. Numbered registration remains a separate limitation. Diagnosis reads
+saved typing. Numbered registration remained a separate limitation on that older
+build. Diagnosis reads
 Dock's own Desktop count and CoreGraphics' physical/virtual mirror relationships;
 neither requires opening Mission Control.
 

@@ -18,13 +18,14 @@ const help = `Usage:
 
 Quit Atelier before creation or cleanup. Use your disposable GUI session with
 one display. Creation uses ATE-40's WMBridge call and leaves the result in place
-for manual switching. It briefly allocates a process-owned virtual display to
-refresh Dock, checks that the original display modes return unchanged, and
-places the new Desktop immediately after the current one. --enter also enters
+for manual switching. It places the new Desktop immediately after the current
+one and checks whether Dock registers it automatically. If registration lags,
+it briefly allocates a process-owned virtual display to refresh Dock and checks
+that the original display modes return unchanged. --enter also enters
 it using the enabled native next-Desktop shortcut. No Mission Control is opened.
 --raw runs only the original WMBridge call, without placement or Dock refresh.
-New numbered shortcut registrations are not repaired; use adjacent switching
-or Mission Control to reach Desktops beyond Dock's previously registered range.
+Numbered shortcuts work in the macOS 27 trial. The display workaround on macOS
+26 does not repair them; adjacent switching remains the tested entry route.
 
 Creation prints the saved trial path and commands to inspect or remove its ID.
 --check, status, and diagnose are read only. After an error, inspect the trial before making
@@ -143,8 +144,13 @@ function main(args, {invoke = native, log = console.log,
     if (raw) log("Confirmed in WindowServer only. Left in place for your manual test.");
     else {
       log(`Dock's Desktop count: ${report.dockSpaceCount?.count ?? "unknown"}`);
+      if (report.registrationMethod) log(report.registrationMethod === "native"
+        ? "Dock registered it automatically; no display refresh was needed."
+        : "Dock registration required the temporary display refresh.");
       log(enter ? "Entered using the native next-Desktop shortcut." : "Ready immediately to the right of the current Desktop.");
-      log("Use native adjacent switching or Mission Control; new numbered bindings may be unavailable.");
+      if (report.registrationMethod === "virtual-display") {
+        log("Use native adjacent switching or Mission Control; new numbered bindings may be unavailable.");
+      }
     }
     return 0;
   } catch (error) {

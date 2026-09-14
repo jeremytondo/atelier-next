@@ -26,6 +26,7 @@ Usage:
   wmbridge-experiment [probe]
   wmbridge-experiment trace-probe
   wmbridge-experiment dock-inspect
+  wmbridge-experiment mission-control-inspect --disposable-session
   wmbridge-experiment occupancy SPACE-ID
   wmbridge-experiment preflight DISPLAY-ID
   wmbridge-experiment create /absolute/new-run-directory DISPLAY-ID --disposable-session
@@ -43,6 +44,8 @@ Use auto instead of DISPLAY-ID on create/create-ready to select the sole display
   inside the same process as capability checking and creation.
 dock-inspect only reads Dock's currently exposed Accessibility hierarchy/actions
   and Desktop count. Missing queries remain inconclusive; no overview is opened.
+mission-control-inspect opens and closes an overview to inspect its hierarchy;
+  missing thumbnail lists are reported as incomplete, not zero Desktops.
 Cleanup refuses active, occupied, uncertain, or non-owned Desktops; never retries dispatch.
 Follow-up modes: place-current, reorder-roundtrip, activate-roundtrip,
   native-adjacent-roundtrip, native-select-roundtrip,
@@ -55,6 +58,7 @@ Most follow-ups open Mission Control for observation and close it; virtual-refer
 """
 if command == "--help" { print(help); exit(0) }
 guard (["probe", "trace-probe", "dock-inspect"].contains(command) && args.count <= 1) ||
+  (command == "mission-control-inspect" && args.count == 2 && args[1] == "--disposable-session") ||
   (command == "preflight" && args.count == 2) ||
   (command == "occupancy" && args.count == 2) ||
   (command == "create" && args.count == 4 && args[3] == "--disposable-session") ||
@@ -128,6 +132,9 @@ DispatchQueue.main.async {
       let report: [String: Any]
       switch command {
       case "dock-inspect": report = try inspectDock()
+      case "mission-control-inspect":
+        let lock = try MutationLock()
+        report = try withExtendedLifetime(lock) { try missionControlInventory() }
       case "preflight": report = try runCreate(path: "", display: args[1], preflightOnly: true)
       case "occupancy":
         guard let id = UInt64(args[1]), id > 0 else { throw TrialError("Space ID required") }
