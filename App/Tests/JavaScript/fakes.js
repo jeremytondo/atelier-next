@@ -15,7 +15,7 @@ function fakeHS() {
           const request = JSON.parse(line); state.requests.push(request);
           if (!state.replies) return;
           let result;
-          if (request.command === "hello") result = {protocolVersion:1,trusted:state.trusted};
+          if (request.command === "hello") result = {protocolVersion:2,trusted:state.trusted};
           else if (request.command === "quickResolve") result = {bundleID:"app." + request.app,name:request.app};
           else result = JSON.parse(JSON.stringify(snapshot));
           queueMicrotask(() => output("stdout", JSON.stringify({id:request.id,ok:true,result}) + "\n"));

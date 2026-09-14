@@ -11,19 +11,20 @@ let package = Package(
     .executable(name: "atelier-tools", targets: ["AtelierTools"]),
   ],
   targets: [
+    // Pure logic shared with the menu-bar app shell.
     .target(name: "AtelierShellCore", path: "Hammerspoon/ShellCore"),
     .testTarget(name: "AtelierShellCoreTests", dependencies: ["AtelierShellCore"]),
-    .target(name: "QuickAppSupport"),
+    // Pure Space topology logic with no macOS dependencies.
     .target(name: "SpaceControlCore"),
+    .testTarget(name: "SpaceControlCoreTests", dependencies: ["SpaceControlCore"]),
+    // Objective-C wrapper around the private SkyLight bridge operation ABI.
     .target(name: "DesktopBridge"),
-    .target(
-      name: "AtelierEngine",
-      dependencies: ["QuickAppSupport", "SpaceControlCore", "DesktopBridge"]),
+    // Everything the native helper process does: protocol, Spaces, Mission
+    // Control, Quick Apps, and the private-API access they share.
+    .target(name: "AtelierEngine", dependencies: ["SpaceControlCore", "DesktopBridge"]),
+    .testTarget(name: "AtelierEngineTests", dependencies: ["AtelierEngine"]),
     .executableTarget(name: "AtelierHelper", dependencies: ["AtelierEngine"]),
     .executableTarget(name: "AtelierTools"),
-    .testTarget(name: "AtelierEngineTests", dependencies: ["AtelierEngine"]),
-    .testTarget(name: "QuickAppSupportTests", dependencies: ["QuickAppSupport"]),
-    .testTarget(name: "SpaceControlCoreTests", dependencies: ["SpaceControlCore"]),
   ],
   swiftLanguageModes: [.v5]
 )

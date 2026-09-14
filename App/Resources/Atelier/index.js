@@ -165,15 +165,15 @@ function create(hs, host) {
     const member = group.members[(current + offset + group.members.length) % group.members.length];
     await activate(group, member, epoch); return {window:member.id};
   });
+  const spaceActions = ["switch", "create", "reorder", "delete"];
   api.space = (command, args = {}) => run(command, async epoch => {
-    if (!["switch", "create", "reorder", "delete"].includes(command)) throw new Error("Unknown Space action");
+    if (!spaceActions.includes(command)) throw new Error("Unknown Space action");
     const next = await refresh(epoch), display = next.displays.find(d => d.id === next.targetDisplay);
     if (!display) throw new Error("No target display");
     const spaceKeys = bindings.filter(b => b.space);
     for (const {key} of spaceKeys) key.disable();
     try {
       const result = await bridge.request(command, {...args, display:display.id, current:display.current});
-      if (result.creation) console.log("Atelier: Desktop " + result.created + " created; slide requested after " + Math.round(result.creation.millisecondsToEntryDispatch) + " ms, entered after " + Math.round(result.creation.millisecondsTotal) + " ms");
       await refresh(epoch); return result;
     } finally {
       if (valid(epoch)) for (const {key} of spaceKeys) if (!key.enable()) { api.stop(); report(new Error("Could not restore Desktop shortcuts; choose Resume")); break; }
@@ -185,7 +185,7 @@ function create(hs, host) {
     const result = await bridge.request("quickToggle", {app:entry.app, expectedBundleID:entry.bundleID, ...(entry.size ? {size:entry.size} : {})});
     await refresh(epoch); return result;
   });
-  api.native = (command, args) => ["switch", "create", "reorder", "delete"].includes(command)
+  api.native = (command, args) => spaceActions.includes(command)
     ? api.space(command, args) : run("native:" + command, () => bridge.request(command, args));
   api.status = () => ({state:api.state, error:api.lastError, version:host.version, quickApps:quickApps.map(a => ({app:a.app, bundleID:a.bundleID, shortcut:a.shortcut})), groups:groups.entries.size, metrics:api.metrics});
   api.helperRunning = () => !!((bridge.task && bridge.task.isRunning) || (bridge.retiring && bridge.retiring.isRunning));

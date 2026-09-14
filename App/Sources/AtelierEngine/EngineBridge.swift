@@ -4,334 +4,237 @@ import CoreGraphics
 import Darwin
 import DesktopBridge
 import Foundation
-import QuickAppSupport
 import SpaceControlCore
 
-struct BridgeError: LocalizedError {
-  let message: String
-  var errorDescription: String? { message }
-}
-
-/// Native mechanisms only: no hotkeys, group policy, or persistent preferences.
+/// The helper's command dispatch and its Space operations. Native mechanisms
+/// only: no hotkeys, group policy, or persistent preferences.
 @MainActor
 final class EngineBridge {
-  let runtime: SpaceRuntime
-  private lazy var missionControl = MissionControlAccessibility(runtime: runtime)
-  let resolver = TargetDisplayResolver()
-  private typealias Connection = @convention(c) () -> Int32
-  private typealias Membership = @convention(c) (Int32, UInt32, CFArray) -> Unmanaged<CFArray>?
-  private typealias WindowID =
-    @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
-  private let sky: UnsafeMutableRawPointer
-  private let ax: UnsafeMutableRawPointer
-  private let connection: Int32
-  private let membership: Membership
-  private let windowID: WindowID
+  private let api: PrivateAPI
+  private let runtime: SpaceRuntime
+  private let resolver = TargetDisplayResolver()
+  private let windows: WindowInventory
+  private let missionControl: MissionControl
+  private let quickApps: QuickApps
+  private let poller = Poller.live(interval: 0.02)
 
-  let quickAssignment = SpaceAssignmentCoordinator()
-  var quickStates: [String: QuickAppState] = [:]
+  /// Every command the helper answers. Adding one means one entry here and one
+  /// typed request/response pair in HelperProtocol.swift.
+  private lazy var commands: [String: HelperProtocol.Handler] = [
+    "hello": HelperProtocol.handler { (_: NoArguments) in
+      HelloResponse(protocolVersion: HelperProtocol.version, trusted: AXIsProcessTrusted())
+    },
+    "snapshot": HelperProtocol.handler { (_: NoArguments) in self.snapshot() },
+    "quickResolve": HelperProtocol.handler { (request: ApplicationRequest) in
+      let target = try TargetApplication.resolve(request.app)
+      return ApplicationResponse(bundleID: target.bundleIdentifier, name: target.name)
+    },
+    "membership": HelperProtocol.handler { (request: MembershipRequest) in
+      MembershipResponse(
+        spaces: self.windows.spaces(of: request.window), focused: self.windows.focusedWindowID())
+    },
+    "switch": trusted { (request: SpaceRequest) in try self.switchDesktop(request) },
+    "create": trusted { (request: SpaceRequest) in try self.createDesktop(request) },
+    "reorder": trusted { (request: SpaceRequest) in try self.reorderDesktop(request) },
+    "delete": trusted { (request: SpaceRequest) in try self.deleteDesktop(request) },
+    "quickToggle": trusted { (request: QuickToggleRequest) in try self.quickApps.toggle(request) },
+  ]
 
   init() throws {
-    runtime = try SpaceRuntime()
-    guard
-      let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
-      let ax = dlopen(
-        "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY),
-      let c = dlsym(sky, "SLSMainConnectionID"),
-      let m = dlsym(sky, "SLSCopySpacesForWindows"),
-      let w = dlsym(ax, "_AXUIElementGetWindow")
-    else {
-      throw BridgeError(message: "Required native window identity/Space symbols unavailable")
-    }
-    self.sky = sky
-    self.ax = ax
-    connection = unsafeBitCast(c, to: Connection.self)()
-    membership = unsafeBitCast(m, to: Membership.self)
-    windowID = unsafeBitCast(w, to: WindowID.self)
+    api = try PrivateAPI()
+    runtime = SpaceRuntime(api: api)
+    windows = WindowInventory(api: api)
+    missionControl = MissionControl(
+      seams: .live(runtime: runtime, poller: .live(interval: 0.05)))
+    quickApps = QuickApps(
+      seams: .live(
+        runtime: runtime, resolver: resolver, windows: windows,
+        assignment: SpaceAssignment(api: api, poller: .live(interval: 0.04)),
+        poller: .live(interval: 0.04)))
+  }
+
+  func handle(_ line: String) -> String {
+    HelperProtocol.respond(to: line, using: commands)
   }
 
   func cleanup() {
     runtime.restoreTemporarilyEnabledHotKeys()
-    missionControl.resetKeyboardNavigation()
+    missionControl.resetPointer()
   }
 
-  func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-    var value: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
-      return nil
-    }
-    return value
-  }
-
-  func id(_ element: AXUIElement) -> UInt32 {
-    var result: UInt32 = 0
-    return windowID(element, &result) == .success ? result : 0
-  }
-
-  func spaces(_ id: UInt32) -> [String] {
-    let value = membership(connection, 0x7, [NSNumber(value: id)] as CFArray)?.takeRetainedValue()
-    return (value as? [NSNumber] ?? []).map { $0.stringValue }
-  }
-
-  func element(pid: Int32, window: UInt32) -> AXUIElement? {
-    let app = AXUIElementCreateApplication(pid)
-    AXUIElementSetMessagingTimeout(app, 0.35)
-    return (attribute(app, kAXWindowsAttribute) as? [AXUIElement])?.first { id($0) == window }
-  }
-
-  func focusedID() -> UInt32 {
-    guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
-      let focused = attribute(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute),
-      CFGetTypeID(focused) == AXUIElementGetTypeID()
-    else { return 0 }
-    return id(unsafeDowncast(focused, to: AXUIElement.self))
-  }
-
-  func frame(_ element: AXUIElement) -> [String: Double]? {
-    guard let p = attribute(element, kAXPositionAttribute), CFGetTypeID(p) == AXValueGetTypeID(),
-      let s = attribute(element, kAXSizeAttribute), CFGetTypeID(s) == AXValueGetTypeID()
-    else { return nil }
-    var point = CGPoint.zero
-    var size = CGSize.zero
-    guard AXValueGetValue(unsafeDowncast(p, to: AXValue.self), .cgPoint, &point),
-      AXValueGetValue(unsafeDowncast(s, to: AXValue.self), .cgSize, &size)
-    else { return nil }
-    return ["x": point.x, "y": point.y, "w": size.width, "h": size.height]
-  }
-
-  private func inventory() -> [[String: Any]] {
-    let descriptions =
-      CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], 0)
-      as? [[String: Any]] ?? []
-    var cache: [Int32: [AXUIElement]] = [:]
-    return descriptions.compactMap { d in
-      guard let pid = (d[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
-        pid != getpid(), let running = NSRunningApplication(processIdentifier: pid),
-        !running.isHidden,
-        (d[kCGWindowLayer as String] as? Int) == 0,
-        let wid = (d[kCGWindowNumber as String] as? NSNumber)?.uint32Value
-      else { return nil }
-      if cache[pid] == nil {
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.35)
-        cache[pid] = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+  private func trusted<Request: Decodable>(
+    _ body: @escaping (Request) throws -> any Encodable
+  ) -> HelperProtocol.Handler {
+    HelperProtocol.handler { (request: Request) in
+      guard AXIsProcessTrusted() else {
+        throw EngineError("Accessibility permission required for the helper's responsible app")
       }
-      guard let window = cache[pid]?.first(where: { id($0) == wid }),
-        attribute(window, kAXSubroleAttribute) as? String == kAXStandardWindowSubrole,
-        attribute(window, kAXMinimizedAttribute) as? Bool != true,
-        attribute(window, "AXFullScreen") as? Bool != true
-      else { return nil }
-      var position = DarwinBoolean(false)
-      var size = DarwinBoolean(false)
-      AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &position)
-      AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &size)
-      let membership = spaces(wid)
-      guard position.boolValue, size.boolValue, membership.count == 1, let rect = frame(window)
-      else { return nil }
-      return [
-        "id": wid, "pid": pid, "space": membership[0], "frame": rect,
-        "title": attribute(window, kAXTitleAttribute) as? String ?? "",
-        "app": running.localizedName ?? "", "bundleID": running.bundleIdentifier ?? "",
-      ]
+      return try body(request)
     }
   }
 
-  private func snapshot() -> [String: Any] {
+  private func snapshot() -> Snapshot {
     let topology = runtime.snapshot()
-    let target = resolver.resolve(in: topology)
-    return [
-      "trusted": AXIsProcessTrusted(), "pid": getpid(), "focused": focusedID(),
-      "targetDisplay": target?.topologyIdentifier ?? "",
-      "missionControl": missionControl.isVisible(),
-      "displays": topology.map { d -> [String: Any] in
-        [
-          "id": d.identifier, "current": String(d.currentSpaceID),
-          "spaces": d.spaces.map {
-            ["id": String($0.id), "fullscreen": $0.isFullscreen] as [String: Any]
-          },
-        ]
-      }, "windows": AXIsProcessTrusted() ? inventory() : [],
-    ]
+    let trusted = AXIsProcessTrusted()
+    return Snapshot(
+      trusted: trusted, focused: windows.focusedWindowID(),
+      targetDisplay: resolver.resolve(in: topology)?.topologyIdentifier ?? "",
+      missionControl: missionControl.isVisible(),
+      displays: topology.map { display in
+        Snapshot.Display(
+          id: display.identifier, current: String(display.currentSpaceID),
+          spaces: display.spaces.map {
+            Snapshot.Space(id: String($0.id), fullscreen: $0.isFullscreen)
+          })
+      },
+      windows: trusted ? windows.onScreenWindows() : [])
   }
 
-  private func creationSeams() -> DesktopCreationSeams {
-    DesktopCreationSeams(
+  // MARK: - Space operations
+
+  /// The display and Desktop a Space operation acts on, refusing when either
+  /// moved since the JavaScript side observed them.
+  private func spaceTarget(_ request: SpaceRequest) throws -> (
+    target: TargetDisplay, display: DisplaySpaceSnapshot, topology: [DisplaySpaceSnapshot]
+  ) {
+    let topology = runtime.snapshot()
+    guard let target = resolver.resolve(in: topology),
+      let display = topology.first(where: { $0.identifier == target.topologyIdentifier })
+    else { throw EngineError("No target display") }
+    if let expected = request.display, expected != target.topologyIdentifier {
+      throw EngineError("Target display changed before operation")
+    }
+    if let expected = request.current, expected != String(display.currentSpaceID) {
+      throw EngineError("Active Space changed before operation")
+    }
+    return (target, display, topology)
+  }
+
+  private func switchDesktop(_ request: SpaceRequest) throws -> any Encodable {
+    let (target, display, topology) = try spaceTarget(request)
+    guard let number = request.number else { throw EngineError("number required") }
+    guard
+      let desktop = SpaceTopology.desktop(
+        number: number, on: target.topologyIdentifier, displays: topology)
+    else { return NoopResponse() }
+    if desktop.id != display.currentSpaceID {
+      let posted = poller.now()
+      guard let global = SpaceTopology.globalDesktopNumber(for: desktop.id, displays: topology),
+        global <= DesktopCreation.maximumNumberedDesktop,
+        runtime.postSymbolicHotKey(SymbolicHotKey.desktop(global))
+      else { throw EngineError("Native Desktop shortcut unavailable") }
+      guard
+        poller.wait(
+          3,
+          until: {
+            runtime.currentSpaceID(on: target.topologyIdentifier) == desktop.id
+          })
+      else { throw EngineError("Native shortcut sent but destination was not verified") }
+      // Keep a temporarily enabled shortcut registered until macOS has matched the event.
+      poller.sleep(0.27 - (poller.now() - posted))
+    }
+    // Restore temporary symbolic registrations before the app reenables its bindings.
+    runtime.restoreTemporarilyEnabledHotKeys()
+    return snapshot()
+  }
+
+  private func createDesktop(_ request: SpaceRequest) throws -> Snapshot {
+    let (target, _, _) = try spaceTarget(request)
+    defer { cleanup() }
+    guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
+      throw EngineError("Desktop creation requires macOS 27")
+    }
+    if let reason = DesktopBridge.unavailableReason() { throw EngineError(reason) }
+    guard api.canCountDockDesktops else {
+      throw EngineError("Dock's Desktop count is unavailable on this macOS")
+    }
+    let seams = DesktopCreationSeams(
       topology: { self.runtime.snapshot() },
       missionControlVisible: { self.missionControl.isVisible() },
-      dockCount: { DesktopBridge.dockDesktopCount()?.intValue },
+      dockCount: { self.api.dockDesktopCount() },
       create: {
         let report = DesktopBridge.createDesktop()
         if let id = (report["createdID"] as? NSNumber)?.uint64Value { return .created(id) }
         let reason = report["error"] as? String ?? "Desktop creation failed"
         return report["dispatched"] as? Bool == true ? .uncertain(reason) : .refused(reason)
       },
-      enterDesktop: { number in self.runtime.postSymbolicHotKey(UInt32(117 + number)) },
-      now: { ProcessInfo.processInfo.systemUptime },
-      pause: { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) })
-  }
-
-  func wait(_ timeout: Double = 3, until condition: () -> Bool) -> Bool {
-    let end = Date().addingTimeInterval(timeout)
-    repeat {
-      if condition() { return true }
-      RunLoop.current.run(until: Date().addingTimeInterval(0.025))
-    } while Date() < end
-    return condition()
-  }
-
-  func handle(_ line: String) async {
-    let started = ProcessInfo.processInfo.systemUptime
-    var response: [String: Any] = [:]
-    do {
-      guard line.utf8.count < 65536,
-        let request = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-        let command = request["command"] as? String
-      else { throw BridgeError(message: "Invalid JSON request") }
-      response["id"] = request["id"] ?? NSNull()
-      if command == "quickToggle" {
-        guard AXIsProcessTrusted() else {
-          throw BridgeError(message: "Accessibility permission required for quick apps")
-        }
-        response["result"] = try await toggleQuickApp(request)
-      } else {
-        response["result"] = try execute(command, request)
-      }
-      response["ok"] = true
-    } catch {
-      response["ok"] = false
-      response["error"] = error.localizedDescription
-    }
-    response["milliseconds"] = (ProcessInfo.processInfo.systemUptime - started) * 1000
-    if let data = try? JSONSerialization.data(withJSONObject: response, options: [.sortedKeys]),
-      let string = String(data: data, encoding: .utf8)
-    {
-      print(string)
-    }
-  }
-
-  private func execute(_ command: String, _ request: [String: Any]) throws -> [String: Any] {
-    if command == "hello" {
-      return ["protocolVersion": 1, "pid": getpid(), "trusted": AXIsProcessTrusted()]
-    }
-    if command == "probe" || command == "snapshot" { return snapshot() }
-    if command == "quickResolve" {
-      guard let name = request["app"] as? String else { throw BridgeError(message: "app required") }
-      let target = try TargetApplication.resolve(name)
-      return ["bundleID": target.bundleIdentifier, "name": target.name]
-    }
-    if command == "membership" {
-      guard let wid = request["window"] as? UInt32 else {
-        throw BridgeError(message: "window required")
-      }
-      return ["spaces": spaces(wid), "focused": focusedID()]
-    }
-    guard AXIsProcessTrusted() else {
-      throw BridgeError(
-        message: "Accessibility permission required for the helper's responsible app")
-    }
-    let before = runtime.snapshot()
-    guard let target = resolver.resolve(in: before),
-      let display = before.first(where: { $0.identifier == target.topologyIdentifier })
-    else { throw BridgeError(message: "No target display") }
-    if let expected = request["display"] as? String, expected != target.topologyIdentifier {
-      throw BridgeError(message: "Target display changed before operation")
-    }
-    if let expected = request["current"] as? String, expected != String(display.currentSpaceID) {
-      throw BridgeError(message: "Active Space changed before operation")
-    }
-    if command == "switch" {
-      guard let number = request["number"] as? Int,
-        let desktop = SpaceTopology.desktop(
-          number: number, on: target.topologyIdentifier, displays: before)
-      else { return ["noop": true] }
-      if desktop.id != display.currentSpaceID {
-        let restoreDeadline = Date().addingTimeInterval(0.27)
-        guard let global = SpaceTopology.globalDesktopNumber(for: desktop.id, displays: before),
-          global <= 16,
-          runtime.postSymbolicHotKey(UInt32(117 + global))
-        else { throw BridgeError(message: "Native Desktop shortcut unavailable") }
-        guard
-          wait(until: {
-            runtime.snapshot().first(where: { $0.identifier == target.topologyIdentifier })?
-              .currentSpaceID == desktop.id
-          })
-        else { throw BridgeError(message: "Native shortcut sent but destination was not verified") }
-        if Date() < restoreDeadline { RunLoop.current.run(until: restoreDeadline) }
-      }
-      // Restore temporary symbolic registrations before the app reenables its bindings.
-      runtime.restoreTemporarilyEnabledHotKeys()
-      return snapshot()
-    }
-    guard ["create", "reorder", "delete"].contains(command) else {
-      throw BridgeError(message: "Unknown command: \(command)")
-    }
-    if command == "reorder", ![-1, 1].contains(request["offset"] as? Int ?? 0) {
-      throw BridgeError(message: "offset must be -1 or 1")
-    }
-    if command == "delete" && display.regularDesktops.count <= 1 {
-      throw BridgeError(message: "The final Desktop cannot be deleted")
-    }
-    let departingWindows =
-      command == "delete"
-      ? inventory().filter { $0["space"] as? String == String(display.currentSpaceID) }.compactMap {
-        $0["id"] as? UInt32
-      }
-      : []
-    defer { cleanup() }
-    if command == "create" {
-      guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
-        throw BridgeError(message: "Desktop creation requires macOS 27")
-      }
-      if let reason = DesktopBridge.unavailableReason() { throw BridgeError(message: reason) }
-      let created = try DesktopCreation.createAndEnter(
-        on: target.topologyIdentifier, seams: creationSeams())
-      var result = snapshot()
-      result["created"] = String(created.id)
-      result["creation"] = [
-        "millisecondsToEntryDispatch": created.secondsToEntryDispatch * 1000,
-        "millisecondsTotal": created.secondsTotal * 1000,
-      ]
-      return result
-    }
-    if !missionControl.isVisible() {
-      guard runtime.postSymbolicHotKey(32), wait(until: { missionControl.isVisible() }) else {
-        throw BridgeError(message: "Could not open Mission Control")
-      }
-    }
-    _ = try missionControl.beginKeyboardNavigation(on: target, topology: before).get()
-    if command == "reorder" {
-      guard let offset = request["offset"] as? Int, abs(offset) == 1 else {
-        throw BridgeError(message: "offset must be -1 or 1")
-      }
-      _ = try missionControl.reorderActiveDesktop(
-        offset: offset, on: target, topology: runtime.snapshot()
-      ).get()
-    } else {
-      _ = try missionControl.deleteActiveDesktop(on: target, topology: runtime.snapshot()).get()
-    }
-    _ = try missionControl.enterActiveDesktop(on: target, topology: runtime.snapshot()).get()
+      enterDesktop: { self.runtime.postSymbolicHotKey(SymbolicHotKey.desktop($0)) },
+      poller: poller)
+    let created = try DesktopCreation.createAndEnter(on: target.topologyIdentifier, seams: seams)
     var result = snapshot()
-    if command == "delete" {
-      guard
-        wait(until: {
-          departingWindows.allSatisfy { window in
-            let memberships = spaces(window)
-            return !memberships.isEmpty && !memberships.contains(String(display.currentSpaceID))
+    result.created = String(created)
+    return result
+  }
+
+  private func reorderDesktop(_ request: SpaceRequest) throws -> Snapshot {
+    let (target, _, topology) = try spaceTarget(request)
+    guard let offset = request.offset, abs(offset) == 1 else {
+      throw EngineError("offset must be -1 or 1")
+    }
+    defer { cleanup() }
+    try missionControl.open(on: target, topology: topology)
+    try missionControl.reorderActiveDesktop(
+      offset: offset, on: target, topology: runtime.snapshot())
+    try missionControl.enterActiveDesktop(on: target, topology: runtime.snapshot())
+    return snapshot()
+  }
+
+  private func deleteDesktop(_ request: SpaceRequest) throws -> Snapshot {
+    let (target, display, topology) = try spaceTarget(request)
+    guard display.regularDesktops.count > 1 else {
+      throw EngineError("The final Desktop cannot be deleted")
+    }
+    let deleted = String(display.currentSpaceID)
+    let departing = windows.onScreenWindows().filter { $0.space == deleted }.map(\.id)
+    defer { cleanup() }
+    try missionControl.open(on: target, topology: topology)
+    try missionControl.deleteActiveDesktop(on: target, topology: runtime.snapshot())
+    try missionControl.enterActiveDesktop(on: target, topology: runtime.snapshot())
+    var result = snapshot()
+    guard
+      poller.wait(
+        3,
+        until: {
+          departing.allSatisfy { window in
+            let spaces = windows.spaces(of: window)
+            return !spaces.isEmpty && !spaces.contains(deleted)
           }
         })
-      else {
-        throw BridgeError(
-          message:
-            "Desktop deleted, but could not verify all eligible windows survived on another Space")
-      }
-      result["migratedWindows"] = departingWindows.map {
-        ["id": $0, "spaces": spaces($0)] as [String: Any]
-      }
+    else {
+      throw EngineError(
+        "Desktop deleted, but could not verify all eligible windows survived on another Space")
+    }
+    result.migratedWindows = departing.map {
+      Snapshot.WindowSpaces(id: $0, spaces: windows.spaces(of: $0))
     }
     return result
   }
 }
 
+/// One engine per user: a second instance would post duplicate events and
+/// fight over temporary shortcut state.
+final class SingletonProcessLock {
+  private let descriptor: Int32
+
+  init() throws {
+    let path = "/tmp/com.elevenideas.atelier.engine.\(getuid()).lock"
+    let descriptor = open(path, O_CREAT | O_RDWR | O_CLOEXEC, mode_t(0o600))
+    guard descriptor >= 0 else { throw EngineError("Could not open the engine process lock") }
+    guard Darwin.lockf(descriptor, F_TLOCK, 0) == 0 else {
+      close(descriptor)
+      throw EngineError("Another Atelier engine is running. Stop it before resuming Atelier.")
+    }
+    self.descriptor = descriptor
+  }
+
+  deinit {
+    _ = Darwin.lockf(descriptor, F_ULOCK, 0)
+    close(descriptor)
+  }
+}
+
+/// Serves JSON-lines requests from stdin on the main thread until stdin closes
+/// or a termination signal arrives, restoring shortcut and pointer state first.
 @MainActor
 public func runAtelierEngine() throws {
   setbuf(stdout, nil)
@@ -352,12 +255,9 @@ public func runAtelierEngine() throws {
   }
   DispatchQueue.global().async {
     while let line = readLine() {
-      let done = DispatchSemaphore(value: 0)
-      Task { @MainActor in
-        await bridge.handle(line)
-        done.signal()
+      DispatchQueue.main.sync {
+        MainActor.assumeIsolated { print(bridge.handle(line)) }
       }
-      done.wait()
     }
     DispatchQueue.main.async {
       bridge.cleanup()
