@@ -188,7 +188,7 @@ public final class SpaceAssignmentCoordinator {
     window: AXUIElement,
     target: TargetApplication,
     requiredSpaceIDs: Set<String>? = nil
-  ) async throws -> SpaceAssignmentOutcome {
+  ) throws -> SpaceAssignmentOutcome {
     func verified() -> Bool {
       if let requiredSpaceIDs {
         return requiredSpaceIDs.isSubset(of: spaceIDs(for: window) ?? [])
@@ -207,7 +207,7 @@ public final class SpaceAssignmentCoordinator {
         if ordinaryDesktopCount() <= 1 || !canVerifyMembership {
           return .privateAPIUnverified
         }
-        if await waitForMembership(timeout: 0.8, verified: verified) {
+        if waitForMembership(timeout: 0.8, verified: verified) {
           return .privateAPI
         }
       } else {
@@ -218,7 +218,7 @@ public final class SpaceAssignmentCoordinator {
     }
 
     do {
-      try await assignThroughDock(target: target)
+      try assignThroughDock(target: target)
     } catch let error as SpaceAssignmentError {
       if let privateFailure {
         throw SpaceAssignmentError.dockUnavailable(
@@ -232,7 +232,7 @@ public final class SpaceAssignmentCoordinator {
     if ordinaryDesktopCount() <= 1 || !canVerifyMembership {
       membershipVerified = true
     } else {
-      membershipVerified = await waitForMembership(timeout: 1.2, verified: verified)
+      membershipVerified = waitForMembership(timeout: 1.2, verified: verified)
     }
     guard membershipVerified else {
       throw SpaceAssignmentError.verificationFailed
@@ -243,11 +243,11 @@ public final class SpaceAssignmentCoordinator {
   private func waitForMembership(
     timeout: TimeInterval,
     verified: () -> Bool
-  ) async -> Bool {
+  ) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
       if verified() { return true }
-      try? await Task.sleep(for: .milliseconds(50))
+      RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     }
     return verified()
   }
@@ -282,7 +282,7 @@ public final class SpaceAssignmentCoordinator {
     }
   }
 
-  private func assignThroughDock(target: TargetApplication) async throws {
+  private func assignThroughDock(target: TargetApplication) throws {
     guard
       let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock")
         .first
@@ -313,7 +313,7 @@ public final class SpaceAssignmentCoordinator {
 
     let titles = dockMenuTitles()
     guard
-      let optionsItem = await waitForMenuItem(
+      let optionsItem = waitForMenuItem(
         named: titles.options,
         in: dockRoot,
         timeout: 0.8
@@ -323,7 +323,7 @@ public final class SpaceAssignmentCoordinator {
       throw SpaceAssignmentError.dockUnavailable("the Options menu item was not exposed")
     }
 
-    if await waitForMenuItem(named: titles.allDesktops, in: dockRoot, timeout: 0.15) == nil {
+    if waitForMenuItem(named: titles.allDesktops, in: dockRoot, timeout: 0.15) == nil {
       let actions = copyAXActions(optionsItem)
       let action = actions.contains(kAXShowMenuAction) ? kAXShowMenuAction : kAXPressAction
       guard AXUIElementPerformAction(optionsItem, action as CFString) == .success else {
@@ -333,7 +333,7 @@ public final class SpaceAssignmentCoordinator {
     }
 
     guard
-      let allDesktopsItem = await waitForMenuItem(
+      let allDesktopsItem = waitForMenuItem(
         named: titles.allDesktops,
         in: dockRoot,
         timeout: 0.8
@@ -364,7 +364,7 @@ public final class SpaceAssignmentCoordinator {
     named title: String,
     in dockRoot: AXUIElement,
     timeout: TimeInterval
-  ) async -> AXUIElement? {
+  ) -> AXUIElement? {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
       if let item = descendants(of: dockRoot, maximumDepth: 9).first(where: {
@@ -373,7 +373,7 @@ public final class SpaceAssignmentCoordinator {
       }) {
         return item
       }
-      try? await Task.sleep(for: .milliseconds(35))
+      RunLoop.current.run(until: Date().addingTimeInterval(0.035))
     }
     return nil
   }

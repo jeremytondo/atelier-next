@@ -23,16 +23,6 @@ struct DesktopCreationSeams {
   var pause: () -> Void
 }
 
-/// The created ID with the intervals the acceptance criteria are measured on.
-struct DesktopCreationReport: Equatable {
-  let id: UInt64
-  /// Seconds from the request to posting the native switch, the pause a user
-  /// perceives before the slide starts.
-  let secondsToEntryDispatch: TimeInterval
-  /// Seconds from the request to the verified arrival on the new Desktop.
-  let secondsTotal: TimeInterval
-}
-
 struct DesktopCreationError: LocalizedError {
   let message: String
   let createdID: UInt64?
@@ -54,8 +44,7 @@ enum DesktopCreation {
 
   static func createAndEnter(
     on display: String, seams: DesktopCreationSeams
-  ) throws -> DesktopCreationReport {
-    let started = seams.now()
+  ) throws -> UInt64 {
     let before = seams.topology()
     guard before.count == 1, before[0].identifier == display else {
       throw DesktopCreationError(message: "Desktop creation supports one display for now", createdID: nil)
@@ -114,15 +103,13 @@ enum DesktopCreation {
     guard let number = SpaceTopology.globalDesktopNumber(for: id, displays: created),
       number <= maximumNumberedDesktop
     else { throw failure("macOS has no numbered shortcut beyond Desktop \(maximumNumberedDesktop)") }
-    let entryDispatched = seams.now()
     guard seams.enterDesktop(number) else { throw failure("Native Desktop shortcut unavailable") }
     guard
       poll(seams, timeout: entryTimeout, until: { fresh in
         fresh.first(where: { $0.identifier == display })?.currentSpaceID == id
       })
     else { throw failure("Native shortcut sent but the new Desktop was not verified") }
-    return DesktopCreationReport(
-      id: id, secondsToEntryDispatch: entryDispatched - started, secondsTotal: seams.now() - started)
+    return id
   }
 
   private static func poll(

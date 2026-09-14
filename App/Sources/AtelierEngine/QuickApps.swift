@@ -15,8 +15,8 @@ struct QuickAppState {
 }
 
 extension EngineBridge {
-  private func quickPause() async throws {
-    try await Task.sleep(for: .milliseconds(40))
+  private func quickPause() {
+    RunLoop.current.run(until: Date().addingTimeInterval(0.04))
   }
 
   private func quickWindows(_ app: NSRunningApplication) -> [AXUIElement] {
@@ -36,7 +36,7 @@ extension EngineBridge {
     guard let value = AXValueCreate(.cgPoint, &point),
       AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) == .success
     else {
-      throw BridgeError(message: "Quick app refused window placement")
+      throw EngineError("Quick app refused window placement")
     }
   }
 
@@ -47,67 +47,82 @@ extension EngineBridge {
           == displayID
       }), let primary = NSScreen.screens.first
     else {
-      throw BridgeError(message: "Quick app display disconnected")
+      throw EngineError("Quick app display disconnected")
     }
     let f = screen.visibleFrame
     return CGRect(x: f.minX, y: primary.frame.maxY - f.maxY, width: f.width, height: f.height)
   }
 
   private func placeQuickWindow(
-    _ window: AXUIElement, on displayID: CGDirectDisplayID,
-    size: [String: Double]?
-  ) async throws {
+    _ window: AXUIElement, on displayID: CGDirectDisplayID, size: QuickAppSize?
+  ) throws {
     let usable = try quickVisibleFrame(displayID).insetBy(dx: 8, dy: 8)
-    guard let old = frame(window), let width = old["w"], let height = old["h"] else {
-      throw BridgeError(message: "Quick app window has no readable frame")
+    guard let old = frame(window) else {
+      throw EngineError("Quick app window has no readable frame")
     }
     // Move without activation so the window reaches the captured display first.
     try setQuickPosition(
       window,
       CGPoint(
-        x: usable.midX - min(width, usable.width) / 2,
-        y: usable.midY - min(height, usable.height) / 2))
-    if size != nil || width > usable.width || height > usable.height {
+        x: usable.midX - min(old.width, usable.width) / 2,
+        y: usable.midY - min(old.height, usable.height) / 2))
+    if size != nil || old.width > usable.width || old.height > usable.height {
       var requested = CGSize(
-        width: min(size?["width"] ?? width, usable.width),
-        height: min(size?["height"] ?? height, usable.height))
+        width: min(size?.width ?? old.width, usable.width),
+        height: min(size?.height ?? old.height, usable.height))
       guard let value = AXValueCreate(.cgSize, &requested),
         AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success
       else {
-        throw BridgeError(message: "Quick app refused the requested size")
+        throw EngineError("Quick app refused the requested size")
       }
     }
     // Recenter using the actual size: apps may impose their own minimum dimensions.
     for _ in 0..<20 {
-      try await quickPause()
-      guard let actual = frame(window), let w = actual["w"], let h = actual["h"] else { continue }
-      let point = CGPoint(x: usable.midX - w / 2, y: usable.midY - h / 2)
+      quickPause()
+      guard let actual = frame(window) else { continue }
+      let point = CGPoint(x: usable.midX - actual.width / 2, y: usable.midY - actual.height / 2)
       try setQuickPosition(window, point)
-      try await quickPause()
+      quickPause()
       if let settled = frame(window),
-        abs((settled["x"] ?? .infinity) - point.x) < 3,
-        abs((settled["y"] ?? .infinity) - point.y) < 3,
-        abs((settled["w"] ?? 0) - w) < 3, abs((settled["h"] ?? 0) - h) < 3
+        abs(settled.minX - point.x) < 3, abs(settled.minY - point.y) < 3,
+        abs(settled.width - actual.width) < 3, abs(settled.height - actual.height) < 3
       {
         return
       }
     }
-    throw BridgeError(message: "Quick app did not settle at the center of the captured display")
+    throw EngineError("Quick app did not settle at the center of the captured display")
   }
 
-  func toggleQuickApp(_ request: [String: Any]) async throws -> [String: Any] {
-    guard let name = request["app"] as? String else { throw BridgeError(message: "app required") }
-    let target = try TargetApplication.resolve(name)
-    if let expected = request["expectedBundleID"] as? String, expected != target.bundleIdentifier {
-      throw BridgeError(
-        message:
-          "The configured app identity changed. Review its app reference in init.js and reload.")
+  private func launch(_ target: TargetApplication) throws -> NSRunningApplication {
+    // Request launch/reopen without taking focus or switching to an old Space.
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    var outcome: Result<NSRunningApplication, Error>?
+    NSWorkspace.shared.openApplication(at: target.url, configuration: configuration) { app, error in
+      DispatchQueue.main.async {
+        if let app {
+          outcome = .success(app)
+        } else {
+          outcome = .failure(error ?? EngineError("Could not launch \(target.name)"))
+        }
+      }
     }
-    let size = request["size"] as? [String: Double]
-    if request["size"] != nil {
-      guard let size, let w = size["width"], let h = size["height"],
-        w.isFinite, h.isFinite, w > 0, h > 0
-      else { throw BridgeError(message: "Invalid quick app size") }
+    guard wait(10, until: { outcome != nil }), let outcome else {
+      throw EngineError("Could not launch \(target.name)")
+    }
+    return try outcome.get()
+  }
+
+  func toggleQuickApp(_ request: QuickToggleRequest) throws -> QuickToggleResponse {
+    let target = try TargetApplication.resolve(request.app)
+    if let expected = request.expectedBundleID, expected != target.bundleIdentifier {
+      throw EngineError(
+        "The configured app identity changed. Review its app reference in init.js and reload.")
+    }
+    if let size = request.size {
+      guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
+        throw EngineError("Invalid quick app size")
+      }
     }
     let bundleID = target.bundleIdentifier
     let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
@@ -123,12 +138,10 @@ extension EngineBridge {
           || AXUIElementSetAttributeValue(
             appElement, kAXHiddenAttribute as CFString, kCFBooleanTrue) == .success
       else {
-        throw BridgeError(message: "Could not hide \(target.name)")
+        throw EngineError("Could not hide \(target.name)")
       }
-      let deadline = Date().addingTimeInterval(1)
-      while !running.isHidden && Date() < deadline { try await quickPause() }
-      guard running.isHidden else {
-        throw BridgeError(message: "Could not verify quick app was hidden")
+      guard wait(1, until: { running.isHidden }) else {
+        throw EngineError("Could not verify quick app was hidden")
       }
       var restored = false
       if let state = quickStates[bundleID], state.pid == running.processIdentifier,
@@ -143,12 +156,10 @@ extension EngineBridge {
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         previous.activate(options: [])
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        let deadline = Date().addingTimeInterval(1)
-        while focusedID() != state.previousWindow && Date() < deadline { try await quickPause() }
-        restored = focusedID() == state.previousWindow
+        restored = wait(1, until: { focusedID() == state.previousWindow })
       }
       quickStates[bundleID]?.previous = nil
-      return ["action": "hidden", "bundleID": bundleID, "restoredFocus": restored]
+      return QuickToggleResponse(action: .hidden, bundleID: bundleID, restoredFocus: restored)
     }
 
     let topology = runtime.snapshot()
@@ -156,9 +167,8 @@ extension EngineBridge {
       let desktop = topology.first(where: { $0.identifier == display.topologyIdentifier }),
       desktop.regularDesktops.contains(where: { $0.id == desktop.currentSpaceID })
     else {
-      throw BridgeError(
-        message: "Quick apps require an ordinary Desktop; fullscreen and Split View are unsupported"
-      )
+      throw EngineError(
+        "Quick apps require an ordinary Desktop; fullscreen and Split View are unsupported")
     }
     let space = String(desktop.currentSpaceID)
     let frontmost = NSWorkspace.shared.frontmostApplication
@@ -174,35 +184,31 @@ extension EngineBridge {
           String($0.currentSpaceID)
         }) == space
       else {
-        throw BridgeError(message: "Active Desktop changed during quick app summon")
+        throw EngineError("Active Desktop changed during quick app summon")
       }
     }
-    var app = running
-    if app == nil || quickWindows(app!).isEmpty {
-      // Request launch/reopen without taking focus or switching to an old Space.
-      let configuration = NSWorkspace.OpenConfiguration()
-      configuration.activates = false
-      app = try await NSWorkspace.shared.openApplication(
-        at: target.url, configuration: configuration)
+    let app: NSRunningApplication
+    if let running, !quickWindows(running).isEmpty {
+      app = running
+    } else {
+      app = try launch(target)
     }
-    guard let app else { throw BridgeError(message: "Could not launch \(target.name)") }
     var selected: AXUIElement?
-    let deadline = Date().addingTimeInterval(4)
-    repeat {
-      let windows = quickWindows(app)
-      let remembered = quickStates[bundleID]
-      selected =
-        windows.first(where: {
-          remembered?.pid == app.processIdentifier && id($0) == remembered?.window
-        })
-        ?? windows.first(where: { id($0) == focusedID() }) ?? windows.first
-      if selected != nil { break }
-      try await quickPause()
-    } while Date() < deadline
+    _ = wait(
+      4,
+      until: {
+        let windows = quickWindows(app)
+        let remembered = quickStates[bundleID]
+        selected =
+          windows.first(where: {
+            remembered?.pid == app.processIdentifier && id($0) == remembered?.window
+          })
+          ?? windows.first(where: { id($0) == focusedID() }) ?? windows.first
+        return selected != nil
+      })
     guard let window = selected else {
-      throw BridgeError(
-        message:
-          "\(target.name) did not expose a standard window; close fullscreen mode or open its main window"
+      throw EngineError(
+        "\(target.name) did not expose a standard window; close fullscreen mode or open its main window"
       )
     }
     try checkDesktop()
@@ -218,13 +224,13 @@ extension EngineBridge {
         AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
           == .success
       else {
-        throw BridgeError(message: "Quick app window could not be unminimized")
+        throw EngineError("Quick app window could not be unminimized")
       }
     }
-    try await placeQuickWindow(window, on: display.displayID, size: size)
+    try placeQuickWindow(window, on: display.displayID, size: request.size)
     try checkDesktop()
     let expected = Set(desktop.regularDesktops.map { String($0.id) })
-    let assignment = try await quickAssignment.ensureAllDesktops(
+    let assignment = try quickAssignment.ensureAllDesktops(
       application: app, window: window, target: target, requiredSpaceIDs: expected)
     try checkDesktop()
     // Keep this identity even if later placement fails, allowing a second press to hide.
@@ -233,27 +239,18 @@ extension EngineBridge {
       previous: previous?.bundleIdentifier == bundleID ? nil : previous,
       previousWindow: previousWindow,
       display: display.topologyIdentifier, space: space)
-    let membershipDeadline = Date().addingTimeInterval(1)
-    while !expected.isSubset(of: Set(spaces(id(window)))) && Date() < membershipDeadline {
-      try await quickPause()
-    }
-    guard expected.isSubset(of: Set(spaces(id(window)))) else {
-      throw BridgeError(
-        message: "Quick app is not available on every Desktop of the captured display")
+    guard wait(1, until: { expected.isSubset(of: Set(spaces(id(window)))) }) else {
+      throw EngineError("Quick app is not available on every Desktop of the captured display")
     }
     AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
     app.activate(options: [])
     AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-    let focusDeadline = Date().addingTimeInterval(1.5)
-    while focusedID() != id(window) && Date() < focusDeadline { try await quickPause() }
+    let focused = wait(1.5, until: { focusedID() == id(window) })
     try checkDesktop()
-    guard focusedID() == id(window) else {
-      throw BridgeError(message: "Could not focus the quick app window")
-    }
-    return [
-      "action": "shown", "bundleID": bundleID, "window": id(window),
-      "display": display.topologyIdentifier,
-      "space": space, "frame": frame(window) ?? [:], "assignment": assignment.message,
-    ]
+    guard focused else { throw EngineError("Could not focus the quick app window") }
+    return QuickToggleResponse(
+      action: .shown, bundleID: bundleID, window: id(window),
+      display: display.topologyIdentifier, space: space,
+      frame: frame(window).map(Frame.init), assignment: assignment.message)
   }
 }

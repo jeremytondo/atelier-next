@@ -83,9 +83,7 @@ private func failure(_ mac: FakeMac) -> DesktopCreationError? {
 
 @Test func createsAtTheEndWaitsForDockAndEntersByNumber() throws {
   let mac = FakeMac(start)
-  let report = try DesktopCreation.createAndEnter(on: "A", seams: mac.seams)
-  #expect(report.id == 5)
-  #expect(report.secondsToEntryDispatch > 0 && report.secondsTotal >= report.secondsToEntryDispatch)
+  #expect(try DesktopCreation.createAndEnter(on: "A", seams: mac.seams) == 5)
   #expect(mac.creates == 1)
   #expect(mac.entries == [3])
   #expect(mac.topology[0].spaces.map(\.id) == [1, 2, 90, 5])

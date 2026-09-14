@@ -38,7 +38,7 @@ class Bridge {
     this.task = task;
     if (!task || !task.start()) { this.task = null; throw new Error("Could not start the bundled helper"); }
     const hello = await this.request("hello");
-    if (hello.protocolVersion !== 1) throw new Error("App and helper versions do not match");
+    if (hello.protocolVersion !== 2) throw new Error("App and helper versions do not match");
     return hello;
   }
   request(command, args = {}) {
