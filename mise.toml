@@ -12,23 +12,54 @@ run = "scripts/build-app.sh"
 
 [tasks.install]
 description = "Build and install Atelier in /Applications, preserving the previous app"
-run = "scripts/build-app.sh --install"
+run = "scripts/build-app.sh --app-only --install"
 
 [tasks.dev]
 description = "Build, install, and launch Atelier (quit the running app first)"
-run = "scripts/build-app.sh --install --launch"
+run = "scripts/build-app.sh --app-only --install --launch"
 
 [tasks.test]
 description = "Run native helper and JavaScript behavior tests"
-run = ["xcodebuildmcp swift-package test --package-path \"$MISE_PROJECT_ROOT/App\"", "node --test App/Tests/JavaScript/*.test.js"]
+depends = ["test:js", "test:native"]
+
+[tasks."test:js"]
+description = "Run JavaScript behavior tests immediately"
+run = "scripts/timed.sh js-test node --test App/Tests/JavaScript/*.test.js"
+
+[tasks."test:native"]
+description = "Build and run native helper tests in Debug"
+run = "scripts/build-helpers.sh --test"
+
+[tasks."helpers:build"]
+description = "Build or verify Release helper executables"
+run = "scripts/build-helpers.sh"
+
+[tasks."native:build"]
+description = "Prepare verified host and Release helper outputs"
+depends = ["hs2:build", "helpers:build"]
+
+[tasks."native:check"]
+description = "Sequence Debug tests before Release helper compilation"
+depends = ["test:native"]
+run = "scripts/build-helpers.sh"
+
+[tasks."bundle:check"]
+description = "Assemble, ad-hoc sign, and probe current resources with verified native outputs"
+depends = ["native:build"]
+run = "scripts/timed.sh bundle-check scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
 
 [tasks."hs2:build"]
 description = "Build the pinned Hammerspoon 2 application with Atelier integration"
 run = "scripts/build-hammerspoon.sh"
 
 [tasks.check]
-description = "Run app tests and release automation checks"
-depends = ["test", "release:check", "hs2:build"]
+description = "Run the complete gate, including an isolated real-bundle probe"
+depends = ["test:js", "release:check", "check:native"]
+
+[tasks."check:native"]
+description = "Native CI gate after portable checks"
+depends = ["native:check", "hs2:build"]
+run = "scripts/timed.sh bundle-check scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
 
 [tasks.refs]
 description = "Fetch missing read-only reference source into repos/ (gitignored)"
@@ -43,28 +74,33 @@ description = "Show reference checkout revisions and local changes"
 run = "scripts/refs.sh status"
 
 [tasks."release:patch"]
-description = "Dispatch a stable patch release from main and return its link"
-run = "gh workflow run release.yml --ref main -f bump=patch"
+description = "Dispatch a stable patch release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh patch"
 
 [tasks."release:minor"]
-description = "Dispatch a stable minor release from main and return its link"
-run = "gh workflow run release.yml --ref main -f bump=minor"
+description = "Dispatch a stable minor release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh minor"
 
 [tasks."release:major"]
-description = "Dispatch a stable major release from main and return its link"
-run = "gh workflow run release.yml --ref main -f bump=major"
+description = "Dispatch a stable major release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh major"
 
 [tasks."release:dev"]
-description = "Dispatch the rolling dev release from main and return its link"
-run = "gh workflow run release.yml --ref main -f bump=dev"
+description = "Dispatch the rolling dev release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh dev"
 
 [tasks."release:plan"]
-description = "Print release metadata without publishing: dev or stable patch|minor|major"
+description = "Print release metadata: dev [BRANCH] or stable patch|minor|major [BRANCH]"
 run = "scripts/release-plan.sh"
 
 [tasks."release:package"]
 description = "Build, sign, notarize, and package an existing release plan JSON"
 run = "scripts/build-app.sh --release-plan"
+
+[tasks."release:verify-package"]
+description = "Run the full gate, then package its verified same-run native outputs"
+depends = ["check"]
+run = "scripts/timed.sh package scripts/build-app.sh --skip-build --release-plan"
 
 [tasks."release:publish"]
 description = "Publish verified release assets (used by GitHub Actions)"
@@ -72,4 +108,20 @@ run = "scripts/publish-release.sh"
 
 [tasks."release:check"]
 description = "Lint workflows and shell scripts, and test release behavior"
-run = ["shellcheck scripts/*.sh", "actionlint", "scripts/release-test.sh"]
+depends = ["lint", "test:release", "test:build"]
+
+[tasks.lint]
+description = "Lint shell scripts and explicitly selected workflows (including jj workspaces)"
+run = ["scripts/timed.sh shell-lint shellcheck scripts/*.sh", "scripts/timed.sh workflow-lint actionlint .github/workflows/*.yml"]
+
+[tasks."test:release"]
+description = "Test release behavior with disposable history and fake credentials"
+run = "scripts/timed.sh release-test scripts/release-test.sh"
+
+[tasks."test:build"]
+description = "Test build reuse, preparation recovery, and conservative CI selection"
+run = "scripts/timed.sh build-test scripts/build-test.sh"
+
+[tasks."ci:report"]
+description = "Read exact completed workflow/job/transfer timings from GitHub"
+run = "scripts/ci-run-report.sh"

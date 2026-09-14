@@ -1,0 +1,7 @@
+# Publication uses only these tools on Linux; it does not load mise.toml.
+[tools]
+gh = "2.95.0"
+jq = "1.8.1"
+
+[tasks."release:publish"]
+run = "scripts/timed.sh publish scripts/publish-release.sh"
