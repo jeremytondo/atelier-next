@@ -16,9 +16,7 @@ The IPC adapter replaces discovery through an unregistered launchd Mach service 
 
 ## Selected revision and upgrade gate
 
-The shell was first built and probed on 0.0.12 (`7a218dd`). The selected revision is `c0bd4d6ecfcb30b426b5b12a4292a95ad418f8ad`, the September 12 upstream main commit following PR #223. The latest published tag was still 0.0.12 on September 14; the commit pin was approved to include application-level AX delivery (#217), multi-notification watchers, the all-windows AX timeout (#219), and AX value bridging (#221).
-
-The upgrade review covered unchanged lifecycle/managers and teardown, the added Node built-in installer/`util.inspect` and CommonJS registry, Console logging/selection changes, AX element-based watcher registration, and dependency lockfile changes. Groups now uses the selected revision's AX element and notification-array interface. Native Quick App transactions remain a gap adapter for launch without activation and All Desktops assignment.
+`upstream.json` pins `c0bd4d6ecfcb30b426b5b12a4292a95ad418f8ad`, an upstream main commit after the 0.0.12 tag. The ATE-36 upgrade review approved that pin for application-level AX delivery (#217), multi-notification watchers, the all-windows AX timeout (#219), and AX value bridging (#221). It covered unchanged lifecycle/managers and teardown, the added Node built-in installer/`util.inspect` and CommonJS registry, Console logging/selection changes, AX element-based watcher registration, and dependency lockfile changes. Groups uses the selected revision's AX element and notification-array interface. Native Quick App transactions remain a gap adapter for launch without activation and All Desktops assignment.
 
 For each upstream release, review lifecycle, runtime, Console, protocols, and dependency changes alongside the pin. Reconstruct with no fuzzy patch matches, run `mise run check` and `mise run build`, and follow the packaged lifecycle and manual workflow checks in [App/README.md](../README.md). A successful compile alone does not establish semantic compatibility. No whole-file fingerprint gate is required for upgrades.
 
