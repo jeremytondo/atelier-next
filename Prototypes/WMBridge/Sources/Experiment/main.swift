@@ -26,6 +26,7 @@ Usage:
   wmbridge-experiment [probe]
   wmbridge-experiment trace-probe
   wmbridge-experiment dock-inspect
+  wmbridge-experiment serve-ready /absolute/private-session --disposable-session
   wmbridge-experiment mission-control-inspect --disposable-session
   wmbridge-experiment occupancy SPACE-ID
   wmbridge-experiment preflight DISPLAY-ID
@@ -58,6 +59,7 @@ Most follow-ups open Mission Control for observation and close it; virtual-refer
 """
 if command == "--help" { print(help); exit(0) }
 guard (["probe", "trace-probe", "dock-inspect"].contains(command) && args.count <= 1) ||
+  (command == "serve-ready" && args.count == 3 && args[2] == "--disposable-session") ||
   (command == "mission-control-inspect" && args.count == 2 && args[1] == "--disposable-session") ||
   (command == "preflight" && args.count == 2) ||
   (command == "occupancy" && args.count == 2) ||
@@ -77,6 +79,16 @@ else { fputs(help + "\n", stderr); exit(64) }
 setbuf(stdout, nil)
 let appKitLoaded = NativeBridge.loadAppKit()
 guard appKitLoaded else { fputs("NSApplicationLoad failed\n", stderr); exit(2) }
+if command == "serve-ready" {
+  do { try runReadySession(path: args[1]) }
+  catch {
+    if let journal = try? Journal(path: args[1], create: false) {
+      try? journal.write("failed.json", ["pid": getpid(), "error": error.localizedDescription])
+    }
+    fputs("Prepared helper: \(error.localizedDescription)\n", stderr); exit(2)
+  }
+  exit(0)
+}
 if command == "serve" || command == "serve-script" {
   MainActor.assumeIsolated {
     do {

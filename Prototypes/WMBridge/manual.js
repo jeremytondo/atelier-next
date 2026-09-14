@@ -8,6 +8,7 @@ const {randomUUID} = require("node:crypto");
 const {execFileSync} = require("node:child_process");
 
 const help = `Usage:
+  mise run desktop:prepare
   mise run desktop:create [-- /absolute/new-trial-directory]
   mise run desktop:create -- --enter
   mise run desktop:create -- --raw
@@ -15,6 +16,12 @@ const help = `Usage:
   mise run desktop:status [-- /absolute/trial-directory]
   mise run desktop:diagnose -- /absolute/trial-directory
   mise run desktop:cleanup -- /absolute/trial-directory
+  mise run desktop:stop
+
+For faster entry, prepare once before using create --enter. Preparation starts
+a windowless helper; subsequent requests skip native build and startup. The
+usual slide animation stays enabled. The helper stops after 10 idle minutes.
+Run desktop:stop before reopening Atelier or rebuilding native source.
 
 Quit Atelier before creation or cleanup. Use your disposable GUI session with
 one display. Creation uses ATE-40's WMBridge call and leaves the result in place
@@ -33,7 +40,12 @@ another create request. Cleanup requires switching away and closing saved test
 windows on the created Desktop first. Reopen Atelier after finishing the trial.
 `;
 
-function native(args) {
+async function native(args) {
+  const prepared = await require("./session.js").requestIfPrepared(args);
+  if (prepared) {
+    if (prepared.error && !prepared.status) throw new Error(prepared.error);
+    return prepared;
+  }
   const output = execFileSync(process.execPath, [path.join(__dirname, "run.js"), ...args],
     {encoding: "utf8", maxBuffer: 8 * 1024 * 1024});
   const report = JSON.parse(output);
@@ -66,9 +78,10 @@ function topology(report, log) {
   log("This list does not establish Mission Control visibility.");
 }
 
-function main(args, {invoke = native, log = console.log,
+async function main(args, {invoke = native, log = console.log,
   root = path.resolve(__dirname, "../../.build/ate-40-manual")} = {}) {
   const started = performance.now();
+  const startedWall = Date.now();
   const enter = args.includes("--enter"), raw = args.includes("--raw");
   const positional = args.filter(arg => !["--enter", "--raw"].includes(arg));
   const [command, argument] = positional;
@@ -81,7 +94,7 @@ function main(args, {invoke = native, log = console.log,
   }
 
   if (command === "status" && !argument || command === "create" && argument === "--check") {
-    const probe = invoke(["probe"]);
+    const probe = await invoke(["probe"]);
     topology(probe, log);
     log(`WMBridge creation API available: ${Boolean(probe.createABIAvailable)}`);
     log("Read-only probe; no Desktop creation requested.");
@@ -91,7 +104,7 @@ function main(args, {invoke = native, log = console.log,
   if (command !== "create") {
     const directory = path.resolve(argument);
     privateDirectory(directory);
-    const report = invoke([command === "status" ? "reconcile" : command === "cleanup" ? "cleanup-ready" : command,
+    const report = await invoke([command === "status" ? "reconcile" : command === "cleanup" ? "cleanup-ready" : command,
       path.join(directory, "creation"), ...(command === "cleanup" ? ["--disposable-session"] : [])]);
     const name = `${command}-${Date.now()}-${randomUUID()}.json`;
     save(directory, name, report);
@@ -129,13 +142,19 @@ function main(args, {invoke = native, log = console.log,
     // Native creation already checks capability, SIP, session, and topology.
     // Resolve the sole display there too, avoiding a separate build/run launch.
     log("Checking the display and creating once…");
-    const report = invoke([raw ? "create" : "create-ready", path.join(directory, "creation"),
+    const report = await invoke([raw ? "create" : "create-ready", path.join(directory, "creation"),
       "auto", "--disposable-session", ...(enter ? ["--enter"] : [])]);
     report.cliMilliseconds = performance.now() - started;
+    if (typeof report.entry?.dispatchedAtMillisecondsSince1970 === "number") {
+      report.cliToEntryDispatchMilliseconds = report.entry.dispatchedAtMillisecondsSince1970 - startedWall;
+    }
     save(directory, "cli-result.json", report);
     log(`WMBridge returned Space ID: ${report.createdID ?? "unknown"}`);
     log(`Result: ${report.status}`);
-    log(`Command time: ${(report.cliMilliseconds / 1000).toFixed(2)} s (includes build/startup)`);
+    log(`Command time: ${(report.cliMilliseconds / 1000).toFixed(2)} s${report.preparedHelper ? " (prepared helper)" : " (includes build/startup)"}`);
+    if (report.cliToEntryDispatchMilliseconds !== undefined) {
+      log(`Native slide requested after ${(report.cliToEntryDispatchMilliseconds / 1000).toFixed(2)} s.`);
+    }
     topology(report, log);
     if (report.error || ![raw ? "managed-type0-confirmed" : enter ? "native-entry-confirmed" : "dock-registration-confirmed"].includes(report.status)) {
       log("The requested flow was not confirmed. Inspect this trial before running create again.");
@@ -161,7 +180,7 @@ function main(args, {invoke = native, log = console.log,
 }
 
 if (require.main === module) {
-  try { process.exitCode = main(process.argv.slice(2)); }
-  catch (error) { console.error(error.message); process.exitCode = 2; }
+  main(process.argv.slice(2)).then(code => { process.exitCode = code; })
+    .catch(error => { console.error(error.message); process.exitCode = 2; });
 }
 module.exports = {main};

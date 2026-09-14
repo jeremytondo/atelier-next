@@ -24,6 +24,7 @@ func enterAdjacent(id: UInt64, display: String, forward: Bool) throws -> [String
     throw TrialError("Native entry requires the exact adjacent destination and a closed overview")
   }
   let binding = try adjacentBinding(forward: forward), started = ProcessInfo.processInfo.systemUptime
+  let dispatchedAt = Date().timeIntervalSince1970 * 1000
   for down in [true, false] {
     let event = CGEvent(keyboardEventSource: nil, virtualKey: binding["keyCode"] as! UInt16, keyDown: down)!
     event.flags = down ? CGEventFlags(rawValue: binding["flags"] as! UInt64) : []
@@ -35,7 +36,8 @@ func enterAdjacent(id: UInt64, display: String, forward: Bool) throws -> [String
     current = try Creation.decode(nativeCensus())
     if current.count == 1, current[0].currentSpaceID == id { break }
   } while ProcessInfo.processInfo.systemUptime - started < 3
-  return ["binding": binding, "expectedID": String(id),
+  return ["binding": binding, "expectedID": String(id), "dispatchedAtMillisecondsSince1970": dispatchedAt,
+    "dispatchUptime": started,
     "verified": current.count == 1 && current[0].identifier == display && current[0].currentSpaceID == id && current[0].spaces == before[0].spaces,
     "milliseconds": (ProcessInfo.processInfo.systemUptime - started) * 1000, "after": try nativeCensus()]
 }
@@ -161,6 +163,9 @@ func runReady(path: String, display requestedDisplay: String?, enter: Bool, test
         try journal.write("ready-entry-intent.json", ["expectedID": idString, "before": try nativeCensus()])
         let entry = try enterAdjacent(id: id, display: display, forward: true)
         report["entry"] = entry
+        if let dispatchUptime = entry["dispatchUptime"] as? Double {
+          report["creationToEntryDispatchMilliseconds"] = (dispatchUptime - started) * 1000
+        }
         guard entry["verified"] as? Bool == true else { throw TrialError("Native adjacent entry was not verified") }
         report["status"] = "native-entry-confirmed"
         report["creationToEntryMilliseconds"] = (ProcessInfo.processInfo.systemUptime - started) * 1000

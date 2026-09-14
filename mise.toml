@@ -93,6 +93,14 @@ run = 'node Prototypes/WMBridge/host.js "$@"'
 description = "Create one ATE-40 Desktop candidate and leave it for manual testing"
 run = 'node Prototypes/WMBridge/manual.js create "$@"'
 
+[tasks."desktop:prepare"]
+description = "Prepare a temporary windowless Desktop helper to avoid startup delay"
+run = "node Prototypes/WMBridge/session.js prepare"
+
+[tasks."desktop:stop"]
+description = "Stop this workspace's prepared Desktop helper without removing Desktops"
+run = "node Prototypes/WMBridge/session.js stop"
+
 [tasks."desktop:status"]
 description = "Read current Spaces or inspect a saved manual Desktop trial"
 run = 'node Prototypes/WMBridge/manual.js status "$@"'

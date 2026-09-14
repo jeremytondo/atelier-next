@@ -14,6 +14,23 @@ your disposable GUI session with one display:
 mise run desktop:create -- --enter
 ```
 
+To reduce the pause before the native slide, prepare a windowless helper once:
+
+```sh
+mise run desktop:prepare
+mise run desktop:create -- --enter
+```
+
+Preparation pays the build and AppKit startup cost ahead of the create request.
+The ordinary slide animation remains unchanged. The helper exits after ten idle
+minutes; `mise run desktop:stop` stops it explicitly and leaves created Desktops
+in place. Stop it before reopening Atelier or changing native source. A prepared
+helper rejects changed source, and each request still checks the current session,
+topology, ownership, and exclusive mutation lock. No Desktop is created during
+preparation. Without preparation, the original build/run path remains available.
+Connection failure never retries or falls back to another mutation. See the
+[prepared entry measurements](Evidence/2026-09-14-prepared-entry.md).
+
 The command detects the display, requests creation once, places the new Desktop
 immediately after the current one, and waits briefly for Dock to register it.
 If the exact topology stays unchanged and Dock's count agrees for 50 ms, creation
