@@ -89,6 +89,18 @@ run = 'node Prototypes/WMBridge/record.js "$@"'
 description = "Run an explicit ATE-40 scenario in a private copy of the installed HS2 host"
 run = 'node Prototypes/WMBridge/host.js "$@"'
 
+[tasks."desktop:create"]
+description = "Create one ATE-40 Desktop candidate and leave it for manual testing"
+run = 'node Prototypes/WMBridge/manual.js create "$@"'
+
+[tasks."desktop:status"]
+description = "Read current Spaces or inspect a saved manual Desktop trial"
+run = 'node Prototypes/WMBridge/manual.js status "$@"'
+
+[tasks."desktop:cleanup"]
+description = "Remove the inactive, unoccupied Desktop owned by a specified manual trial"
+run = 'node Prototypes/WMBridge/manual.js cleanup "$@"'
+
 [tasks."refs:update"]
 description = "Update reference checkouts from upstream main (requires clean checkouts)"
 run = "scripts/refs.sh update"

@@ -1,0 +1,142 @@
+// Manual ATE-40 trials use the existing native experiment, one new journal per
+// invocation. Creation never switches, cleans up, or retries a native request.
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const {randomUUID} = require("node:crypto");
+const {execFileSync} = require("node:child_process");
+
+const help = `Usage:
+  mise run desktop:create [-- /absolute/new-trial-directory]
+  mise run desktop:create -- --check
+  mise run desktop:status [-- /absolute/trial-directory]
+  mise run desktop:cleanup -- /absolute/trial-directory
+
+Quit Atelier before creation or cleanup. Use your disposable GUI session with
+one display. Creation uses ATE-40's WMBridge call and leaves the result in place
+for manual switching. It does not open Mission Control or switch Desktops.
+
+Creation prints the saved trial path and commands to inspect or remove its ID.
+--check and status are read only. After an error, inspect the trial before making
+another create request. Cleanup requires switching away and closing saved test
+windows on the created Desktop first. Reopen Atelier after finishing the trial.
+`;
+
+function native(args) {
+  const output = execFileSync(process.execPath, [path.join(__dirname, "run.js"), ...args],
+    {encoding: "utf8", maxBuffer: 8 * 1024 * 1024});
+  const report = JSON.parse(output);
+  if (report.didError || report.error && !report.status) throw new Error(output);
+  return report;
+}
+
+function privateDirectory(directory) {
+  const info = fs.lstatSync(directory);
+  if (!info.isDirectory() || info.uid !== process.getuid() || (info.mode & 0o077)) {
+    throw new Error("Trial directory must be owned by you, private (0700), and not a symlink");
+  }
+}
+
+function save(directory, name, value) {
+  fs.writeFileSync(path.join(directory, name), JSON.stringify(value, null, 2) + "\n",
+    {mode: 0o600, flag: "wx"});
+}
+
+function quote(value) { return "'" + value.replaceAll("'", "'\\''") + "'"; }
+
+function topology(report, log) {
+  for (const display of report.after ?? report.censusAfter ?? []) {
+    const current = display["Current Space"]?.id64;
+    log(`Display: ${display["Display Identifier"]}`);
+    log(`Current Space: ${current}`);
+    log(`Internal Space list: ${(display.Spaces ?? []).map(space =>
+      `${space.id64}${space.type === 0 ? " (Desktop)" : ` (type ${space.type})`}`).join(", ")}`);
+  }
+}
+
+function main(args, {invoke = native, log = console.log,
+  root = path.resolve(__dirname, "../../.build/ate-40-manual")} = {}) {
+  const [command, argument] = args;
+  if (args.includes("--help")) { log(help); return 0; }
+  if (args.length > 2 || !["create", "status", "cleanup"].includes(command) ||
+    (command === "cleanup" && !argument) ||
+    (argument && !(command === "create" && argument === "--check") && !path.isAbsolute(argument))) {
+    log(help); return 64;
+  }
+
+  if (command === "status" && !argument || command === "create" && argument === "--check") {
+    const probe = invoke(["probe"]);
+    topology(probe, log);
+    log(`WMBridge creation API available: ${Boolean(probe.createABIAvailable)}`);
+    log("Read-only probe; no Desktop creation requested.");
+    return 0;
+  }
+
+  if (command !== "create") {
+    const directory = path.resolve(argument);
+    privateDirectory(directory);
+    const report = invoke([command === "status" ? "reconcile" : "cleanup",
+      path.join(directory, "creation"), ...(command === "cleanup" ? ["--disposable-session"] : [])]);
+    const name = `${command}-${Date.now()}-${randomUUID()}.json`;
+    save(directory, name, report);
+    log(`Space ID: ${report.createdID ?? report.returnedID ?? "unknown"}`);
+    log(`Result: ${report.status ?? "read-only reconciliation"}`);
+    topology(report, log);
+    log(`Full report: ${path.join(directory, name)}`);
+    if (command === "cleanup" && !["removed", "already-absent"].includes(report.status)) {
+      log("Cleanup was not confirmed. Inspect the report before taking another action.");
+      return 2;
+    }
+    return 0;
+  }
+
+  let directory;
+  if (argument) {
+    directory = path.resolve(argument);
+    fs.mkdirSync(directory, {mode: 0o700}); // Existing attempts are never reusable.
+  } else {
+    fs.mkdirSync(root, {recursive: true, mode: 0o700});
+    privateDirectory(root);
+    directory = fs.mkdtempSync(path.join(root, "trial-"));
+  }
+  privateDirectory(directory);
+  log(`Trial: ${directory}`);
+  log(`Inspect: mise run desktop:status -- ${quote(directory)}`);
+  log(`Cleanup: mise run desktop:cleanup -- ${quote(directory)}`);
+  try {
+    const probe = invoke(["probe"]);
+    save(directory, "probe.json", probe);
+    const displays = probe.censusAfter;
+    if (probe.screens?.length !== 1 || displays?.length !== 1 ||
+      typeof displays[0]["Display Identifier"] !== "string" || !displays[0]["Display Identifier"]) {
+      throw new Error("Creation requires exactly one screen and one native display");
+    }
+    if (!probe.bridgeAnswered || !probe.bridgeMatchesCensus || !probe.createABIAvailable) {
+      throw new Error("WMBridge capability probe failed; no creation requested");
+    }
+    log(`Creating once on ${probe.screens[0].name ?? "the current display"}…`);
+    const report = invoke(["create", path.join(directory, "creation"),
+      displays[0]["Display Identifier"], "--disposable-session"]);
+    save(directory, "cli-result.json", report);
+    log(`WMBridge returned Space ID: ${report.createdID ?? "unknown"}`);
+    log(`Result: ${report.status}`);
+    topology(report, log);
+    if (report.status !== "managed-type0-confirmed") {
+      log("Creation is uncertain. Inspect this trial before running create again.");
+      return 2;
+    }
+    log("Confirmed in the internal Desktop list. Left in place for your manual test.");
+    log("Try Mission Control and your usual Desktop switching, then report whether you can enter it and type.");
+    return 0;
+  } catch (error) {
+    save(directory, "cli-error.json", {error: error.message});
+    log("Attempt stopped. Logs were preserved; no automatic retry or cleanup was requested.");
+    throw error;
+  }
+}
+
+if (require.main === module) {
+  try { process.exitCode = main(process.argv.slice(2)); }
+  catch (error) { console.error(error.message); process.exitCode = 2; }
+}
+module.exports = {main};

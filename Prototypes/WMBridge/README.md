@@ -5,6 +5,23 @@ before running it. On the tested macOS 26.5.2 configuration, the operation added
 type-0 census entries that native navigation did not recognize. Do not adopt it
 as Atelier's production create command.
 
+For a manual trial, quit Atelier and run this from the `ate-40` workspace in
+your disposable GUI session with one display:
+
+```sh
+mise run desktop:create
+```
+
+The command detects the display, requests creation once, prints the returned
+Space ID, and leaves it in place for manual switching. It saves private logs
+under `.build/ate-40-manual/` and prints commands to inspect and clean up that
+specific trial. Check whether Mission Control shows the new Desktop, whether
+you can enter it with your usual controls, and whether you can type in a saved
+test window. Return to an original Desktop before cleanup, and reopen Atelier
+when finished. Do not repeat creation after an uncertain result; inspect the
+saved trial first. `mise run desktop:create -- --help` describes the interface;
+`mise run desktop:create -- --check` only runs the read-only probe.
+
 Run from the repository root using mise and XcodeBuildMCP:
 
 ```sh
