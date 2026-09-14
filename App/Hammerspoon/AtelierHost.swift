@@ -1,5 +1,6 @@
 // Atelier's integration with the upstream app lifecycle. HS2 owns the JS engine,
 // console, configuration reload, and automation APIs; feature policy lives in JS.
+// ATE-37 disposable benchmark: exercise a changed native compilation input.
 import AppKit
 import ApplicationServices
 import JavaScriptCore
