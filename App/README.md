@@ -22,7 +22,7 @@ A synchronous configuration exception preserves objects created before the error
 
 Use the repository's mise tasks and `scripts/build-app.sh --help`; see [releases](../docs/releases.md). `mise run build` emits a locally signed app and ZIP; `dev` and `install` omit the ZIP. `mise run check` runs native and JS tests, checks release automation, and assembles an ad-hoc bundle for isolated probes. AppleScript/XPC verification requires Apple signing and runs in signed packaging. Publication remains manual.
 
-[The HS2 integration guide](Hammerspoon/README.md) explains the exact dependency pin, source reconstruction, compatibility shims, and upgrade gate. `repos/` and `Prototypes/` are independent research material and never build inputs. Runtime policy lives in `Resources/Atelier/`; native shell source lives in `Hammerspoon/Shell/` and `Hammerspoon/ShellCore/`; native helpers live in `Sources/`.
+[The HS2 integration guide](Hammerspoon/README.md) explains the exact dependency pin, source reconstruction, compatibility shims, and upgrade gate. `repos/` is independent research material and never a build input. Runtime policy lives in `Resources/Atelier/`; native shell source lives in `Hammerspoon/Shell/` and `Hammerspoon/ShellCore/`; native helpers live in `Sources/`.
 
 ## Manual trial
 

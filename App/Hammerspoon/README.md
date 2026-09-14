@@ -1,6 +1,6 @@
 # Hammerspoon 2 integration
 
-`upstream.json` pins an exact commit and verified archive checksum. `scripts/prepare-hammerspoon.sh` reconstructs `.build/hammerspoon2` from that archive, applies integration patches with `--fuzz=0`, deletes upstream shell files, and copies `Shell/` and `ShellCore/` into the synchronized `Hammerspoon 2/Atelier/` folder. It copies the shared `IPC/` transport into both app and CLI targets and checks that the app has exactly one `@main`. Reference checkouts and prototypes never participate.
+`upstream.json` pins an exact commit and verified archive checksum. `scripts/prepare-hammerspoon.sh` reconstructs `.build/hammerspoon2` from that archive, applies integration patches with `--fuzz=0`, deletes upstream shell files, and copies `Shell/` and `ShellCore/` into the synchronized `Hammerspoon 2/Atelier/` folder. It copies the shared `IPC/` transport into both app and CLI targets and checks that the app has exactly one `@main`. Reference checkouts never participate.
 
 Atelier owns the app entry point, lifecycle, menu, native welcome/permission windows, coexistence warning, and recovery UI. The excluded upstream files are `Lifecycle/Hammerspoon_2App.swift`, `Managers/ManagerManager.swift`, `Managers/SettingsManager.swift`, `Windows/OnboardingView.swift`, and `Windows/Settings/`. HS2's engine, modules, utilities, PermissionsManager, SpoonManager, AboutView, and ConsoleView stay upstream source. Sparkle remains linked and licensed, with no updater created or updater UI exposed. Releases remain manual.
 
