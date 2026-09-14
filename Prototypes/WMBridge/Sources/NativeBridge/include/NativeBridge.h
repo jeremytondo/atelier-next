@@ -8,6 +8,11 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSDictionary *)probe;
 + (NSDictionary *)traceProbe;
 + (NSDictionary *)spaceValues:(uint64_t)spaceID;
++ (NSDictionary *)spaceOwners:(uint64_t)spaceID;
++ (NSDictionary *)dockSpaceCount;
++ (NSDictionary *)placementCapabilities;
++ (NSDictionary *)placeSpace:(uint64_t)spaceID display:(NSString *)display index:(uint32_t)index;
++ (NSDictionary *)activateSpace:(uint64_t)spaceID display:(NSString *)display hiding:(NSArray<NSNumber *> *)hidden;
 + (NSArray * _Nullable)census;
 + (NSDictionary *)createDesktop;
 + (NSDictionary *)destroyDesktop:(uint64_t)spaceID;

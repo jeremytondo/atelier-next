@@ -29,11 +29,18 @@ Usage:
   wmbridge-experiment create /absolute/new-run-directory DISPLAY-ID --disposable-session
   wmbridge-experiment reconcile /absolute/run-directory
   wmbridge-experiment diagnose /absolute/run-directory
+  wmbridge-experiment followup /absolute/create-directory /absolute/new-followup-directory MODE --disposable-session
+  wmbridge-experiment typing-check /absolute/new-directory EXPECTED-ID --disposable-session
   wmbridge-experiment cleanup /absolute/run-directory --disposable-session [--display RECONCILED-ID]
   wmbridge-experiment serve /absolute/private-state-directory --disposable-session
   wmbridge-experiment serve-script /absolute/private-state-directory requests.jsonl --disposable-session
 Each run permits exactly one create attempt. Reconcile never replays a mutation.
 Cleanup refuses active, occupied, uncertain, or non-owned Desktops; never retries dispatch.
+Follow-up modes: place-current, reorder-roundtrip, activate-roundtrip,
+  refresh-display, refresh-empty, refresh-mirror-mode.
+Follow-ups open Mission Control for observation and close it. Round trips restore
+  the starting order/current ID. They require the original creation journal and
+  a new output directory; inspect all reports after an interruption.
 """
 if command == "--help" { print(help); exit(0) }
 guard (["probe", "trace-probe"].contains(command) && args.count <= 1) ||
@@ -43,6 +50,8 @@ guard (["probe", "trace-probe"].contains(command) && args.count <= 1) ||
   (command == "cleanup" && args.count == 5 && args[2] == "--disposable-session" && args[3] == "--display") ||
   (command == "serve" && args.count == 3 && args[2] == "--disposable-session") ||
   (command == "serve-script" && args.count == 4 && args[3] == "--disposable-session") ||
+  (command == "followup" && args.count == 5 && args[4] == "--disposable-session") ||
+  (command == "typing-check" && args.count == 4 && args[3] == "--disposable-session") ||
   (["reconcile", "diagnose"].contains(command) && args.count == 2)
 else { fputs(help + "\n", stderr); exit(64) }
 setbuf(stdout, nil)
@@ -100,6 +109,17 @@ DispatchQueue.main.async {
       case "create": report = try runCreate(path: args[1], display: args[2])
       case "cleanup": report = try runCleanup(path: args[1], reconciledDisplay: args.count == 5 ? args[4] : nil)
       case "diagnose": report = try diagnose(path: args[1])
+      case "followup": report = try runFollowup(creationPath: args[1], outputPath: args[2], mode: args[3])
+      case "typing-check":
+        guard let id = UInt64(args[2]) else { throw TrialError("Expected ID required") }
+        let lock = try MutationLock()
+        report = try withExtendedLifetime(lock) {
+          let journal = try Journal(path: args[1], create: true)
+          try journal.write("intent.json", ["command": command, "expectedID": args[2]])
+          let result = try typingFixture(directory: journal.directory, spaceID: id)
+          try journal.write("result.json", result)
+          return result
+        }
       default: report = try reconcile(path: args[1])
       }
       let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])

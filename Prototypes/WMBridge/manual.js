@@ -85,6 +85,7 @@ function main(args, {invoke = native, log = console.log,
     log(`Result: ${report.status ?? "read-only reconciliation"}`);
     topology(report, log);
     if (command === "diagnose") {
+      if (report.dockSpaceCount?.status === 0) log(`Dock's own Desktop count: ${report.dockSpaceCount.count}`);
       log(`Saved Desktop configuration IDs: ${report.savedSpaceIDs?.join(", ") ?? "unavailable"}`);
       log(`Returned ID in saved configuration: ${report.returnedIDInSavedConfiguration ?? "unknown"}`);
       log("Saved configuration can lag live state; the full report includes per-Space values and the read delegate trace.");

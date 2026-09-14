@@ -106,6 +106,46 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
   return connection && copy ? CFBridgingRelease(copy(connection())) : nil;
 }
 
++ (NSDictionary *)spaceOwners:(uint64_t)spaceID {
+  if (!pthread_main_np() || !skyHandle()) return @{@"error": @"Main-thread SkyLight process required"};
+  @try {
+    Class cls = NSClassFromString(@"SLSBridgedSpaceCopyOwnersOperation");
+    if (!signatureMatches(cls, @"initWithSpaceID:", @"@", @[@"Q"]) ||
+        !signatureMatches(cls, performName, @"@", @[])) return @{@"error": @"Owners read ABI unavailable"};
+    CFTypeRef allocated = (__bridge_retained CFTypeRef)[cls alloc];
+    id operation = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, uint64_t))objc_msgSend)(
+      allocated, NSSelectorFromString(@"initWithSpaceID:"), spaceID));
+    id result = ((id (*)(id, SEL))objc_msgSend)(operation, NSSelectorFromString(performName));
+    if (!result || !signatureMatches([result class], @"numbers", @"@", @[])) return @{@"error": @"Owners result ABI unavailable"};
+    id owners = ((id (*)(id, SEL))objc_msgSend)(result, NSSelectorFromString(@"numbers"));
+    return [owners isKindOfClass:NSArray.class] ? @{@"owners": owners} : @{@"error": @"Owners unavailable"};
+  } @catch (NSException *exception) { return @{@"error": exception.reason ?: exception.name}; }
+}
+
++ (NSDictionary *)placementCapabilities {
+  skyHandle();
+  return @{
+    @"move": signatures(@"SLSBridgedMoveManagedSpaceToDisplayIndexOperation", @[@"initWithSpaceID:displayIdentifier:index:", performName]),
+    @"show": signatures(@"SLSBridgedShowSpacesOperation", @[@"initWithSpaces:", performName]),
+    @"hide": signatures(@"SLSBridgedHideSpacesOperation", @[@"initWithSpaces:", performName]),
+    @"current": signatures(@"SLSBridgedManagedDisplaySetCurrentSpaceOperation", @[@"initWithDisplayIdentifier:spaceID:", performName])
+  };
+}
+
++ (NSDictionary *)dockSpaceCount {
+  // Local 26.5.2 disassembly: two 32-bit output pointers, OSStatus return.
+  // The server answers from Dock's allUserSpaces, independently of SkyLight's
+  // census. Keep both legacy grid dimensions instead of guessing their names.
+  void *handle = dlopen("/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/HIServices", RTLD_NOW | RTLD_LOCAL);
+  int32_t (*getCount)(uint32_t *, uint32_t *) = handle ? dlsym(handle, "CoreDockGetWorkspacesCount") : NULL;
+  if (!getCount) { if (handle) dlclose(handle); return @{@"error": @"Dock count read unavailable"}; }
+  uint32_t first = 0, second = 0;
+  int32_t status = getCount(&first, &second);
+  dlclose(handle);
+  return @{@"status": @(status), @"firstDimension": @(first), @"secondDimension": @(second),
+    @"count": @((uint64_t)first * second), @"source": @"CoreDockGetWorkspacesCount / Dock allUserSpaces"};
+}
+
 + (NSDictionary *)createDesktop {
   NSMutableDictionary *report = [NSMutableDictionary dictionaryWithDictionary:@{@"mutationDispatched": @NO}];
   if (!pthread_main_np()) { report[@"error"] = @"Wrong thread"; return report; }
@@ -129,6 +169,59 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
     }
     uint64_t spaceID = ((uint64_t (*)(id, SEL))objc_msgSend)(result, NSSelectorFromString(@"spaceID"));
     report[@"createdID"] = [NSString stringWithFormat:@"%llu", (unsigned long long)spaceID];
+  } @catch (NSException *exception) { report[@"error"] = exception.reason ?: exception.name; }
+  return report;
+}
+
++ (NSDictionary *)placeSpace:(uint64_t)spaceID display:(NSString *)display index:(uint32_t)index {
+  NSMutableDictionary *report = [@{@"mutationDispatched": @NO} mutableCopy];
+  if (!pthread_main_np() || !skyHandle()) { report[@"error"] = @"Main-thread SkyLight process required"; return report; }
+  @try {
+    Class cls = NSClassFromString(@"SLSBridgedMoveManagedSpaceToDisplayIndexOperation");
+    NSString *initializer = @"initWithSpaceID:displayIdentifier:index:";
+    if (!signatureMatches(cls, initializer, @"@", @[@"Q", @"@", @"I"]) ||
+        !signatureMatches(cls, performName, @"v", @[])) { report[@"error"] = @"Placement ABI unavailable"; return report; }
+    CFTypeRef allocated = (__bridge_retained CFTypeRef)[cls alloc];
+    id operation = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, uint64_t, id, uint32_t))objc_msgSend)(
+      allocated, NSSelectorFromString(initializer), spaceID, display, index));
+    if (!operation) { report[@"error"] = @"Placement initializer returned nil"; return report; }
+    report[@"mutationDispatched"] = @YES;
+    ((void (*)(id, SEL))objc_msgSend)(operation, NSSelectorFromString(performName));
+  } @catch (NSException *exception) { report[@"error"] = exception.reason ?: exception.name; }
+  return report;
+}
+
++ (NSDictionary *)activateSpace:(uint64_t)spaceID display:(NSString *)display hiding:(NSArray<NSNumber *> *)hidden {
+  NSMutableArray *steps = [NSMutableArray array];
+  NSMutableDictionary *report = [@{@"mutationDispatched": @NO, @"steps": steps} mutableCopy];
+  if (!pthread_main_np() || !skyHandle()) { report[@"error"] = @"Main-thread SkyLight process required"; return report; }
+  @try {
+    Class show = NSClassFromString(@"SLSBridgedShowSpacesOperation");
+    Class hide = NSClassFromString(@"SLSBridgedHideSpacesOperation");
+    Class current = NSClassFromString(@"SLSBridgedManagedDisplaySetCurrentSpaceOperation");
+    for (Class cls in @[show ?: NSNull.null, hide ?: NSNull.null, current ?: NSNull.null]) {
+      if (!object_isClass(cls) || !signatureMatches(cls, performName, @"v", @[])) {
+        report[@"error"] = @"Activation dispatch ABI unavailable"; return report;
+      }
+    }
+    if (!signatureMatches(show, @"initWithSpaces:", @"@", @[@"@"]) ||
+        !signatureMatches(hide, @"initWithSpaces:", @"@", @[@"@"]) ||
+        !signatureMatches(current, @"initWithDisplayIdentifier:spaceID:", @"@", @[@"@", @"Q"])) {
+      report[@"error"] = @"Activation initializer ABI unavailable"; return report;
+    }
+    CFTypeRef a = (__bridge_retained CFTypeRef)[show alloc], b = (__bridge_retained CFTypeRef)[hide alloc];
+    CFTypeRef c = (__bridge_retained CFTypeRef)[current alloc];
+    id showOp = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, id))objc_msgSend)(a, NSSelectorFromString(@"initWithSpaces:"), @[@(spaceID)]));
+    id hideOp = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, id))objc_msgSend)(b, NSSelectorFromString(@"initWithSpaces:"), hidden));
+    id currentOp = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, id, uint64_t))objc_msgSend)(c, NSSelectorFromString(@"initWithDisplayIdentifier:spaceID:"), display, spaceID));
+    if (!showOp || !hideOp || !currentOp) { report[@"error"] = @"Activation initializer returned nil"; return report; }
+    // This exact sequence is the external library's activation hypothesis.
+    // Allocate and ABI-check all three operations before dispatching any of them.
+    for (id operation in @[showOp, hideOp, currentOp]) {
+      report[@"mutationDispatched"] = @YES;
+      [steps addObject:NSStringFromClass([operation class])];
+      ((void (*)(id, SEL))objc_msgSend)(operation, NSSelectorFromString(performName));
+    }
   } @catch (NSException *exception) { report[@"error"] = exception.reason ?: exception.name; }
   return report;
 }

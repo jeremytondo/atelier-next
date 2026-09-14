@@ -29,6 +29,21 @@ alongside the original trial. Preferences can lag live state; the comparison
 does not replace a manual visibility check. See the
 [registration diagnosis](Evidence/2026-09-14-registration-diagnosis.md).
 
+The [activation and Dock follow-up](Evidence/2026-09-14-activation-and-dock-refresh.md)
+demonstrates direct activation, a visible fixture, and saved keyboard input on
+the omitted Space. Mission Control still omits it. Diagnosis now also reads
+Dock's own Desktop count and CoreGraphics' physical/virtual mirror relationships;
+neither requires opening Mission Control.
+
+For bounded placement or activation comparisons, use the native `followup`
+command with the original trial's `creation` subdirectory and a new private
+output directory. `mise run wmbridge:run -- --help` lists modes. These diagnostic
+trials explicitly open Mission Control before and after the candidate operation;
+they do not test visual silence. Activation and reorder trials restore their
+starting current ID/order, record restoration, and leave the owned Space present.
+The `typing-check` command tests the saved fixture on an already active Desktop
+without creating or switching a Space. Raw reports remain local to the trial.
+
 Run from the repository root using mise and XcodeBuildMCP:
 
 ```sh

@@ -10,6 +10,12 @@ func typingFixture(directory: URL, spaceID: UInt64) throws -> [String: Any] {
     throw TrialError("Expected Desktop is not active")
   }
   let start = ProcessInfo.processInfo.systemUptime
+  // A nested CF run loop services sources but does not deliver AppKit's queued
+  // keyboard events. This synchronous fixture must pump NSApplication too.
+  func pumpInput() {
+    if let event = NSApplication.shared.nextEvent(matching: .any, until: Date().addingTimeInterval(0.01),
+      inMode: .default, dequeue: true) { NSApplication.shared.sendEvent(event) }
+  }
   let file = directory.appendingPathComponent("typing-fixture-\(UUID()).txt")
   try Data("ATE-40 saved fixture.\n".utf8).write(to: file, options: .withoutOverwriting)
   try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
@@ -29,7 +35,7 @@ func typingFixture(directory: URL, spaceID: UInt64) throws -> [String: Any] {
   let deadline = start + 1.5
   var focused = false
   repeat {
-    RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+    pumpInput()
     let observation = NativeBridge.observation() as! [String: Any]
     let memberships = observation["memberships"] as? [String: [NSNumber]] ?? [:]
     focused = observation["focusedWindow"] as? Int == window.windowNumber &&
@@ -37,6 +43,8 @@ func typingFixture(directory: URL, spaceID: UInt64) throws -> [String: Any] {
     if focused { break }
   } while ProcessInfo.processInfo.systemUptime < deadline
   guard focused else { throw TrialError("Saved fixture focus/membership was not confirmed; no typing sent") }
+  let focusMilliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
+  let onActiveSpace = window.isOnActiveSpace
   let phrase = "ATE40 verified typing"
   let characters = Array(phrase.utf16)
   let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!
@@ -44,12 +52,16 @@ func typingFixture(directory: URL, spaceID: UInt64) throws -> [String: Any] {
   down.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: characters)
   up.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: characters)
   down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+  let typingDeadline = ProcessInfo.processInfo.systemUptime + 1
   repeat {
-    RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+    pumpInput()
     if text.string.contains(phrase) { break }
-  } while ProcessInfo.processInfo.systemUptime < deadline
+  } while ProcessInfo.processInfo.systemUptime < typingDeadline
   try text.string.write(to: file, atomically: true, encoding: .utf8)
+  let listed = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+  let visible = listed.contains { ($0[kCGWindowNumber as String] as? NSNumber)?.intValue == window.windowNumber }
   return ["typed": text.string.contains(phrase), "savedFile": file.path, "windowID": window.windowNumber,
+    "focusMilliseconds": focusMilliseconds, "onActiveSpace": onActiveSpace, "visible": visible,
     "spaceID": String(spaceID), "inputToTypedMilliseconds": (ProcessInfo.processInfo.systemUptime - start) * 1000,
     "windowClosedOnReturn": true]
 }
