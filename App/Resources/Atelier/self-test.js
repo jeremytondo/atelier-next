@@ -25,8 +25,10 @@ try {
 
 async function exerciseDefaults() {
   try {
-    const osa = await hs.osascript.applescript("return 2 + 2");
-    if (!osa || !osa.success || osa.result !== 4) throw new Error("Bundled AppleScript service failed: " + JSON.stringify(osa));
+    if (globalThis.atelierSelfTestXPC !== false) {
+      const osa = await hs.osascript.applescript("return 2 + 2");
+      if (!osa || !osa.success || osa.result !== 4) throw new Error("Bundled AppleScript service failed: " + JSON.stringify(osa));
+    }
     const {Timers} = require(atelierHost.modules + "/bridge.js");
     globalThis.atelierProbeTimers = new Timers(hs);
     globalThis.atelierProbe = require(atelierHost.modules + "/index.js").create(hs, {

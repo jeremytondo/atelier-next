@@ -3,21 +3,26 @@
 # timestamp, notarization, stapling, and Gatekeeper verification must all pass.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# shellcheck source=scripts/phase-timing.sh
+source "$root/scripts/phase-timing.sh"
 cd "$root"
 
 usage() {
   cat <<'USAGE'
-usage: mise run build [--install] [--launch] [--skip-build]
+usage: mise run build [--install] [--launch] [--skip-build] [--app-only]
                       [--identity NAME_OR_HASH] [--build-number NUMBER]
                       [--output-dir DIR]
        mise run release:package PLAN.json [--skip-build] [--output-dir DIR]
 
 Local builds default to Apple Development signing, then ad-hoc.
 Release plans require Developer ID signing and notarization credentials.
+--skip-build requires matching native input and output receipts.
+--app-only retains signing and bundle probes but omits the local ZIP.
 USAGE
 }
 die() { echo "error: $*" >&2; exit 1; }
-install_app=false; launch=false; skip_build=false
+arguments=("$@")
+install_app=false; launch=false; skip_build=false; app_only=false
 identity=${ATELIER_SIGN_IDENTITY:-}
 build_number=''; plan=''; output=''
 while [[ $# -gt 0 ]]; do
@@ -25,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --install) install_app=true; shift ;;
     --launch) launch=true; shift ;;
     --skip-build) skip_build=true; shift ;;
+    --app-only) app_only=true; shift ;;
     --identity|--build-number|--release-plan|--output-dir)
       [[ $# -ge 2 && -n $2 && $2 != --* ]] || die "missing value for $1"
       case "$1" in
@@ -43,9 +49,10 @@ done
 channel=local
 marketing_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' App/Resources/Info.plist)
 version="$marketing_version-local"
-commit=$(git rev-parse HEAD)
+commit=$("$root/scripts/source-commit.sh")
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [[ -n $plan ]]; then
+  [[ $app_only == false ]] || die '--app-only cannot be used for releases'
   [[ -z $build_number ]] || die '--build-number cannot override a release plan'
   "$root/scripts/validate-release-plan.sh" "$plan"
   channel=$(jq -r .channel "$plan")
@@ -60,6 +67,10 @@ build_number=${build_number:-${built_at//[-:TZ]/}}
 output=${output:-$root/dist}
 mkdir -p "$output"
 output=$(cd "$output" && pwd -P)
+if [[ ${ATELIER_PACKAGE_LOCKED:-} != "$output" ]]; then
+  exec "$root/scripts/with-lock.sh" "$output/.atelier-package.lock" \
+    env ATELIER_PACKAGE_LOCKED="$output" "$0" ${arguments[@]+"${arguments[@]}"}
+fi
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-package.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT
 
@@ -111,17 +122,19 @@ else
 fi
 
 if [[ $skip_build == false ]]; then
-  "$root/scripts/build-hammerspoon.sh"
-  xcodebuildmcp swift-package build --package-path "$root/App" --configuration release --architectures arm64
+  mise run native:build
 fi
-binaries="$root/App/.build/release"
+mkdir "$temporary/native"
+"$root/scripts/snapshot-native.sh" "$temporary/native"
+binaries="$temporary/native/helpers"
 for executable in atelier-config atelier-engine atelier-tools; do
   [[ -x $binaries/$executable ]] || die "missing release executable: $executable"
   [[ $(lipo -archs "$binaries/$executable") == arm64 ]] || die "expected an arm64 executable: $executable"
 done
 app="$temporary/Atelier.app"
+phase_start
 contents="$app/Contents"
-hs2_app="$root/.build/hs2-derived/Build/Products/Release/Hammerspoon 2.app"
+hs2_app="$temporary/native/host/Hammerspoon 2.app"
 [[ -x "$hs2_app/Contents/MacOS/Hammerspoon 2" ]] || die 'missing HS2 release bundle'
 ditto "$hs2_app" "$app"
 mkdir -p "$contents/MacOS" "$contents/Helpers" "$contents/Resources"
@@ -132,12 +145,9 @@ ditto App/Resources/Atelier "$contents/Resources/Atelier"
 rm -rf "$contents/Resources/DefaultConfig"
 ditto App/Resources/DefaultConfig "$contents/Resources/DefaultConfig"
 cp App/Resources/Configuration.md App/Resources/ThirdPartyNotices.txt "$contents/Resources/"
-cp .build/hammerspoon2/LICENSE "$contents/Resources/Hammerspoon2-LICENSE"
+cp "$temporary/native/host/Hammerspoon2-LICENSE" "$contents/Resources/Hammerspoon2-LICENSE"
 cp App/Hammerspoon/upstream.json "$contents/Resources/Hammerspoon2-version.json"
-mkdir -p "$contents/Resources/Licenses"
-for dependency in AXSwift javascript-core-extras swift-commandlinekit xctest-dynamic-overlay; do
-  cp "$root/.build/hs2-derived/SourcePackages/checkouts/$dependency/LICENSE" "$contents/Resources/Licenses/$dependency.txt"
-done
+ditto "$temporary/native/host/Licenses" "$contents/Resources/Licenses"
 "$binaries/atelier-tools" --icon "$temporary/AppIcon.iconset"
 iconutil -c icns "$temporary/AppIcon.iconset" -o "$contents/Resources/AppIcon.icns"
 # Retain HS2's usage descriptions and bundle metadata for its automation modules.
@@ -161,6 +171,8 @@ plutil -insert AtelierBuildDate -string "$built_at" "$contents/Info.plist"
 umask 022
 chmod -R u=rwX,go=rX "$app"
 # Sign nested bundles inside out, preserving HS2's automation services.
+phase_end assembly
+phase_start
 for directory in "$contents/Frameworks" "$contents/XPCServices"; do
   [[ -d $directory ]] || continue
   while IFS= read -r -d '' path; do
@@ -179,16 +191,23 @@ done
 codesign --force --sign "$identity" --options runtime "$timestamp" \
   --entitlements App/Hammerspoon/entitlements.plist "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
-"$root/scripts/bundle-test.sh" "$app"
+phase_end signing
+probe_args=()
+if [[ $channel == local && $identity == - ]]; then probe_args=(--ad-hoc); fi
+"$root/scripts/timed.sh" bundle-probe "$root/scripts/bundle-test.sh" "$app" ${probe_args[@]+"${probe_args[@]}"}
 
 if [[ $channel != local ]]; then
+  if [[ ${GITHUB_ACTIONS:-} == true ]]; then "$root/scripts/release-current.sh" "$plan"; fi
   ditto -c -k --sequesterRsrc --keepParent "$app" "$temporary/notarization.zip"
   mkdir -p "$output/notarization"
+  phase_start
   if ! "$notarytool" submit "$temporary/notarization.zip" "${notary_args[@]}" \
       --wait --timeout 20m --output-format json > "$output/notarization/submission.json"; then
+    phase_end notary-wait
     cat "$output/notarization/submission.json" >&2
     die 'Notarization failed or timed out; no release package was produced.'
   fi
+  phase_end notary-wait
   if [[ $(jq -r .status "$output/notarization/submission.json") != Accepted ]]; then
     submission_id=$(jq -er .id "$output/notarization/submission.json")
     "$notarytool" log "$submission_id" "${notary_args[@]}" "$output/notarization/log.json"
@@ -203,16 +222,18 @@ else
   archive_name="Atelier-$marketing_version-$build_number-local.zip"
 fi
 # Nothing replaces the last package until signing and notarization have passed.
-ditto -c -k --sequesterRsrc --keepParent "$app" "$temporary/$archive_name"
+phase_start
+if [[ $app_only == false ]]; then ditto -c -k --sequesterRsrc --keepParent "$app" "$temporary/$archive_name"; fi
 rm -rf "$output/Atelier.app"
 mv "$app" "$output/Atelier.app"
-mv "$temporary/$archive_name" "$output/$archive_name"
+if [[ $app_only == false ]]; then mv "$temporary/$archive_name" "$output/$archive_name"; fi
 if [[ $channel != local ]]; then
   jq --slurpfile hs2 App/Hammerspoon/upstream.json \
     '. + {architecture: "arm64", minimum_macos: "26.0", signing: "developer-id", notarized: true,
     hammerspoon2: $hs2[0], asset: "Atelier-macos-arm64.zip"}' "$plan" > "$output/manifest.json"
   (cd "$output" && shasum -a 256 Atelier-macos-arm64.zip manifest.json > checksums.txt)
 fi
+phase_end final-package
 
 launch_path="$output/Atelier.app"
 if [[ $install_app == true ]]; then
@@ -228,7 +249,8 @@ if [[ $install_app == true ]]; then
   ditto "$output/Atelier.app" "$installed"
   launch_path=$installed
 fi
-printf 'App: %s\nZIP: %s\nVersion: %s (build %s, %s)\n' "$launch_path" "$output/$archive_name" "$version" "$build_number" "$channel"
+printf 'App: %s\nVersion: %s (build %s, %s)\n' "$launch_path" "$version" "$build_number" "$channel"
+if [[ $app_only == false ]]; then printf 'ZIP: %s\n' "$output/$archive_name"; fi
 if [[ $launch == true ]]; then
   xcodebuildmcp macos launch --app-path "$launch_path"
 fi

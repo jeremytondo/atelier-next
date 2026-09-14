@@ -18,10 +18,10 @@ Install Xcode and mise, then run `mise install`. Use `mise tasks` or `scripts/bu
 
 | Command | Result |
 | --- | --- |
-| `mise run check` | HS2 host build, native/JavaScript tests, shell/workflow lint, release tests |
+| `mise run check` | Full gate, including verified native builds and an isolated ad-hoc bundle probe |
 | `mise run build` | Local signed app and ZIP in `dist/` |
-| `mise run install` | Build and install, backing up the previous app |
-| `mise run dev` | Build, install, and launch |
+| `mise run install` | Build and install without a ZIP, backing up the previous app |
+| `mise run dev` | Build, install, and launch without a ZIP |
 | `mise run release:dev` | Dispatch a rolling dev build of remote `main` and return its link |
 | `mise run release:patch` | Dispatch the next stable patch release and return its link |
 | `mise run release:minor` | Dispatch the next stable minor release and return its link |
@@ -80,16 +80,30 @@ The workflow needs `contents: write` only in its publication job; the package jo
 
 ## Pipeline behavior
 
-`.github/workflows/release.yml` has only a manual `workflow_dispatch` trigger with a `bump` choice of `dev`, `patch`, `minor`, or `major`. The workflow calls the same mise tasks used locally: check, plan, package, publish. Dev and stable runs each serialize the entire workflow. New queued requests can supersede older queued requests; running publication is not canceled halfway through replacing assets. Immediately before dev publication, the publisher checks that the built commit is still `main`. An obsolete build is skipped; rerun `mise run release:dev` to release the new head. Stable dispatches retain their selected commit even if `main` subsequently advances.
+`.github/workflows/release.yml` has only a manual `workflow_dispatch` trigger with a `bump` choice of `dev`, `patch`, `minor`, or `major`. It plans the selected commit, checks credentials and the Developer ID identity before expensive work, then uses `release:verify-package` to run the full gate and package its verified native outputs. Debug helper tests precede Release helper compilation while the independent host build can proceed. The host is compiled at most once for an unchanged input set within the release; packaging validates and privately copies its outputs, including resources, XPC service, helpers, and licenses.
+
+Dev and stable runs each serialize the entire workflow. New queued requests can supersede older queued requests; running publication is not canceled halfway through replacing assets. Dev checks that its commit is still `main` before compilation, before notarization, and immediately before publication. An obsolete build is skipped; rerun `mise run release:dev` to release the new head. Stable dispatches retain their selected commit even if `main` subsequently advances. Publication uses Ubuntu with a separate mise configuration containing only `gh` and `jq`.
 
 Distribution packaging requires a valid Developer ID Application certificate, secure signing timestamps, accepted notarization, a stapled ticket, and successful Gatekeeper assessment. There is no unsigned fallback for either published channel. The ticket is stapled to the app before producing the final ZIP, following [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
 The publisher verifies the ZIP and manifest checksums before any release mutation. Stable releases are assembled as drafts, then published as the latest stable version. Dev is always a prerelease and never becomes GitHub's latest stable release. Updating multiple dev assets is not atomic; if a download overlaps publication, retry after the workflow finishes. A failed initial publication can leave a draft: inspect and finish or remove that draft explicitly before rerunning. Stable tags and published stable assets are never force-updated.
 
-For local distribution validation, create a plan with `mise run release:plan dev > release-plan.json`, set `ATELIER_NOTARY_PROFILE` to an existing notarytool keychain profile (or set the three `ATELIER_APP_STORE_CONNECT_*` key-path/ID/issuer variables), then run `mise run release:package release-plan.json --output-dir dist/release`. This packages without uploading to GitHub. `--skip-build` is intended only for local packaging diagnosis; CI always compiles the current checkout.
+For local distribution validation, create a plan with `mise run release:plan dev > release-plan.json`, set `ATELIER_NOTARY_PROFILE` to an existing notarytool keychain profile (or set the three `ATELIER_APP_STORE_CONNECT_*` key-path/ID/issuer variables), then run `mise run release:package release-plan.json --output-dir dist/release`. This packages without uploading to GitHub. `--skip-build` requires matching input/output receipts and fails on missing, changed, or corrupted native output. CI uses it for verified same-run reuse after the full gate. Release jobs deliberately do not restore executable caches from other workflow runs.
+
+## Focused checks and build state
+
+Use `mise tasks` to discover focused JavaScript, native, lint, release-fixture, build-fixture, and bundle checks. JavaScript tests run independently of native compilation. The full `check` task always retains Debug tests, Release helpers, and bundle validation.
+
+Prepared HS2 source lives in `.build/hammerspoon2`; matching content preserves timestamps. Writers and readers share locks under `.build/locks`. Native receipts and compact unsigned outputs live in `.build/native`, separate from Xcode DerivedData and SwiftPM's `App/.build`. Receipts cover actual toolchain/build inputs and complete output content. They permit compilation reuse, never skipping tests. Do not delete lock files while development commands are running.
+
+The Check workflow runs portable tests on Ubuntu and conservatively selects macOS work. Explicit documentation/research paths can omit native work; JS and bundled-resource changes assemble/probe the current bundle, building native dependencies on a cache miss. Native, integration, tooling, unknown, renamed, deleted, or unavailable inputs select full native checks. Manual Check dispatch always selects full validation. The final `check` result fails if any selected job fails, is canceled, or unexpectedly skips.
+
+Check caches contain only compressed unsigned host/helper outputs with exact input keys. GitHub isolates PR caches from `main`; release restores none of them. Cache receipts are checked after extraction, and current resources are assembled and probed on every selected native check. A damaged immutable cache can be deleted through GitHub or replaced by changing the cache namespace. Source downloads and package/DerivedData trees are not cached in Actions without evidence that their transfer cost pays back.
+
+Timings and scoped compiler/test logs live in `.build/metrics`. Actions retains these diagnostics for seven days and adds a summary with toolchain identity, phase times, cache status and payload size. `mise run ci:report RUN_ID` reports completed workflow elapsed, total job time, and individual transfer-step times; phases and jobs can overlap. See [the ATE-37 measurements](build-performance.md) for evidence and remaining hosted benchmarks.
 
 ## Hammerspoon 2 dependency
 
 The app is built from the immutable HS2 revision and verified source archive declared in `App/Hammerspoon/upstream.json`, with the tracked integration patch applied in `.build/hammerspoon2`. The research checkout under `repos/` is never used by builds. XcodeBuildMCP builds the host's shared Atelier scheme; SwiftPM builds native helpers and the configuration migrator. The final bundle includes JavaScript defaults, starter configuration, and upstream notices. Release manifests record both Atelier's commit and the HS2 revision.
 
-Packaging runs an isolated probe of the real bundled HS2 engine before notarization, without loading user configuration, registering shortcuts, or manipulating windows. It also verifies that configuration bootstrap preserves a customized file. The full release still must pass Developer ID signing, notarization, stapling, and Gatekeeper assessment before publication.
+Packaging runs an isolated probe of the real bundled HS2 engine before notarization, without loading user configuration, registering shortcuts, or manipulating windows. It also verifies that configuration bootstrap preserves a customized file. HS2's Release XPC connections require a common Apple signing team, so credential-free ad-hoc checks explicitly omit the AppleScript call; the XPC service and signatures are still verified as bundle contents. Apple-signed local packaging and all releases run the full XPC probe. No production peer requirements are relaxed. The full release still must pass Developer ID signing, notarization, stapling, and Gatekeeper assessment before publication.

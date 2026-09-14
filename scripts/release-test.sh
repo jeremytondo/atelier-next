@@ -4,6 +4,9 @@
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-release-tests.XXXXXX")
+# These fixtures also run inside a real CI release wrapper. Never mark that
+# outer release obsolete while exercising a fake stale main revision.
+export ATELIER_STALE_DEV_MARKER="$temporary/obsolete-fixture"
 trap 'rm -rf "$temporary"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 expect_failure() {
@@ -34,6 +37,10 @@ for channel in dev stable; do
 done
 expect_failure "$root/scripts/release-plan.sh" stable banana
 expect_failure "$root/scripts/release-plan.sh" dev patch
+git clone -q --depth 1 "file://$repo" "$temporary/shallow"
+ATELIER_RELEASE_REPO_ROOT="$temporary/shallow" "$root/scripts/release-plan.sh" dev > "$temporary/shallow-dev.json"
+"$root/scripts/validate-release-plan.sh" "$temporary/shallow-dev.json"
+ATELIER_RELEASE_REPO_ROOT="$temporary/shallow" expect_failure "$root/scripts/release-plan.sh" stable patch
 expect_failure "$root/scripts/build-app.sh" --identity
 jq '.tag = "v9.9.9"' "$temporary/stable.json" > "$temporary/bad-plan.json"
 expect_failure "$root/scripts/validate-release-plan.sh" "$temporary/bad-plan.json"
@@ -49,6 +56,7 @@ cat > "$temporary/bin/gh" <<'FAKE_GH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+[[ ${FAKE_GH_FAIL:-false} == false ]] || exit 99
 if [[ $1 == api ]]; then
   case "$*" in
     *git/ref/heads/main*) jq -n --arg sha "$FAKE_MAIN" '{object: {sha: $sha}}' ;;
@@ -92,6 +100,13 @@ expect_failure publish
 make_assets dev
 FAKE_MAIN=0000000000000000000000000000000000000000 publish
 ! grep -Eq '^release |--method PATCH' "$FAKE_GH_LOG" || fail 'stale dev build changed the release'
+"$root/scripts/release-current.sh" "$temporary/dev.json"
+FAKE_MAIN=0000000000000000000000000000000000000000 expect_failure "$root/scripts/release-current.sh" "$temporary/dev.json"
+FAKE_GH_FAIL=true expect_failure "$root/scripts/release-current.sh" "$temporary/dev.json"
+FAKE_GH_FAIL=true "$root/scripts/release-current.sh" "$temporary/stable.json"
+GITHUB_OUTPUT="$temporary/stale-output" FAKE_MAIN=0000000000000000000000000000000000000000 \
+  "$root/scripts/ci-release.sh" "$temporary/dev.json"
+[[ $(cat "$temporary/stale-output") == packaged=false ]] || fail 'obsolete release was not skipped before credentials/builds'
 make_assets dev
 publish
 grep -Eq '^release create dev .*--prerelease --latest=false --draft$' "$FAKE_GH_LOG" || fail 'new dev release must be a prerelease'
@@ -125,17 +140,31 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$SECURITY_LOG"
 if [[ "$*" == 'list-keychains -d user' ]]; then
   printf '    "/tmp/Login Keychain.keychain-db"\n    "/tmp/Second.keychain-db"\n'
+elif [[ $1 == find-identity && ${FAKE_SIGNING_VALID:-true} == true ]]; then
+  printf '  1) 1111111111111111111111111111111111111111 "Developer ID Application: Fixture (TEST)"\n'
 fi
 FAKE_SECURITY
 chmod +x "$temporary/bin/security"
+printf '#!/usr/bin/env bash\necho fixture-uuid\n' > "$temporary/bin/uuidgen"
+chmod +x "$temporary/bin/uuidgen"
+mkdir -p "$temporary/Xcode/usr/bin"
+touch "$temporary/Xcode/usr/bin/notarytool" "$temporary/Xcode/usr/bin/stapler"
+chmod +x "$temporary/Xcode/usr/bin/"*
+signing() {
+  GITHUB_ACTIONS=true RUNNER_TEMP="$temporary/runner with spaces" DEVELOPER_DIR="$temporary/Xcode" \
+    ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64=ZHVtbXk= \
+    ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD=test \
+    ATELIER_APP_STORE_CONNECT_KEY_BASE64=ZHVtbXk= \
+    ATELIER_APP_STORE_CONNECT_KEY_ID=TEST ATELIER_APP_STORE_CONNECT_ISSUER_ID=TEST \
+    "$root/scripts/ci-signing.sh" "$@"
+}
 # Expand the key path in the wrapped process, after ci-signing.sh sets it.
 # shellcheck disable=SC2016
-GITHUB_ACTIONS=true RUNNER_TEMP="$temporary/runner with spaces" \
-  ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64=ZHVtbXk= \
-  ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD=test \
-  ATELIER_APP_STORE_CONNECT_KEY_BASE64=ZHVtbXk= \
-  ATELIER_APP_STORE_CONNECT_KEY_ID=TEST ATELIER_APP_STORE_CONNECT_ISSUER_ID=TEST \
-  expect_failure "$root/scripts/ci-signing.sh" sh -c 'test -f "$ATELIER_APP_STORE_CONNECT_KEY_PATH" || exit 99; exit 9'
+expect_failure signing sh -c 'test -f "$ATELIER_APP_STORE_CONNECT_KEY_PATH" || exit 99; touch "$1"; exit 9' sh "$temporary/wrapped"
+[[ -f $temporary/wrapped ]] || fail 'valid signing preflight did not reach the wrapped command'
+rm "$temporary/wrapped"
+FAKE_SIGNING_VALID=false expect_failure signing touch "$temporary/wrapped"
+[[ ! -f $temporary/wrapped ]] || fail 'invalid signing identity reached expensive work'
 grep -Eq '^list-keychains -d user -s /tmp/Login Keychain.keychain-db /tmp/Second.keychain-db$' "$SECURITY_LOG" || fail 'keychain search list was not restored'
 grep -Eq '^delete-keychain ' "$SECURITY_LOG" || fail 'temporary keychain was not deleted'
 [[ -z $(ls -A "$temporary/runner with spaces") ]] || fail 'temporary signing credentials were retained'

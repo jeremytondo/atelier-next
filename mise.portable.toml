@@ -1,0 +1,16 @@
+# Selected explicitly by CI; omitted native tools cannot be auto-installed.
+[tools]
+node = "26.4.0"
+gh = "2.95.0"
+jq = "1.8.1"
+shellcheck = "0.11.0"
+actionlint = "1.7.12"
+
+[tasks.check]
+run = [
+  "scripts/timed.sh js-test node --test App/Tests/JavaScript/*.test.js",
+  "scripts/timed.sh shell-lint shellcheck scripts/*.sh",
+  "scripts/timed.sh workflow-lint actionlint .github/workflows/*.yml",
+  "scripts/timed.sh release-test scripts/release-test.sh",
+  "scripts/timed.sh build-test scripts/build-test.sh",
+]

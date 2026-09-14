@@ -11,10 +11,12 @@ case "$channel" in
   stable) [[ $# -eq 2 ]] || usage ;;
   *) usage ;;
 esac
-[[ $(git rev-parse --is-shallow-repository) == false ]] || {
-  echo 'release planning requires full history and tags (fetch-depth: 0 in CI)' >&2; exit 1;
-}
-commit=$(git rev-parse HEAD)
+git_command=(git)
+if [[ -d .jj ]] && command -v jj > /dev/null; then git_command+=(--git-dir "$(jj git root)"); fi
+if [[ $channel == stable && $("${git_command[@]}" rev-parse --is-shallow-repository) != false ]]; then
+  echo 'stable release planning requires full history and tags (fetch-depth: 0 in CI)' >&2; exit 1
+fi
+commit=$("$script_dir/source-commit.sh")
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Keep the local alpha's timestamp convention. Seconds also distinguish rebuilds
 # of the same commit and let a later stable build follow a calendar-versioned dev.

@@ -43,6 +43,9 @@ enum AtelierHost {
                 let engine = JSEngine.shared
                 try engine.resetContext()
                 try install(in: engine)
+                // Release XPC peers require an Apple signing team. Ad-hoc CI
+                // still probes the engine/runtime, without relaxing peer trust.
+                engine["atelierSelfTestXPC"] = !CommandLine.arguments.contains("--self-test-no-xpc")
                 try engine.evalFromURL(resources.appendingPathComponent("Atelier/self-test.js"))
                 let deadline = Date().addingTimeInterval(10)
                 while Date() < deadline && engine.eval("globalThis.atelierSelfTestDone === true") as? Bool != true {

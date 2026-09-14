@@ -13,14 +13,144 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      MISE_OVERRIDE_CONFIG_FILENAMES: mise.portable.toml
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+      native: ${{ steps.select.outputs.native }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: scripts/ci-metrics.sh start
+      - id: select
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REVISION: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            scripts/ci-select.sh >> "$GITHUB_OUTPUT"
+          else
+            scripts/ci-select.sh "$BASE" "$REVISION" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        with:
+          version: 2026.6.14
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: scripts/ci-metrics.sh tools
+      - run: mise run check
+      - name: Measurements
+        if: always()
+        env:
+          CHECK_MODE: ${{ steps.select.outputs.mode }}
+        run: scripts/ci-metrics.sh summary
+      - name: Portable diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: portable-diagnostics
+          path: .build/metrics
+          include-hidden-files: true
+          retention-days: 7
+
+  native:
+    needs: portable
+    if: needs.portable.outputs.native == 'true'
     runs-on: macos-26
     timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - run: scripts/ci-metrics.sh start
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
+          version: 2026.6.14
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - run: mise run check
+      - run: scripts/ci-metrics.sh tools
+      - id: inputs
+        run: |
+          host=$(scripts/native-inputs.sh host)
+          helpers=$(scripts/native-inputs.sh helpers)
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "helpers=$helpers" >> "$GITHUB_OUTPUT"
+      - name: Restore unsigned host
+        id: host
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build/cache/host.tar.gz
+          key: atelier-host-v1-${{ steps.inputs.outputs.host }}
+      - name: Restore Release helpers
+        id: helpers
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build/cache/helpers.tar.gz
+          key: atelier-helpers-v1-${{ steps.inputs.outputs.helpers }}
+      - name: Unpack native outputs
+        run: |
+          scripts/timed.sh host-unpack scripts/native-cache.sh unpack host
+          scripts/timed.sh helpers-unpack scripts/native-cache.sh unpack helpers
+      - name: Selected native checks and real-bundle probe
+        env:
+          CHECK_MODE: ${{ needs.portable.outputs.mode }}
+        run: |
+          if [[ "$CHECK_MODE" == js ]]; then
+            mise run bundle:check
+          else
+            mise run check:native
+          fi
+      # GitHub scopes PR caches to the PR merge ref; main cannot restore them.
+      # Release compiles its own outputs and never restores executable caches.
+      - name: Pack reusable outputs
+        run: |
+          scripts/timed.sh host-pack scripts/native-cache.sh pack host
+          scripts/timed.sh helpers-pack scripts/native-cache.sh pack helpers
+      - name: Save unsigned host
+        if: steps.host.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build/cache/host.tar.gz
+          key: atelier-host-v1-${{ steps.inputs.outputs.host }}
+      - name: Save Release helpers
+        if: steps.helpers.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build/cache/helpers.tar.gz
+          key: atelier-helpers-v1-${{ steps.inputs.outputs.helpers }}
+      - name: Measurements
+        if: always()
+        env:
+          CHECK_MODE: ${{ needs.portable.outputs.mode }}
+          HOST_CACHE_HIT: ${{ steps.host.outputs.cache-hit }}
+          HELPERS_CACHE_HIT: ${{ steps.helpers.outputs.cache-hit }}
+        run: scripts/ci-metrics.sh summary
+      - name: Native diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-diagnostics
+          path: .build/metrics
+          include-hidden-files: true
+          retention-days: 7
+
+  check:
+    if: always()
+    needs: [portable, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - env:
+          PORTABLE_RESULT: ${{ needs.portable.result }}
+          NATIVE_REQUIRED: ${{ needs.portable.outputs.native }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: scripts/ci-result.sh "$PORTABLE_RESULT" "$NATIVE_REQUIRED" "$NATIVE_RESULT"

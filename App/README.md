@@ -16,7 +16,7 @@ The app seeds `init.js` once. If an earlier Atelier `config.toml` exists, it imp
 
 ## Build and check
 
-Use the repository's mise tasks; see [release documentation](../docs/releases.md) and `scripts/build-app.sh --help`. `mise run build` emits a locally signed app and ZIP. `mise run check` builds the HS2 host, runs native and JavaScript tests, and checks release automation. Packaging additionally probes the real bundled HS2 engine and configuration preservation in a private temporary directory. Release packaging requires Developer ID signing, notarization, stapling, and Gatekeeper validation.
+Use the repository's mise tasks; see [release documentation](../docs/releases.md) and `scripts/build-app.sh --help`. `mise run build` emits a locally signed app and ZIP; `dev` and `install` omit the ZIP. `mise run check` verifies native outputs, runs native and JavaScript tests, checks release automation, and assembles an ad-hoc bundle for isolated runtime/configuration probes. The full AppleScript/XPC probe requires Apple signing and runs during signed packaging. Release packaging also requires Developer ID signing, notarization, stapling, and Gatekeeper validation.
 
 The production dependency is pinned in [upstream.json](Hammerspoon/upstream.json). `scripts/prepare-hammerspoon.sh` verifies the source archive and applies [the integration patch](Hammerspoon/atelier.patch) in `.build/hammerspoon2`. Its dependency lockfile remains pinned. `repos/` and `Prototypes/` are independent research material and never build inputs. The patch supplies Atelier identity, configuration/bootstrap hooks, reload cleanup, and manual release controls; it removes upstream's unused Sparkle updater.
 

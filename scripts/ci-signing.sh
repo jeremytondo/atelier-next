@@ -41,4 +41,13 @@ rm "$credential_dir/developer-id.p12"
 unset ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64 ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD ATELIER_APP_STORE_CONNECT_KEY_BASE64
 export ATELIER_SIGN_KEYCHAIN="$keychain"
 export ATELIER_APP_STORE_CONNECT_KEY_PATH="$credential_dir/AuthKey.p8"
+security find-identity -v -p codesigning "$keychain" > "$credential_dir/identities"
+identity=$(awk '/"Developer ID Application:/ && !found {print $2; found=1}' "$credential_dir/identities")
+[[ -n $identity ]] || { echo 'No valid Developer ID Application identity is available; refusing to start release checks.' >&2; exit 1; }
+export ATELIER_SIGN_IDENTITY="$identity"
+developer_dir=${DEVELOPER_DIR:-$(/usr/bin/xcode-select -p)}
+[[ -x $developer_dir/usr/bin/notarytool && -x $developer_dir/usr/bin/stapler ]] || {
+  echo 'Select a full Xcode installation for notarization.' >&2; exit 1;
+}
+[[ -s $ATELIER_APP_STORE_CONNECT_KEY_PATH ]] || { echo 'The notarization key is empty.' >&2; exit 1; }
 "$@"

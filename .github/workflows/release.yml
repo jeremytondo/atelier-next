@@ -27,18 +27,23 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     environment: release
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    outputs:
+      packaged: ${{ steps.package.outputs.packaged }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ inputs.bump == 'dev' && 1 || 0 }}
           persist-credentials: false
+
+      - run: scripts/ci-metrics.sh start
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
+          version: 2026.6.14
           github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check app and release automation
-        run: mise run check
+      - run: scripts/ci-metrics.sh tools
 
       - name: Plan release
         env:
@@ -50,16 +55,19 @@ jobs:
             mise run release:plan stable "$RELEASE_BUMP" > release-plan.json
           fi
 
-      - name: Build, sign, notarize, and package
+      - name: Preflight, check, build once, sign, and notarize
+        id: package
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
           ATELIER_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.ATELIER_APP_STORE_CONNECT_KEY_BASE64 }}
           ATELIER_APP_STORE_CONNECT_KEY_ID: ${{ vars.ATELIER_APP_STORE_CONNECT_KEY_ID }}
           ATELIER_APP_STORE_CONNECT_ISSUER_ID: ${{ vars.ATELIER_APP_STORE_CONNECT_ISSUER_ID }}
-        run: scripts/ci-signing.sh mise run release:package release-plan.json --output-dir dist/release
+        run: scripts/ci-release.sh release-plan.json --output-dir dist/release
 
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: steps.package.outputs.packaged == 'true'
         with:
           name: atelier-release
           path: |
@@ -68,6 +76,20 @@ jobs:
             dist/release/checksums.txt
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
+
+      - name: Measurements
+        if: always()
+        run: scripts/ci-metrics.sh summary
+
+      - name: Build diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-build-diagnostics
+          path: .build/metrics
+          include-hidden-files: true
+          retention-days: 7
 
       - name: Upload notarization failure details
         if: failure()
@@ -80,14 +102,19 @@ jobs:
 
   publish:
     needs: package
-    runs-on: macos-26
+    if: needs.package.outputs.packaged == 'true'
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      MISE_OVERRIDE_CONFIG_FILENAMES: mise.publish.toml
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      - run: scripts/ci-metrics.sh start
 
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
@@ -96,9 +123,16 @@ jobs:
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
+          version: 2026.6.14
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: scripts/ci-metrics.sh tools
 
       - name: Publish verified assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: mise run release:publish dist/release
+
+      - name: Measurements
+        if: always()
+        run: scripts/ci-metrics.sh summary
