@@ -50,15 +50,19 @@ function create(hs, host) {
     if (!config.groups || !groups.entries.size) return;
     const pids = new Set(snapshot.windows.map(w => w.pid));
     for (const [pid, entry] of observers) if (!pids.has(pid)) {
-      for (const event of events) hs.ax.removeWatcher(entry.app, event, entry.callback);
+      hs.ax.removeWatcher(entry.element, events, entry.callback);
       observers.delete(pid);
     }
     for (const pid of pids) if (!observers.has(pid)) {
       const app = hs.application.fromPID(pid);
       if (!app) continue;
+      // HS2 after 0.0.12 watches AX elements, including application elements;
+      // retain the same element and callback for symmetric removal.
+      const element = hs.ax.applicationElement(app);
+      if (!element) continue;
       const callback = () => { geometry.set(pid, Date.now()); redraw(); observe(); };
-      observers.set(pid, {app, callback});
-      for (const event of events) hs.ax.addWatcher(app, event, callback);
+      observers.set(pid, {element, callback});
+      hs.ax.addWatcher(element, events, callback);
     }
   }
   async function run(name, action) {
@@ -239,7 +243,7 @@ function create(hs, host) {
     if (poll) poll.stop(); poll = null;
     if (overlay) overlay.stop(); overlay = null;
     for (const {key} of bindings) key.destroy(); bindings.length = 0;
-    for (const {app, callback} of observers.values()) for (const event of events) hs.ax.removeWatcher(app, event, callback);
+    for (const {element, callback} of observers.values()) hs.ax.removeWatcher(element, events, callback);
     observers.clear(); geometry.clear(); settling.clear(); timers.stop(); bridge.stop();
   };
   return api;

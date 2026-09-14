@@ -119,9 +119,14 @@ test("grouping fills only the front member and selection focuses exact same-app 
   state.snapshot.windows = windows.map(w => ({id:w.id,pid:42,space:"1",app:"Fixture",bundleID:"fixture",frame:w.frame}));
   const app = create(hs,host); await app.start(options);
   await app.group(); assert.deepEqual(fills,[1]);
+  assert.equal(state.watched.length, 1);
+  assert.notEqual(state.watched[0][0], application);
+  assert.ok(state.watched[0][1].includes("AXWindowCreated"));
+  assert.ok(state.watched[0][1].includes("AXFocusedWindowChanged"));
   await app.select(2); assert.equal(state.snapshot.focused,2); assert.deepEqual(fills,[1,2]);
   await app.select(2); assert.deepEqual(fills,[1,2]);
   app.stop();
+  assert.deepEqual(state.removedWatchers, state.watched);
 });
 test("overlapping Space actions are dropped and stop cannot reenable old bindings", async () => {
   const {hs,state} = fakeHS(), app = create(hs,host);
@@ -131,4 +136,25 @@ test("overlapping Space actions are dropped and stop cannot reenable old binding
   app.stop(); await rejected;
   assert.equal(state.requests.filter(r => r.command === "delete").length,0);
   assert.ok(state.keys.every(k => !k.enabled));
+});
+
+test("pause and defaults failures preserve independent HS2 scripts", async () => {
+  for (const failure of [null, "options", "permission", "shortcut", "helper"]) {
+    const {hs,state} = fakeHS();
+    const independent = hs.hotkey.create(["ctrl"], "z", () => {}); independent.enable();
+    const timer = hs.timer.doEvery(1, () => {});
+    const app = create(hs,host);
+    if (failure === "permission") state.trusted = false;
+    if (failure === "shortcut") state.failBinding = "g";
+    if (["options", "permission", "shortcut"].includes(failure)) {
+      await assert.rejects(app.start(failure === "options" ? {unknown:true} : options));
+    } else {
+      await app.start(options);
+      if (failure === "helper") state.tasks[0].ended(9,"crash");
+      else app.stop();
+    }
+    assert.equal(independent.enabled, true, failure);
+    assert.equal(independent.destroyed, false, failure);
+    assert.equal(timer.stopped, false, failure);
+  }
 });

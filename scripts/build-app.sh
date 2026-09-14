@@ -156,7 +156,12 @@ plutil -replace CFBundleExecutable -string Atelier "$contents/Info.plist"
 plutil -replace CFBundleName -string Atelier "$contents/Info.plist"
 plutil -replace CFBundleDisplayName -string Atelier "$contents/Info.plist"
 plutil -replace LSUIElement -bool true "$contents/Info.plist"
-plutil -replace CFBundleURLTypes -json '[{"CFBundleURLName":"com.elevenideas.Atelier","CFBundleURLSchemes":["atelier"]}]' "$contents/Info.plist"
+plutil -replace CFBundleURLTypes.0.CFBundleURLName -string com.elevenideas.Atelier "$contents/Info.plist"
+plutil -replace CFBundleURLTypes.0.CFBundleURLSchemes.0 -string atelier "$contents/Info.plist"
+plutil -replace NSAccessibilityUsageDescription -string 'Atelier uses Accessibility to control windows and shortcuts.' "$contents/Info.plist"
+plutil -remove CFBundleDocumentTypes "$contents/Info.plist"
+plutil -remove UTExportedTypeDeclarations "$contents/Info.plist"
+plutil -replace CFBundleIdentifier -string com.elevenideas.Atelier.HammerspoonOSAScriptHelper "$contents/XPCServices/HammerspoonOSAScriptHelper.xpc/Contents/Info.plist"
 plutil -remove SUFeedURL "$contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $marketing_version" "$contents/Info.plist"
@@ -188,8 +193,16 @@ done
 for path in "$contents/Helpers/atelier-engine" "$contents/Helpers/atelier-config" "$contents/MacOS/hs2"; do
   codesign --force --sign "$identity" --options runtime "$timestamp" "$path"
 done
+app_entitlements=App/Hammerspoon/entitlements.plist
+if [[ $channel == local && $identity == - ]]; then
+  # An ad-hoc signature has no team for hardened library validation. Only the
+  # isolated ad-hoc probe relaxes it; Apple-signed local/release apps retain it.
+  app_entitlements="$temporary/ad-hoc-entitlements.plist"
+  cp App/Hammerspoon/entitlements.plist "$app_entitlements"
+  /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.disable-library-validation bool true' "$app_entitlements"
+fi
 codesign --force --sign "$identity" --options runtime "$timestamp" \
-  --entitlements App/Hammerspoon/entitlements.plist "$app"
+  --entitlements "$app_entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 phase_end signing
 probe_args=()

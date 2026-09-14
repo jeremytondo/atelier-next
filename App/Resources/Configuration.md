@@ -2,7 +2,7 @@
 
 Atelier provides Hammerspoon 2 with optional workspace defaults. Your configuration runs as JavaScript with the full `hs` API. Open it from the Atelier menu, save changes in your editor, then choose **Reload Config**. Use **Open Console** for errors and interactive inspection. The bundled HS2 API reference is available through `hs.docs.show()`.
 
-The default entry point is `~/.config/atelier/init.js`, honoring an absolute `XDG_CONFIG_HOME`. HS2 Settings can select another file. Relative `require("./file.js")` paths resolve beside the requiring module. User files are never overwritten by app updates.
+The entry point is `~/.config/atelier/init.js`, honoring an absolute `XDG_CONFIG_HOME`. An absolute `ATELIER_CONFIG_DIR` overrides the directory for isolated development and tests. Relative `require("./file.js")` paths resolve beside the requiring module. User files are never overwritten by app updates.
 
 ```js
 atelier.start({
@@ -74,8 +74,14 @@ The following return promises unless indicated otherwise:
 
 Overlapping default actions return `{busy: true}`. Failed/timed-out helper mutations are never retried automatically: an action may already have completed. Inspect the Desktop before resuming. Helper failure stops the defaults and releases bindings; the menu and HS2 Console remain available.
 
-## Configuration migration and diagnostics
+## First launch, recovery, and diagnostics
 
-Existing `init.js` always wins. On first launch without it, Atelier imports `config.toml` (including its includes), otherwise earlier `settings.json`, otherwise literal prototype `quickapps.js` data. It preserves source files and never executes legacy configuration. Once `init.js` exists, edit JavaScript; later edits to legacy files have no effect. A migration error leaves the source untouched and requires correction before bootstrap can complete.
+The `atelier.start(options)` object is Atelier's stable configuration contract. Direct `hs` scripting is supported, with APIs subject to changes in the selected upstream HS2 revision.
 
-Use **Export Diagnostics** to save the runtime status and recent timings. The default export excludes window titles. The HS2 Console may contain information printed by your own scripts.
+The native welcome screen appears before your first configuration execution. Grant Accessibility, or choose **Continue Without Access**. Defaults report missing access while independent scripts can run. After granting access later, choose **Accessibility Help** to check permission and reload automatically. A running Hammerspoon copy produces a startup conflict warning, with **Continue Anyway**, **Quit Atelier**, and **Don't warn again**. An installed but stopped copy is informational.
+
+Existing `init.js` always wins, including empty or invalid files. If absent, Atelier copies the current bundled default file once. It does not import TOML, JSON, or prototype configuration.
+
+A synchronous configuration exception keeps objects created before the failure active. A syntax error loads nothing. The error stays in the menu and Console; fix the file and choose **Reload Config**. Invalid defaults options, missing Accessibility, shortcut conflicts, and helper failures stop only Atelier Defaults. Reload replaces the entire context in process, retaining Console logs. If the previous helper will not stop within the bounded shutdown period, reload reports an error and leaves that context available for another attempt. Closing native windows leaves Atelier running in the menu bar.
+
+Use **Export Diagnostics** to save runtime status and recent timings, plus native status, errors, and version information even when the context is unavailable. The default export excludes window titles. The HS2 Console may contain information printed by your own scripts.

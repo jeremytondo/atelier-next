@@ -13,6 +13,8 @@ let package = Package(
     .package(url: "https://github.com/mattt/swift-toml.git", exact: "2.0.0")
   ],
   targets: [
+    .target(name: "AtelierShellCore", path: "Hammerspoon/ShellCore"),
+    .testTarget(name: "AtelierShellCoreTests", dependencies: ["AtelierShellCore"]),
     .target(name: "QuickAppSupport"),
     .target(name: "SpaceControlCore"),
     .target(name: "AtelierCore", dependencies: [.product(name: "TOML", package: "swift-toml")]),

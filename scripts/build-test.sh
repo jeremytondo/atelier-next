@@ -19,7 +19,14 @@ printf 'lockfile\n' > "$root/App/Package.resolved"
 printf 'helper source\n' > "$root/App/Sources/helper.swift"
 printf '#!/usr/bin/env bash\necho test-toolchain\n' > "$root/scripts/toolchain.sh"
 upstream="$temporary/upstream/hs2"
-mkdir -p "$upstream/Hammerspoon 2/Lifecycle"
+mkdir -p "$upstream/Hammerspoon 2/Lifecycle" "$upstream/Hammerspoon 2/Managers" "$upstream/Hammerspoon 2/Windows/Settings" "$upstream/Hammerspoon 2/Modules/hs.ipc" "$upstream/hs2"
+for path in Lifecycle/Hammerspoon_2App.swift Managers/ManagerManager.swift Managers/SettingsManager.swift Windows/OnboardingView.swift; do
+  printf 'upstream shell\n' > "$upstream/Hammerspoon 2/$path"
+done
+mkdir -p "$root/App/Hammerspoon/Shell" "$root/App/Hammerspoon/ShellCore" "$root/App/Hammerspoon/IPC"
+printf '@main\n' > "$root/App/Hammerspoon/Shell/AtelierApp.swift"
+printf 'core\n' > "$root/App/Hammerspoon/ShellCore/Core.swift"
+printf 'transport\n' > "$root/App/Hammerspoon/IPC/Transport.swift"
 printf 'before\n' > "$upstream/sample"
 printf 'license\n' > "$upstream/LICENSE"
 revision=1111111111111111111111111111111111111111
@@ -27,7 +34,7 @@ archive="$root/.build/downloads/hs2-$revision.tar.gz"
 tar -czf "$archive" -C "$temporary/upstream" hs2
 checksum=$(shasum -a 256 "$archive" | awk '{print $1}')
 jq -n --arg revision "$revision" --arg sha256 "$checksum" '{revision: $revision, sha256: $sha256}' > "$root/App/Hammerspoon/upstream.json"
-printf 'host\n' > "$root/App/Hammerspoon/AtelierHost.swift"
+printf 'host\n' > "$root/App/Hammerspoon/Shell/AtelierHost.swift"
 printf 'scheme\n' > "$root/App/Hammerspoon/Atelier.xcscheme"
 cat > "$root/App/Hammerspoon/atelier.patch" <<'PATCH'
 --- a/sample
@@ -50,7 +57,7 @@ if [[ $1 == macos ]]; then
   done
   printf 'plist\n' > "$output/Info.plist"
   printf 'resource\n' > "$output/Resources/engine.js"
-  for dependency in AXSwift javascript-core-extras swift-commandlinekit xctest-dynamic-overlay; do
+  for dependency in AXSwift javascript-core-extras swift-commandlinekit xctest-dynamic-overlay swift-issue-reporting Sparkle; do
     directory="$FAKE_BUILD_ROOT/.build/hs2-derived/SourcePackages/checkouts/$dependency"
     mkdir -p "$directory"; printf 'license\n' > "$directory/LICENSE"
   done
@@ -78,7 +85,10 @@ host() { "$root/scripts/build-hammerspoon.sh" "$@" > "$temporary/host.log" 2>&1;
 helpers() { "$root/scripts/build-helpers.sh" "$@" > "$temporary/helpers.log" 2>&1; }
 prepare
 [[ $(cat "$root/.build/hammerspoon2/sample") == after ]] || fail 'patch not applied'
-host_source="$root/.build/hammerspoon2/Hammerspoon 2/Lifecycle/AtelierHost.swift"
+[[ ! -e "$root/.build/hammerspoon2/Hammerspoon 2/Lifecycle/Hammerspoon_2App.swift" ]] || fail 'upstream entry point retained'
+[[ ! -e "$root/.build/hammerspoon2/Hammerspoon 2/Windows/Settings" ]] || fail 'upstream Settings retained'
+cmp "$root/.build/hammerspoon2/Hammerspoon 2/Modules/hs.ipc/Transport.swift" "$root/.build/hammerspoon2/hs2/Transport.swift" || fail 'IPC targets use different transports'
+host_source="$root/.build/hammerspoon2/Hammerspoon 2/Atelier/AtelierHost.swift"
 touch -t 200101010000 "$host_source"
 before=$(perl -e 'print((stat($ARGV[0]))[9])' "$host_source")
 prepare
@@ -137,7 +147,7 @@ helpers
 printf 'changed lockfile\n' >> "$root/App/Package.resolved"
 expect_failure helpers --verify
 helpers
-printf 'changed host\n' >> "$root/App/Hammerspoon/AtelierHost.swift"
+printf 'changed host\n' >> "$root/App/Hammerspoon/Shell/AtelierHost.swift"
 expect_failure host --verify
 for architectures in x86_64 'x86_64 arm64'; do
   FAKE_ARCHS="$architectures" expect_failure host
@@ -178,7 +188,7 @@ select_case js M App/Resources/Configuration.md
 select_case js M App/Resources/Atelier/overlay.js
 select_case js A App/Tests/JavaScript/runtime.test.js
 select_case full M App/Sources/AtelierEngine/main.swift
-select_case full M App/Hammerspoon/AtelierHost.swift
+select_case full M App/Hammerspoon/Shell/AtelierHost.swift
 select_case full M scripts/build-app.sh
 select_case full M .github/workflows/check.yml
 select_case full M mise.toml

@@ -1,0 +1,31 @@
+--- a/Hammerspoon 2/Engine/JSEngine.swift	
++++ b/Hammerspoon 2/Engine/JSEngine.swift	
+@@ -157,7 +157,27 @@
+             // confusing than every line number being off by one.
+             script = "(function(){" + script + "\n})();"
+         }
+-        return context?.evaluateScript(script, withSourceURL: url)
++        // Capture only this evaluation; keep the ordinary runtime error handler
++        // unchanged. Nested file evaluations restore the enclosing handler.
++        let previousHandler = context?.exceptionHandler
++        var evaluationException: JSValue?
++        context?.exception = nil
++        context?.exceptionHandler = { context, exception in
++            evaluationException = exception
++            previousHandler?(context, exception)
++        }
++        defer { context?.exceptionHandler = previousHandler }
++        let result = context?.evaluateScript(script, withSourceURL: url)
++        if let exception = evaluationException ?? context?.exception {
++            let message = exception.toString() ?? "JavaScript error"
++            let stack = exception.objectForKeyedSubscript("stack")?.toString() ?? ""
++            // The error is now owned by Swift. Leaving it on the context would
++            // make a later timer mistake it for its own callback failure.
++            context?.exception = nil
++            throw NSError(domain: "Hammerspoon.Configuration", code: 1,
++                          userInfo: [NSLocalizedDescriptionKey: "\(url.path): \(message)\n\(stack)"])
++        }
++        return result
+     }
+ 
+     func resetContext() throws {

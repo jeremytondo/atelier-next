@@ -37,7 +37,18 @@ tar -xzf "$archive" --strip-components=1 -C "$stage/source"
 for patch_file in "$root"/App/Hammerspoon/*.patch; do
   patch --batch --fuzz=0 -d "$stage/source" -p1 < "$patch_file"
 done
-cp "$root/App/Hammerspoon/AtelierHost.swift" "$stage/source/Hammerspoon 2/Lifecycle/"
+# Compose the application by exclusion. Missing shell inputs are an upgrade
+# review signal; never silently keep a newly renamed upstream entry point.
+shell="$stage/source/Hammerspoon 2"
+for path in Lifecycle/Hammerspoon_2App.swift Managers/ManagerManager.swift Managers/SettingsManager.swift Windows/OnboardingView.swift Windows/Settings; do
+  [[ -e "$shell/$path" ]] || { echo "Missing upstream shell input: $path" >&2; exit 1; }
+  rm -rf "${shell:?}/${path:?}"
+done
+mkdir "$shell/Atelier"
+cp "$root"/App/Hammerspoon/Shell/*.swift "$root"/App/Hammerspoon/ShellCore/*.swift "$shell/Atelier/"
+cp "$root"/App/Hammerspoon/IPC/*.swift "$shell/Modules/hs.ipc/"
+cp "$root"/App/Hammerspoon/IPC/*.swift "$stage/source/hs2/"
+[[ $(rg -l '^@main$' "$shell" -g '*.swift' | wc -l | tr -d ' ') == 1 ]] || { echo 'Expected exactly one app entry point' >&2; exit 1; }
 mkdir -p "$stage/source/Hammerspoon 2.xcodeproj/xcshareddata/xcschemes"
 cp "$root/App/Hammerspoon/Atelier.xcscheme" "$stage/source/Hammerspoon 2.xcodeproj/xcshareddata/xcschemes/"
 # Xcode creates this empty directory while resolving the locked packages. Make
