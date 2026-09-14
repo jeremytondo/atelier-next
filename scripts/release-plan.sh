@@ -4,13 +4,21 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 cd "${ATELIER_RELEASE_REPO_ROOT:-$script_dir/..}"
 
-usage() { echo 'usage: mise run release:plan dev | stable patch|minor|major' >&2; exit 2; }
+usage() { echo 'usage: mise run release:plan dev [BRANCH] | stable patch|minor|major [BRANCH]' >&2; exit 2; }
 channel=${1:-}
+source_ref=${GITHUB_REF:-refs/heads/main}
 case "$channel" in
-  dev) [[ $# -eq 1 ]] || usage ;;
-  stable) [[ $# -eq 2 ]] || usage ;;
+  dev)
+    [[ $# -ge 1 && $# -le 2 ]] || usage
+    if [[ $# -eq 2 ]]; then source_ref="refs/heads/$2"; fi ;;
+  stable)
+    [[ $# -ge 2 && $# -le 3 ]] || usage
+    if [[ $# -eq 3 ]]; then source_ref="refs/heads/$3"; fi ;;
   *) usage ;;
 esac
+if [[ $source_ref != refs/heads/* ]] || ! git check-ref-format "$source_ref"; then
+  echo 'release planning requires a branch ref' >&2; exit 1
+fi
 git_command=(git)
 if [[ -d .jj ]] && command -v jj > /dev/null; then git_command+=(--git-dir "$(jj git root)"); fi
 if [[ $channel == stable && $("${git_command[@]}" rev-parse --is-shallow-repository) != false ]]; then
@@ -32,6 +40,6 @@ else
 fi
 jq -n --arg channel "$channel" --arg tag "$tag" --arg version "$version" \
   --arg marketing_version "$marketing_version" --arg build_number "$build_number" \
-  --arg commit "$commit" --arg built_at "$built_at" \
+  --arg commit "$commit" --arg built_at "$built_at" --arg source_ref "$source_ref" \
   '{channel: $channel, tag: $tag, version: $version, marketing_version: $marketing_version,
-    build_number: $build_number, commit: $commit, built_at: $built_at}'
+    build_number: $build_number, commit: $commit, built_at: $built_at, source_ref: $source_ref}'

@@ -124,8 +124,8 @@ native, repeated warm, JS-only, docs-only, and manual dev-release workflows.
 Retain run URLs, `ci:report` JSON, diagnostic artifacts, compressed cache bytes,
 restore/save step durations, and the first relevant test completion timestamp.
 Repeat comparable cases before drawing conclusions about variation. The full
-release trial requires this implementation on trusted `main` and an explicit
-manual release dispatch; local signing is not a notarization/publication trial.
+release trial requires an explicit manual release dispatch from a trusted
+repository branch; local signing is not a notarization/publication trial.
 
 Cross-workflow reuse of a passed gate (finding 7) remains deferred: releases
 run the full gate and consume only their own verified native outputs. Icon

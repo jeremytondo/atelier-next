@@ -1,13 +1,13 @@
-# Both channels are manually dispatched from main: mutable dev and permanent
+# Both channels are manually dispatched from repository branches: mutable dev and permanent
 # stable SemVer releases. Never cancel midway through updating release assets.
 name: Atelier Release
-run-name: Atelier Release (${{ inputs.bump }})
+run-name: Atelier Release (${{ inputs.bump }}, ${{ github.ref_name }})
 
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Refresh dev or cut a stable semantic release from main
+        description: Refresh dev or cut a stable semantic release from the selected branch
         type: choice
         default: dev
         options: [dev, patch, minor, major]
@@ -22,8 +22,8 @@ concurrency:
 
 jobs:
   package:
-    # Dispatch only trusted main, where the release workflow and signing code live.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    # Only manual branch dispatches can use the release environment. No PR/tag builds.
+    if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'
     runs-on: macos-26
     timeout-minutes: 45
     environment: release

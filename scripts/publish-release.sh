@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Only verified packages reach GitHub. Stable assets are never overwritten;
-# dev publication is serialized by the workflow and rejects an obsolete main.
+# dev publication is serialized by the workflow and rejects an obsolete source branch.
 set -euo pipefail
 die() { echo "error: $*" >&2; exit 1; }
 [[ $# -eq 1 && -d $1 ]] || die 'usage: mise run release:publish ASSET_DIRECTORY'
@@ -20,17 +20,16 @@ channel=$(jq -r .channel "$manifest")
 tag=$(jq -r .tag "$manifest")
 version=$(jq -r .version "$manifest")
 commit=$(jq -r .commit "$manifest")
+source_ref=$(jq -r .source_ref "$manifest")
 cd "$root"
 export GH_REPO=${GITHUB_REPOSITORY:-${GH_REPO:-jeremytondo/atelier-next}}
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-publish.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT
 if [[ $channel == dev ]]; then
-  gh api "repos/$GH_REPO/git/ref/heads/main" > "$temporary/main.json"
-  remote_main=$(jq -er .object.sha "$temporary/main.json")
-  if [[ $remote_main != "$commit" ]]; then
-    echo "Skipping obsolete dev build $commit; main is now $remote_main."
-    exit 0
-  fi
+  status=0
+  "$root/scripts/release-current.sh" "$manifest" || status=$?
+  [[ $status != 78 ]] || exit 0
+  [[ $status == 0 ]] || exit "$status"
 fi
 gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > "$temporary/releases.json"
 jq --arg tag "$tag" '[.[][] | select(.tag_name == $tag)][0] // null' "$temporary/releases.json" > "$temporary/existing.json"
@@ -40,10 +39,11 @@ files=("$assets/Atelier-macos-arm64.zip" "$manifest" "$assets/checksums.txt")
 # shellcheck disable=SC2016
 {
   printf 'Version: `%s`  \nCommit: [`%s`](https://github.com/%s/commit/%s)\n\n' "$version" "${commit:0:8}" "$GH_REPO" "$commit"
+  printf 'Source branch:\n\n    %s\n\n' "${source_ref#refs/heads/}"
   printf 'Requires Apple silicon and macOS 26 or later. Signed with Developer ID and notarized by Apple.\n\n'
   printf 'Download `Atelier-macos-arm64.zip`, quit Atelier, and move the extracted app into `/Applications`. Your configuration is preserved.\n'
   if [[ $channel == dev ]]; then
-    printf '\nThis rolling prerelease is replaced by successful builds from `main`. Stable releases retain their versioned downloads.\n'
+    printf '\nThis rolling prerelease is replaced by successful manually requested dev builds from any branch. Stable releases retain their versioned downloads.\n'
   fi
 } > "$temporary/notes.md"
 

@@ -1,6 +1,6 @@
 # Builds and releases
 
-Atelier uses ATC's release channels: a rolling `dev` prerelease from `main` and permanent `vMAJOR.MINOR.PATCH` stable releases. Both channels publish only when manually requested through mise or GitHub's **Run workflow** button. Pushes to `main` run checks only. Build automation is shell, macOS tools, and mise; it has no Python dependency. Xcode is required only on build machines. Distributed apps target Apple silicon and macOS 26 or later.
+Atelier uses ATC's release channels: a rolling `dev` prerelease and permanent `vMAJOR.MINOR.PATCH` stable releases. Both channels can release a pushed repository branch and publish only when manually requested through mise or GitHub's **Run workflow** button. Pushes to `main` run checks only. Build automation is shell, macOS tools, and mise; it has no Python dependency. Xcode is required only on build machines. Distributed apps target Apple silicon and macOS 26 or later.
 
 ## Install on another Mac
 
@@ -23,14 +23,17 @@ Install Xcode and mise, then run `mise install`. Use `mise tasks` or `scripts/bu
 | `mise run install` | Build and install without a ZIP, backing up the previous app |
 | `mise run dev` | Build, install, and launch without a ZIP |
 | `mise run release:dev` | Dispatch a rolling dev build of remote `main` and return its link |
+| `mise run release:dev BRANCH` | Dispatch a rolling dev build of the selected remote branch |
 | `mise run release:patch` | Dispatch the next stable patch release and return its link |
 | `mise run release:minor` | Dispatch the next stable minor release and return its link |
 | `mise run release:major` | Dispatch the next stable major release and return its link |
 | `mise run release:plan stable minor` | Preview version metadata without publishing |
 
-Release commands require authenticated `gh` access with permission to run workflows. Each task calls `gh workflow run` directly, prints the run URL when GitHub returns it, and exits without waiting for the build. Its success means the request was accepted; follow the link for the release result. To watch explicitly, use `gh run watch RUN_ID --exit-status`. Runs are also listed on the repository's [Actions page](https://github.com/jeremytondo/atelier-next/actions/workflows/release.yml).
+Release commands require authenticated `gh` access with permission to run workflows. Each task verifies the remote branch exists, calls `gh workflow run`, prints the run URL when GitHub returns it, and exits without waiting for the build. Its success means the request was accepted; follow the link for the release result. To watch explicitly, use `gh run watch RUN_ID --exit-status`. Runs are also listed on the repository's [Actions page](https://github.com/jeremytondo/atelier-next/actions/workflows/release.yml).
 
-They always release the remote `main` snapshot selected by GitHub, and never push local changes. The task names, `bump` input, and dispatch behavior follow [ATC's GitHub configuration](https://github.com/jeremytondo/atc/blob/main/mise.toml). ATC also accepts other pushed refs; Atelier currently restricts signing and publication to `main`. PR builds run checks only.
+All four release commands accept an optional branch name, defaulting to `main`; for example, `mise run release:dev ate-37-build-workflows`. They release the remote branch snapshot selected by GitHub and never push local changes or merge the branch. The task names and `bump` input follow [ATC's GitHub configuration](https://github.com/jeremytondo/atc/blob/main/mise.toml). In GitHub's **Run workflow** menu, select the source branch. Tags are rejected. Automatic PR builds run checks only; signing requires a manual release dispatch from a repository branch containing this workflow.
+
+There is one rolling `dev` release shared by all branches. A successful branch dev release replaces its assets and advances the `dev` tag to that branch's selected commit. The release manifest's `source_ref` and the release notes identify the source branch. Stable releases keep their existing permanent versioned tags and downloads.
 
 Stable numbering uses the greatest plain `vX.Y.Z` tag, ignoring `dev`, calendar dev versions, and prerelease tags. With no stable tags, the baseline is `v0.0.0`: `release:minor` produces **v0.1.0**, and `release:patch` produces v0.0.1. A release changes the packaged version without editing the source Info.plist. The first workflow must reach `main` before dispatch commands are available.
 
@@ -38,7 +41,7 @@ Dev versions follow ATC's calendar convention, for example `2026.9.13-dev.t16301
 
 ## One-time GitHub setup
 
-In this repository's **Settings → Environments**, create a `release` environment restricted to the `main` branch. Configure these values there, using the same Apple Developer account and credential types as ATC:
+In this repository's **Settings → Environments**, create a `release` environment with **Selected branches and tags** and a branch rule of `**/*`. This matches repository branches including names with slashes; do not add a tag rule. Only manually dispatch code you trust to use the signing credentials. Configure these values there, using the same Apple Developer account and credential types as ATC:
 
 | Type | Name | Value |
 | --- | --- | --- |
@@ -76,19 +79,19 @@ gh variable set ATELIER_APP_STORE_CONNECT_ISSUER_ID --repo jeremytondo/atelier-n
 
 5. Delete the temporary base64 copies, retain the originals securely, and run `mise run release:dev`. Follow the returned link to confirm signing, notarization, and publication succeed. Credentials never need to be pasted into chat or checked into source control.
 
-The workflow needs `contents: write` only in its publication job; the package job has read access. Signing secrets are used only on `main`, never in pull-request checks. The repository must allow Actions to publish releases. **Repository-wide release immutability must remain disabled for ATC-style mutable `dev` releases.** Stable releases are protected by the publisher refusing to overwrite any existing stable tag or release. See [GitHub's immutable release behavior](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
+The workflow needs `contents: write` only in its publication job; the package job has read access. Signing secrets are used only by manual branch releases, never in pull-request checks. The repository must allow Actions to publish releases. **Repository-wide release immutability must remain disabled for ATC-style mutable `dev` releases.** Stable releases are protected by the publisher refusing to overwrite any existing stable tag or release. See [GitHub's immutable release behavior](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
 
 ## Pipeline behavior
 
 `.github/workflows/release.yml` has only a manual `workflow_dispatch` trigger with a `bump` choice of `dev`, `patch`, `minor`, or `major`. It plans the selected commit, checks credentials and the Developer ID identity before expensive work, then uses `release:verify-package` to run the full gate and package its verified native outputs. Debug helper tests precede Release helper compilation while the independent host build can proceed. The host is compiled at most once for an unchanged input set within the release; packaging validates and privately copies its outputs, including resources, XPC service, helpers, and licenses.
 
-Dev and stable runs each serialize the entire workflow. New queued requests can supersede older queued requests; running publication is not canceled halfway through replacing assets. Dev checks that its commit is still `main` before compilation, before notarization, and immediately before publication. An obsolete build is skipped; rerun `mise run release:dev` to release the new head. Stable dispatches retain their selected commit even if `main` subsequently advances. Publication uses Ubuntu with a separate mise configuration containing only `gh` and `jq`.
+Dev and stable runs each serialize the entire workflow across all source branches. New queued requests can supersede older queued requests; running publication is not canceled halfway through replacing assets. Dev checks that its commit is still the head of its selected source branch before compilation, before notarization, and immediately before publication. An obsolete build is skipped; rerun `mise run release:dev BRANCH` to release that branch's new head. An unavailable or deleted source branch fails without publishing. Stable dispatches retain their selected commit even if their source branch subsequently advances. Publication uses Ubuntu with a separate mise configuration containing only `gh` and `jq`.
 
 Distribution packaging requires a valid Developer ID Application certificate, secure signing timestamps, accepted notarization, a stapled ticket, and successful Gatekeeper assessment. There is no unsigned fallback for either published channel. The ticket is stapled to the app before producing the final ZIP, following [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
 The publisher verifies the ZIP and manifest checksums before any release mutation. Stable releases are assembled as drafts, then published as the latest stable version. Dev is always a prerelease and never becomes GitHub's latest stable release. Updating multiple dev assets is not atomic; if a download overlaps publication, retry after the workflow finishes. A failed initial publication can leave a draft: inspect and finish or remove that draft explicitly before rerunning. Stable tags and published stable assets are never force-updated.
 
-For local distribution validation, create a plan with `mise run release:plan dev > release-plan.json`, set `ATELIER_NOTARY_PROFILE` to an existing notarytool keychain profile (or set the three `ATELIER_APP_STORE_CONNECT_*` key-path/ID/issuer variables), then run `mise run release:package release-plan.json --output-dir dist/release`. This packages without uploading to GitHub. `--skip-build` requires matching input/output receipts and fails on missing, changed, or corrupted native output. CI uses it for verified same-run reuse after the full gate. Release jobs deliberately do not restore executable caches from other workflow runs.
+For local distribution validation, create a plan with `mise run release:plan dev BRANCH > release-plan.json`, set `ATELIER_NOTARY_PROFILE` to an existing notarytool keychain profile (or set the three `ATELIER_APP_STORE_CONNECT_*` key-path/ID/issuer variables), then run `mise run release:package release-plan.json --output-dir dist/release`. Plans describe the current checkout's commit; the optional branch records its intended remote source, defaulting to the Actions dispatch ref or `main` outside Actions. This packages without uploading to GitHub. `--skip-build` requires matching input/output receipts and fails on missing, changed, or corrupted native output. CI uses it for verified same-run reuse after the full gate. Release jobs deliberately do not restore executable caches from other workflow runs.
 
 ## Focused checks and build state
 
