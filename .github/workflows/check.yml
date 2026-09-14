@@ -13,11 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  portable:
+  select:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      MISE_OVERRIDE_CONFIG_FILENAMES: mise.portable.toml
+    timeout-minutes: 5
     outputs:
       mode: ${{ steps.select.outputs.mode }}
       native: ${{ steps.select.outputs.native }}
@@ -26,7 +24,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: scripts/ci-metrics.sh start
       - id: select
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -38,6 +35,18 @@ jobs:
           else
             scripts/ci-select.sh "$BASE" "$REVISION" >> "$GITHUB_OUTPUT"
           fi
+
+  portable:
+    needs: select
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      MISE_OVERRIDE_CONFIG_FILENAMES: mise.portable.toml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: scripts/ci-metrics.sh start
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
           version: 2026.6.14
@@ -47,7 +56,7 @@ jobs:
       - name: Measurements
         if: always()
         env:
-          CHECK_MODE: ${{ steps.select.outputs.mode }}
+          CHECK_MODE: ${{ needs.select.outputs.mode }}
         run: scripts/ci-metrics.sh summary
       - name: Portable diagnostics
         if: always()
@@ -59,8 +68,8 @@ jobs:
           retention-days: 7
 
   native:
-    needs: portable
-    if: needs.portable.outputs.native == 'true'
+    needs: select
+    if: needs.select.outputs.native == 'true'
     runs-on: macos-26
     timeout-minutes: 20
     env:
@@ -99,7 +108,7 @@ jobs:
           scripts/timed.sh helpers-unpack scripts/native-cache.sh unpack helpers
       - name: Selected native checks and real-bundle probe
         env:
-          CHECK_MODE: ${{ needs.portable.outputs.mode }}
+          CHECK_MODE: ${{ needs.select.outputs.mode }}
         run: |
           if [[ "$CHECK_MODE" == js ]]; then
             mise run bundle:check
@@ -109,9 +118,16 @@ jobs:
       # GitHub scopes PR caches to the PR merge ref; main cannot restore them.
       # Release compiles its own outputs and never restores executable caches.
       - name: Pack reusable outputs
+        env:
+          HOST_CACHE_HIT: ${{ steps.host.outputs.cache-hit }}
+          HELPERS_CACHE_HIT: ${{ steps.helpers.outputs.cache-hit }}
         run: |
-          scripts/timed.sh host-pack scripts/native-cache.sh pack host
-          scripts/timed.sh helpers-pack scripts/native-cache.sh pack helpers
+          if [[ "$HOST_CACHE_HIT" != true ]]; then
+            scripts/timed.sh host-pack scripts/native-cache.sh pack host
+          fi
+          if [[ "$HELPERS_CACHE_HIT" != true ]]; then
+            scripts/timed.sh helpers-pack scripts/native-cache.sh pack helpers
+          fi
       - name: Save unsigned host
         if: steps.host.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -127,7 +143,7 @@ jobs:
       - name: Measurements
         if: always()
         env:
-          CHECK_MODE: ${{ needs.portable.outputs.mode }}
+          CHECK_MODE: ${{ needs.select.outputs.mode }}
           HOST_CACHE_HIT: ${{ steps.host.outputs.cache-hit }}
           HELPERS_CACHE_HIT: ${{ steps.helpers.outputs.cache-hit }}
         run: scripts/ci-metrics.sh summary
@@ -142,7 +158,7 @@ jobs:
 
   check:
     if: always()
-    needs: [portable, native]
+    needs: [select, portable, native]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -151,6 +167,6 @@ jobs:
           persist-credentials: false
       - env:
           PORTABLE_RESULT: ${{ needs.portable.result }}
-          NATIVE_REQUIRED: ${{ needs.portable.outputs.native }}
+          NATIVE_REQUIRED: ${{ needs.select.outputs.native }}
           NATIVE_RESULT: ${{ needs.native.result }}
         run: scripts/ci-result.sh "$PORTABLE_RESULT" "$NATIVE_REQUIRED" "$NATIVE_RESULT"

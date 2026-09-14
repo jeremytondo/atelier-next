@@ -8,6 +8,6 @@ phase_end() {
   end=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
   mkdir -p "$root/.build/metrics"
   directory=$(mktemp -d "$root/.build/metrics/$1.XXXXXX")
-  jq -n --arg phase "$1" --argjson start "$phase_started" --argjson end "$end" \
-    '{phase: $phase, start: $start, end: $end, seconds: ($end - $start), status: 0}' > "$directory/timing.json"
+  jq -n --arg phase "$1" --argjson start "$phase_started" --argjson end "$end" --argjson status "${2:-0}" \
+    '{phase: $phase, start: $start, end: $end, seconds: ($end - $start), status: $status}' > "$directory/timing.json"
 }

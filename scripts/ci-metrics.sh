@@ -18,7 +18,7 @@ case "${1:-}" in
     {
       printf '### Build measurements\n\n'
       if [[ -f $root/.build/metrics/job-start ]]; then
-        printf 'Job elapsed through summary: %ss (excludes final cleanup).\n\n' "$(( $(date +%s) - $(cat "$root/.build/metrics/job-start") ))"
+        printf 'Elapsed since checkout: %ss (excludes runner setup, checkout, and final cleanup).\n\n' "$(( $(date +%s) - $(cat "$root/.build/metrics/job-start") ))"
       fi
       # shellcheck disable=SC2016
       printf 'Selection: `%s`. Host cache: `%s`; helpers cache: `%s`.\n\n' "${CHECK_MODE:-full}" "${HOST_CACHE_HIT:-not used}" "${HELPERS_CACHE_HIT:-not used}"

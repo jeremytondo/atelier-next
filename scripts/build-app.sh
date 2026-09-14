@@ -203,7 +203,7 @@ if [[ $channel != local ]]; then
   phase_start
   if ! "$notarytool" submit "$temporary/notarization.zip" "${notary_args[@]}" \
       --wait --timeout 20m --output-format json > "$output/notarization/submission.json"; then
-    phase_end notary-wait
+    phase_end notary-wait 1
     cat "$output/notarization/submission.json" >&2
     die 'Notarization failed or timed out; no release package was produced.'
   fi

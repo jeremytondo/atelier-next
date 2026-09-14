@@ -58,6 +58,12 @@ occupies hundreds of MB. Only compact native outputs are enabled as Actions
 caches. Their hosted transfer economics still need the measurements below;
 there is no evidence here to justify caching all DerivedData or package trees.
 
+A separate local retrieval of the 3,647,047-byte source archive took 0.52
+seconds and matched the pinned SHA-256. Compressing Xcode's SourcePackages
+tree took 1.45 seconds and produced 78,673,006 bytes, over ten times the host
+payload. These observations support retaining verified local downloads while
+deferring an Actions download/package-source cache pending a net-time win.
+
 ## Additional evidence and preserved checks
 
 - Xcode creates an empty `xcshareddata/swiftpm/configuration` directory. It is
@@ -78,6 +84,31 @@ there is no evidence here to justify caching all DerivedData or package trees.
   Native tooling cannot be installed by an omitted root configuration.
 
 ## Hosted validation and deliberate deferrals
+
+The [first hosted implementation run](https://github.com/jeremytondo/atelier-next/actions/runs/34797562712)
+passed: 342 seconds elapsed and 329 seconds total job execution. Its host
+build took 231.6 seconds, Debug test invocation 72.4 seconds, Release helper
+build 52.7 seconds, and assembly/probing 7.3 seconds. Helper compilation was
+slower under concurrency but remained off the host-dominated critical path.
+This cold run was slower than the audit's 272-second main Check; it is not
+reported as a speedup. It included new coverage and cold tool/native caches.
+
+The portable job completed in 25 seconds with JS test bodies/invocation at
+0.106 seconds. Waiting for this entire job delayed the native job by 34
+seconds. The task graph was then changed to run portable/native jobs together
+after a small classification job. Cache hits also omit unnecessary repacking.
+The initial native cache payloads were 7,305,461 and 714,960 bytes; save steps
+took two and one seconds, respectively. Warm restore economics are measured
+separately from this initial cache population.
+
+[Attempt 2 of the same source](https://github.com/jeremytondo/atelier-next/actions/runs/34797562712/attempts/2)
+passed in 116 seconds from rerun start (rerun queue time excluded), with 102
+seconds of job execution. Both native receipts matched; no host or Release
+helper compiler ran. Debug tests still ran for 34.2 seconds and the bundle
+check for 7.0 seconds. Actions transferred 7,261,434 host bytes and 716,738
+helper bytes, taking two seconds per restore step; extraction plus verification
+took 1.50 and 1.09 seconds. This observed saving supports retaining the compact
+output caches. It does not establish a median or p95.
 
 Before claiming the issue's performance completion criteria, measure cold
 native, repeated warm, JS-only, docs-only, and manual dev-release workflows.
