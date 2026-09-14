@@ -60,7 +60,7 @@ private func refreshUnchangedDisplay(empty: Bool, permitMirror: Bool) -> [String
     "modeAndBoundsUnchanged": after.map { CFEqual(mode, $0) && CGDisplayBounds(display) == bounds } ?? false]
 }
 
-func missionControlInventory() throws -> [String: Any] {
+func missionControlInventory(select index: Int? = nil, inspectOnly: Bool = false) throws -> [String: Any] {
   guard AXIsProcessTrusted(), let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
     throw TrialError("Mission Control inventory requires existing Accessibility trust and Dock")
   }
@@ -79,6 +79,7 @@ func missionControlInventory() throws -> [String: Any] {
     return result
   }
   func visible() -> Bool { elements().contains { attribute($0, "AXIdentifier") as? String == "mc" } }
+  if inspectOnly { return ["visible": visible()] }
   guard !visible() else { throw TrialError("Close Mission Control before a bounded inventory trial") }
   let launch = commandOutput("/usr/bin/open", ["-a", "Mission Control"])
   RunLoop.current.run(until: Date().addingTimeInterval(0.6))
@@ -91,13 +92,21 @@ func missionControlInventory() throws -> [String: Any] {
        "identifier": attribute(element, "AXIdentifier") as? String ?? ""]
     }
   }
+  var selectionError: AXError?
+  if let index, lists.count == 1,
+    let buttons = attribute(lists[0], kAXChildrenAttribute) as? [AXUIElement], buttons.indices.contains(index) {
+    selectionError = AXUIElementPerformAction(buttons[index], kAXPressAction as CFString)
+    RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+  }
   // Escape is posted only while the overview this function opened is present.
   if visible() {
     CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: true)?.post(tap: .cghidEventTap)
     CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: false)?.post(tap: .cghidEventTap)
   }
   RunLoop.current.run(until: Date().addingTimeInterval(0.35))
-  return ["lists": desktops, "thumbnailCount": desktops.reduce(0) { $0 + $1.count }, "closed": !visible()]
+  var result: [String: Any] = ["lists": desktops, "thumbnailCount": desktops.reduce(0) { $0 + $1.count }, "closed": !visible()]
+  if let index { result["selectedIndex"] = index; result["selectionAXError"] = selectionError?.rawValue ?? AXError.illegalArgument.rawValue }
+  return result
 }
 
 func runFollowup(creationPath: String, outputPath: String, mode: String) throws -> [String: Any] {
@@ -120,24 +129,58 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
       let index = topology[0].spaces.firstIndex(where: { $0.id == id }),
       let uuid = saved?["uuid"] as? String, !uuid.isEmpty,
       records[index]["uuid"] as? String == uuid else { throw TrialError("Owned Space changed UUID/type/display, is active, or has fullscreen neighbors") }
-    guard ["place-current", "reorder-roundtrip", "activate-roundtrip", "refresh-display", "refresh-empty", "refresh-mirror-mode"].contains(mode) else { throw TrialError("Unknown follow-up mode") }
+    guard ["place-current", "reorder-roundtrip", "activate-roundtrip", "native-adjacent-roundtrip", "native-select-roundtrip", "refresh-display", "refresh-empty", "refresh-mirror-mode"].contains(mode) else { throw TrialError("Unknown follow-up mode") }
     let home = topology[0].currentSpaceID, ids = topology[0].spaces.map(\.id)
+    guard mode != "native-adjacent-roundtrip" || ids.firstIndex(of: home).map({ $0 + 1 == index }) == true else {
+      throw TrialError("The owned Space must be immediately right of the current Desktop")
+    }
     let trial = try Journal(path: outputPath, create: true)
     var report: [String: Any] = ["mode": mode, "ownedID": stringID, "spaceUUID": uuid, "before": before,
       "home": String(home), "originalIndex": index, "date": ISO8601DateFormatter().string(from: Date())]
-    report["missionControlBefore"] = try missionControlInventory()
+    if mode.hasPrefix("native-") {
+      // Do not open/close an overview immediately before testing a shortcut;
+      // its exit animation can suppress the very input under test.
+      let count = NativeBridge.dockSpaceCount() as! [String: Any]
+      guard count["status"] as? Int == 0, count["count"] as? Int == ids.count,
+        try missionControlInventory(inspectOnly: true)["visible"] as? Bool == false else {
+        throw TrialError("Native entry requires a closed overview and agreement between Dock and WindowServer counts")
+      }
+      report["dockCountBefore"] = count
+    } else { report["missionControlBefore"] = try missionControlInventory() }
     guard try Creation.decode(nativeCensus()) == topology else { throw TrialError("Topology changed during Mission Control inventory") }
     let targetIndex = mode == "reorder-roundtrip" ? (index == 0 ? 1 : index - 1) : index
     try trial.write("intent.json", report.merging(["targetIndex": targetIndex, "creationPath": creationPath, "mayApplyAfterInterruption": true]) { _, new in new })
-    let isActivation = mode == "activate-roundtrip"
+    let isActivation = ["activate-roundtrip", "native-adjacent-roundtrip", "native-select-roundtrip"].contains(mode)
     let sent: [String: Any]
     if mode.hasPrefix("refresh-") { sent = refreshUnchangedDisplay(empty: mode == "refresh-empty", permitMirror: mode == "refresh-mirror-mode") }
+    else if mode == "native-adjacent-roundtrip" {
+      guard let binding = (NativeBridge.navigationHotKeys() as? [[String: Any]])?.first(where: { $0["id"] as? Int == 81 }),
+        binding["status"] as? Int == 0, binding["enabled"] as? Bool == true,
+        let key = binding["keyCode"] as? UInt16, let flags = binding["flags"] as? UInt64 else {
+        throw TrialError("The native next-Desktop shortcut must have an enabled, readable binding")
+      }
+      for down in [true, false] {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: down)!
+        event.flags = down ? CGEventFlags(rawValue: flags) : []; event.post(tap: .cghidEventTap)
+      }
+      sent = ["mutationDispatched": true, "input": "Native next-Desktop shortcut", "binding": binding]
+    }
+    else if mode == "native-select-roundtrip" {
+      sent = try missionControlInventory(select: index).merging(["mutationDispatched": true]) { _, new in new }
+    }
     else if isActivation { sent = NativeBridge.activateSpace(id, display: display, hiding: ids.filter { $0 != id }.map { NSNumber(value: $0) }) as! [String: Any] }
     else { sent = NativeBridge.placeSpace(id, display: display, index: UInt32(targetIndex)) as! [String: Any] }
     report["dispatch"] = sent
     do {
       try trial.write("dispatch.json", sent)
       RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+      if mode == "native-adjacent-roundtrip" {
+        let deadline = ProcessInfo.processInfo.systemUptime + 2.6
+        while try Creation.decode(nativeCensus())[0].currentSpaceID != id,
+          ProcessInfo.processInfo.systemUptime < deadline {
+          RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+      }
       report["afterDispatch"] = try nativeCensus()
       report["observationAfterDispatch"] = NativeBridge.observation()
       if isActivation {
@@ -156,9 +199,15 @@ func runFollowup(creationPath: String, outputPath: String, mode: String) throws 
       guard fresh.count == 1, fresh[0]["Display Identifier"] as? String == display,
         identity(freshRecords) == identity(records) else { throw TrialError("Topology identity changed; inspect follow-up journal before restoring") }
       try trial.write("restore-intent.json", ["home": String(home), "ownedID": stringID, "originalIndex": index, "before": fresh])
-      report["restoreDispatch"] = isActivation
-        ? NativeBridge.activateSpace(home, display: display, hiding: ids.filter { $0 != home }.map { NSNumber(value: $0) })
-        : NativeBridge.placeSpace(id, display: display, index: UInt32(index))
+      if mode.hasPrefix("native-") {
+        // Restore through Dock after native entry: changing only WindowServer's
+        // current ID can leave Dock's own current ManagedSpace object stale.
+        report["restoreDispatch"] = try missionControlInventory(select: ids.firstIndex(of: home)!)
+      } else {
+        report["restoreDispatch"] = isActivation
+          ? NativeBridge.activateSpace(home, display: display, hiding: ids.filter { $0 != home }.map { NSNumber(value: $0) })
+          : NativeBridge.placeSpace(id, display: display, index: UInt32(index))
+      }
       RunLoop.current.run(until: Date().addingTimeInterval(0.4))
     }
     report["afterRestore"] = try nativeCensus()

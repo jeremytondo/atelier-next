@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSDictionary *)spaceValues:(uint64_t)spaceID;
 + (NSDictionary *)spaceOwners:(uint64_t)spaceID;
 + (NSDictionary *)dockSpaceCount;
++ (NSArray *)navigationHotKeys;
 + (NSDictionary *)placementCapabilities;
 + (NSDictionary *)placeSpace:(uint64_t)spaceID display:(NSString *)display index:(uint32_t)index;
 + (NSDictionary *)activateSpace:(uint64_t)spaceID display:(NSString *)display hiding:(NSArray<NSNumber *> *)hidden;

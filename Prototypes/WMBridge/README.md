@@ -31,14 +31,18 @@ does not replace a manual visibility check. See the
 
 The [activation and Dock follow-up](Evidence/2026-09-14-activation-and-dock-refresh.md)
 demonstrates direct activation, a visible fixture, and saved keyboard input on
-the omitted Space. Mission Control still omits it. Diagnosis now also reads
+the omitted Space before Mission Control could show it. The subsequent
+[real display-change trial](Evidence/2026-09-14-display-refresh-confirmed.md)
+made it visible and verified native thumbnail/adjacent entry with saved typing.
+Numbered entry and a creation-time refresh without a mode change remain unresolved.
+Diagnosis now also reads
 Dock's own Desktop count and CoreGraphics' physical/virtual mirror relationships;
 neither requires opening Mission Control.
 
 For bounded placement or activation comparisons, use the native `followup`
 command with the original trial's `creation` subdirectory and a new private
 output directory. `mise run wmbridge:run -- --help` lists modes. These diagnostic
-trials explicitly open Mission Control before and after the candidate operation;
+trials explicitly open Mission Control for observation or restoration;
 they do not test visual silence. Activation and reorder trials restore their
 starting current ID/order, record restoration, and leave the owned Space present.
 The `typing-check` command tests the saved fixture on an already active Desktop

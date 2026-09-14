@@ -10,15 +10,22 @@ func diagnose(path: String) throws -> [String: Any] {
   report["bridgeTrace"] = NativeBridge.traceProbe()
   report["placementCapabilities"] = NativeBridge.placementCapabilities()
   report["dockSpaceCount"] = NativeBridge.dockSpaceCount()
+  report["navigationHotKeys"] = NativeBridge.navigationHotKeys()
   var displayIDs = [CGDirectDisplayID](repeating: 0, count: 32), displayCount: UInt32 = 0
   let displayError = CGGetOnlineDisplayList(32, &displayIDs, &displayCount)
   report["onlineDisplayQueryError"] = displayError.rawValue
   report["onlineDisplays"] = displayIDs.prefix(Int(displayCount)).map { display -> [String: Any] in
     let mode = CGDisplayCopyDisplayMode(display)
+    let alternatives = (CGDisplayCopyAllDisplayModes(display, nil) as? [CGDisplayMode] ?? []).filter { candidate in
+      guard let mode else { return false }
+      return candidate.ioDisplayModeID != mode.ioDisplayModeID && candidate.width == mode.width &&
+        candidate.height == mode.height && candidate.pixelWidth == mode.pixelWidth && candidate.pixelHeight == mode.pixelHeight
+    }.map { ["modeID": $0.ioDisplayModeID, "refreshRate": $0.refreshRate] as [String: Any] }
     return ["id": display, "active": CGDisplayIsActive(display), "mirrored": CGDisplayIsInMirrorSet(display),
       "mirrors": CGDisplayMirrorsDisplay(display), "main": CGDisplayIsMain(display),
       "bounds": NSStringFromRect(CGDisplayBounds(display)), "modeAvailable": mode != nil,
-      "modeID": mode?.ioDisplayModeID ?? 0, "width": mode?.width ?? 0, "height": mode?.height ?? 0]
+      "modeID": mode?.ioDisplayModeID ?? 0, "width": mode?.width ?? 0, "height": mode?.height ?? 0,
+      "refreshRate": mode?.refreshRate ?? 0, "sameGeometryAlternateModes": alternatives]
   }
   report["screens"] = NSScreen.screens.map { ["name": $0.localizedName,
     "number": $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] ?? NSNull()] }

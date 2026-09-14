@@ -37,6 +37,7 @@ Usage:
 Each run permits exactly one create attempt. Reconcile never replays a mutation.
 Cleanup refuses active, occupied, uncertain, or non-owned Desktops; never retries dispatch.
 Follow-up modes: place-current, reorder-roundtrip, activate-roundtrip,
+  native-adjacent-roundtrip, native-select-roundtrip,
   refresh-display, refresh-empty, refresh-mirror-mode.
 Follow-ups open Mission Control for observation and close it. Round trips restore
   the starting order/current ID. They require the original creation journal and

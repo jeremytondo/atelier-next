@@ -146,6 +146,23 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
     @"count": @((uint64_t)first * second), @"source": @"CoreDockGetWorkspacesCount / Dock allUserSpaces"};
 }
 
++ (NSArray *)navigationHotKeys {
+  // The same read ABI used by Atelier's native shortcut transport. No enabling,
+  // rebinding, event posting, or preference synchronization occurs here.
+  void *handle = skyHandle();
+  int32_t (*getValue)(uint32_t, int32_t *, uint16_t *, uint32_t *) = handle ? dlsym(handle, "SLSGetSymbolicHotKeyValue") : NULL;
+  bool (*isEnabled)(uint32_t) = handle ? dlsym(handle, "SLSIsSymbolicHotKeyEnabled") : NULL;
+  if (!getValue || !isEnabled) return @[@{@"error": @"Navigation hotkey read unavailable"}];
+  NSMutableArray *values = [NSMutableArray array];
+  for (NSNumber *number in @[@79, @80, @81, @82, @118, @119, @120, @121]) {
+    uint32_t hotKey = number.unsignedIntValue, flags = 0; uint16_t key = 0; int32_t character = 0;
+    int32_t status = getValue(hotKey, &character, &key, &flags);
+    [values addObject:@{@"id": number, @"status": @(status), @"enabled": @(isEnabled(hotKey)),
+      @"keyCode": @(key), @"character": @(character), @"flags": @(flags)}];
+  }
+  return values;
+}
+
 + (NSDictionary *)createDesktop {
   NSMutableDictionary *report = [NSMutableDictionary dictionaryWithDictionary:@{@"mutationDispatched": @NO}];
   if (!pthread_main_np()) { report[@"error"] = @"Wrong thread"; return report; }

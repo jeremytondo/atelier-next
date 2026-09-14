@@ -49,6 +49,9 @@ func typingFixture(directory: URL, spaceID: UInt64) throws -> [String: Any] {
   let characters = Array(phrase.utf16)
   let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!
   let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)!
+  // Plain text must not inherit a modifier left in the synthetic event source.
+  let inheritedFlags = down.flags.rawValue
+  down.flags = []; up.flags = []
   down.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: characters)
   up.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: characters)
   down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
@@ -62,6 +65,7 @@ func typingFixture(directory: URL, spaceID: UInt64) throws -> [String: Any] {
   let visible = listed.contains { ($0[kCGWindowNumber as String] as? NSNumber)?.intValue == window.windowNumber }
   return ["typed": text.string.contains(phrase), "savedFile": file.path, "windowID": window.windowNumber,
     "focusMilliseconds": focusMilliseconds, "onActiveSpace": onActiveSpace, "visible": visible,
+    "inheritedEventFlags": inheritedFlags, "postedEventFlags": down.flags.rawValue,
     "spaceID": String(spaceID), "inputToTypedMilliseconds": (ProcessInfo.processInfo.systemUptime - start) * 1000,
     "windowClosedOnReturn": true]
 }
