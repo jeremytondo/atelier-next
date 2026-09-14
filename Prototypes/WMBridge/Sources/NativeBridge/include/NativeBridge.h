@@ -7,6 +7,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)loadAppKit;
 + (NSDictionary *)probe;
 + (NSDictionary *)traceProbe;
++ (NSDictionary *)spaceValues:(uint64_t)spaceID;
 + (NSArray * _Nullable)census;
 + (NSDictionary *)createDesktop;
 + (NSDictionary *)destroyDesktop:(uint64_t)spaceID;

@@ -84,8 +84,16 @@ test("inspection and cleanup target only the explicitly supplied trial", t => {
 
 test("missing cleanup target and invalid arguments never invoke the native helper", t => {
   const f = fixture(t);
-  for (const args of [["cleanup"], ["create", "--unknown"], ["status", "relative"], ["create", "/a", "extra"]]) {
+  for (const args of [["cleanup"], ["diagnose"], ["create", "--unknown"], ["status", "relative"], ["create", "/a", "extra"]]) {
     assert.equal(main(args, f.options), 64);
   }
   assert.deepEqual(f.calls, []);
+});
+
+test("diagnosis is read only and preserves the saved-configuration disagreement", t => {
+  const f = fixture(t, {diagnose: () => ({returnedID: "42", savedSpaceIDs: ["1"], returnedIDInSavedConfiguration: false})});
+  assert.equal(main(["diagnose", f.root], f.options), 0);
+  assert.deepEqual(f.calls, [["diagnose", path.join(f.root, "creation")]]);
+  assert.ok(f.output.includes("Returned ID in saved configuration: false"));
+  assert.ok(f.output.includes("This list does not establish Mission Control visibility."));
 });

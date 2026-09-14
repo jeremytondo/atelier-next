@@ -43,14 +43,14 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
 + (BOOL)loadAppKit { return pthread_main_np() && NSApplicationLoad(); }
 + (NSDictionary *)traceProbe {
   // Opt-in, process-local observation: forward the exact ABI to the original
-  // implementation and restore both methods even if the probe raises. No Dock
+  // implementation and restore all methods even if the probe raises. No Dock
   // injection, delegate replacement, windows, or Desktop mutations are involved.
   if (!pthread_main_np() || !skyHandle()) return @{@"error": @"Main-thread SkyLight process required"};
   NSMutableArray *calls = [NSMutableArray array];
   NSMutableArray *installed = [NSMutableArray array];
-  Method methods[2] = {NULL, NULL};
-  IMP originals[2] = {NULL, NULL}, wrappers[2] = {NULL, NULL};
-  NSArray *names = @[@"NSWMWindowCoordinator", @"SLSWindowManagementFallbackBridge"];
+  Method methods[3] = {NULL, NULL, NULL};
+  IMP originals[3] = {NULL, NULL, NULL}, wrappers[3] = {NULL, NULL, NULL};
+  NSArray *names = @[@"NSWMWindowCoordinator", @"WMClientWindowManager", @"SLSWindowManagementFallbackBridge"];
   NSString *methodName = @"performSynchronousBridgedWindowManagementOperation:";
   @try {
     for (NSUInteger i = 0; i < names.count; i++) {
@@ -78,6 +78,25 @@ static NSDictionary *signatures(NSString *name, NSArray<NSString *> *selectors) 
       if (wrappers[i]) imp_removeBlock(wrappers[i]);
     }
   }
+}
++ (NSDictionary *)spaceValues:(uint64_t)spaceID {
+  if (!pthread_main_np() || !skyHandle()) return @{@"error": @"Main-thread SkyLight process required"};
+  @try {
+    Class cls = NSClassFromString(@"SLSBridgedSpaceCopyValuesOperation");
+    if (!signatureMatches(cls, @"initWithSpaceID:", @"@", @[@"Q"]) ||
+        !signatureMatches(cls, performName, @"@", @[])) {
+      return @{@"error": @"Space values read ABI unavailable"};
+    }
+    CFTypeRef allocated = (__bridge_retained CFTypeRef)[cls alloc];
+    id operation = CFBridgingRelease(((CFTypeRef (*)(CFTypeRef, SEL, uint64_t))objc_msgSend)(
+      allocated, NSSelectorFromString(@"initWithSpaceID:"), spaceID));
+    id result = ((id (*)(id, SEL))objc_msgSend)(operation, NSSelectorFromString(performName));
+    if (!result || !signatureMatches([result class], @"propertyListDictionary", @"@", @[])) {
+      return @{@"error": @"Space values read returned no ABI-checked dictionary"};
+    }
+    id values = ((id (*)(id, SEL))objc_msgSend)(result, NSSelectorFromString(@"propertyListDictionary"));
+    return [values isKindOfClass:NSDictionary.class] ? @{@"values": values} : @{@"error": @"Space values unavailable"};
+  } @catch (NSException *exception) { return @{@"error": exception.reason ?: exception.name}; }
 }
 + (NSArray *)census {
   void *sky = skyHandle();

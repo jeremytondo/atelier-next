@@ -10,6 +10,7 @@ const help = `Usage:
   mise run desktop:create [-- /absolute/new-trial-directory]
   mise run desktop:create -- --check
   mise run desktop:status [-- /absolute/trial-directory]
+  mise run desktop:diagnose -- /absolute/trial-directory
   mise run desktop:cleanup -- /absolute/trial-directory
 
 Quit Atelier before creation or cleanup. Use your disposable GUI session with
@@ -17,7 +18,7 @@ one display. Creation uses ATE-40's WMBridge call and leaves the result in place
 for manual switching. It does not open Mission Control or switch Desktops.
 
 Creation prints the saved trial path and commands to inspect or remove its ID.
---check and status are read only. After an error, inspect the trial before making
+--check, status, and diagnose are read only. After an error, inspect the trial before making
 another create request. Cleanup requires switching away and closing saved test
 windows on the created Desktop first. Reopen Atelier after finishing the trial.
 `;
@@ -49,17 +50,18 @@ function topology(report, log) {
     const current = display["Current Space"]?.id64;
     log(`Display: ${display["Display Identifier"]}`);
     log(`Current Space: ${current}`);
-    log(`Internal Space list: ${(display.Spaces ?? []).map(space =>
-      `${space.id64}${space.type === 0 ? " (Desktop)" : ` (type ${space.type})`}`).join(", ")}`);
+    log(`WindowServer Space list: ${(display.Spaces ?? []).map(space =>
+      `${space.id64} (type ${space.type})`).join(", ")}`);
   }
+  log("This list does not establish Mission Control visibility.");
 }
 
 function main(args, {invoke = native, log = console.log,
   root = path.resolve(__dirname, "../../.build/ate-40-manual")} = {}) {
   const [command, argument] = args;
   if (args.includes("--help")) { log(help); return 0; }
-  if (args.length > 2 || !["create", "status", "cleanup"].includes(command) ||
-    (command === "cleanup" && !argument) ||
+  if (args.length > 2 || !["create", "status", "diagnose", "cleanup"].includes(command) ||
+    (["cleanup", "diagnose"].includes(command) && !argument) ||
     (argument && !(command === "create" && argument === "--check") && !path.isAbsolute(argument))) {
     log(help); return 64;
   }
@@ -75,13 +77,18 @@ function main(args, {invoke = native, log = console.log,
   if (command !== "create") {
     const directory = path.resolve(argument);
     privateDirectory(directory);
-    const report = invoke([command === "status" ? "reconcile" : "cleanup",
+    const report = invoke([command === "status" ? "reconcile" : command,
       path.join(directory, "creation"), ...(command === "cleanup" ? ["--disposable-session"] : [])]);
     const name = `${command}-${Date.now()}-${randomUUID()}.json`;
     save(directory, name, report);
     log(`Space ID: ${report.createdID ?? report.returnedID ?? "unknown"}`);
     log(`Result: ${report.status ?? "read-only reconciliation"}`);
     topology(report, log);
+    if (command === "diagnose") {
+      log(`Saved Desktop configuration IDs: ${report.savedSpaceIDs?.join(", ") ?? "unavailable"}`);
+      log(`Returned ID in saved configuration: ${report.returnedIDInSavedConfiguration ?? "unknown"}`);
+      log("Saved configuration can lag live state; the full report includes per-Space values and the read delegate trace.");
+    }
     log(`Full report: ${path.join(directory, name)}`);
     if (command === "cleanup" && !["removed", "already-absent"].includes(report.status)) {
       log("Cleanup was not confirmed. Inspect the report before taking another action.");

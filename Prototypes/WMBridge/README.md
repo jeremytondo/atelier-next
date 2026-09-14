@@ -22,6 +22,13 @@ when finished. Do not repeat creation after an uncertain result; inspect the
 saved trial first. `mise run desktop:create -- --help` describes the interface;
 `mise run desktop:create -- --check` only runs the read-only probe.
 
+If the returned ID exists but Mission Control omits it, run `mise run
+desktop:diagnose -- /absolute/trial-directory`. This saves per-Space values,
+a trace of the answering read delegates, and the saved Desktop configuration
+alongside the original trial. Preferences can lag live state; the comparison
+does not replace a manual visibility check. See the
+[registration diagnosis](Evidence/2026-09-14-registration-diagnosis.md).
+
 Run from the repository root using mise and XcodeBuildMCP:
 
 ```sh

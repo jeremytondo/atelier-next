@@ -101,6 +101,10 @@ run = 'node Prototypes/WMBridge/manual.js status "$@"'
 description = "Remove the inactive, unoccupied Desktop owned by a specified manual trial"
 run = 'node Prototypes/WMBridge/manual.js cleanup "$@"'
 
+[tasks."desktop:diagnose"]
+description = "Read Space values, trace the read delegate, and compare saved Desktop configuration"
+run = 'node Prototypes/WMBridge/manual.js diagnose "$@"'
+
 [tasks."refs:update"]
 description = "Update reference checkouts from upstream main (requires clean checkouts)"
 run = "scripts/refs.sh update"

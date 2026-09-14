@@ -28,6 +28,7 @@ Usage:
   wmbridge-experiment preflight DISPLAY-ID
   wmbridge-experiment create /absolute/new-run-directory DISPLAY-ID --disposable-session
   wmbridge-experiment reconcile /absolute/run-directory
+  wmbridge-experiment diagnose /absolute/run-directory
   wmbridge-experiment cleanup /absolute/run-directory --disposable-session [--display RECONCILED-ID]
   wmbridge-experiment serve /absolute/private-state-directory --disposable-session
   wmbridge-experiment serve-script /absolute/private-state-directory requests.jsonl --disposable-session
@@ -42,7 +43,7 @@ guard (["probe", "trace-probe"].contains(command) && args.count <= 1) ||
   (command == "cleanup" && args.count == 5 && args[2] == "--disposable-session" && args[3] == "--display") ||
   (command == "serve" && args.count == 3 && args[2] == "--disposable-session") ||
   (command == "serve-script" && args.count == 4 && args[3] == "--disposable-session") ||
-  (command == "reconcile" && args.count == 2)
+  (["reconcile", "diagnose"].contains(command) && args.count == 2)
 else { fputs(help + "\n", stderr); exit(64) }
 setbuf(stdout, nil)
 let appKitLoaded = NativeBridge.loadAppKit()
@@ -98,6 +99,7 @@ DispatchQueue.main.async {
       case "preflight": report = try runCreate(path: "", display: args[1], preflightOnly: true)
       case "create": report = try runCreate(path: args[1], display: args[2])
       case "cleanup": report = try runCleanup(path: args[1], reconciledDisplay: args.count == 5 ? args[4] : nil)
+      case "diagnose": report = try diagnose(path: args[1])
       default: report = try reconcile(path: args[1])
       }
       let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
