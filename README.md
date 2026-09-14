@@ -12,6 +12,7 @@ Atelier is a customizable macOS workspace built on Hammerspoon 2.
 
 ## Prototypes
 
+- [Silent Desktop creation through WMBridge](Prototypes/WMBridge/README.md) — ATE-40 read-only probe and isolated mutation/HS2 trials. On the tested 26.5.2 configuration, new type-0 census IDs were not usable through native navigation; see the findings and cleanup evidence.
 - [Hammerspoon 2 Spaces, Groups, and Quick Apps](Prototypes/Hammerspoon2/README.md) — ATE-35 HS2 runtime with native Space operations, Fill-on-focus Groups, and configurable centered app toggles. Window movement between Spaces is currently disabled.
 - [Native macOS window tiling](Prototypes/NativeWindowTilingPOC/README.md) — ATE-13 prototype invoking native tiling through Accessibility menu commands. Try it on your own windows with `./tile-window left` after following the build instructions. The [evidence review and application research](Prototypes/NativeWindowTilingPOC/REVIEW.md) explains the approach and remaining limits; the [original findings](Prototypes/NativeWindowTilingPOC/FINDINGS.md) preserve earlier experiments.
 - [Desktop Groups](Prototypes/NativeWindowTilingPOC/DESKTOP-GROUPS.md) — ATE-14 session-only grouped Desktop prototype with global indexed-focus shortcuts, automatic membership, and best-effort native Fill. Build the package, verify the read-only boundary with `./desktop-groups --probe`, then run `./desktop-groups`.

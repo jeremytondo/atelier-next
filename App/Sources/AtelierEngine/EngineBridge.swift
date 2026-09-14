@@ -6,6 +6,10 @@ import Foundation
 import QuickAppSupport
 import SpaceControlCore
 
+/// Opt-in command seam for isolated native experiments. A nil result delegates
+/// to the normal engine. Installed Atelier supplies no extension.
+public typealias NativeCommandExtension = @MainActor (String, [String: Any]) throws -> [String: Any]?
+
 struct BridgeError: LocalizedError {
   let message: String
   var errorDescription: String? { message }
@@ -26,12 +30,14 @@ final class EngineBridge {
   private let connection: Int32
   private let membership: Membership
   private let windowID: WindowID
+  private let commandExtension: NativeCommandExtension?
 
   let quickAssignment = SpaceAssignmentCoordinator()
   var quickStates: [String: QuickAppState] = [:]
 
-  init() throws {
-    runtime = try SpaceRuntime()
+  init(stateDirectory: URL? = nil, commandExtension: NativeCommandExtension? = nil) throws {
+    self.commandExtension = commandExtension
+    runtime = try SpaceRuntime(stateDirectory: stateDirectory)
     guard
       let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
       let ax = dlopen(
@@ -193,6 +199,7 @@ final class EngineBridge {
   }
 
   private func execute(_ command: String, _ request: [String: Any]) throws -> [String: Any] {
+    if let result = try commandExtension?(command, request) { return result }
     if command == "hello" {
       return ["protocolVersion": 1, "pid": getpid(), "trusted": AXIsProcessTrusted()]
     }
@@ -311,12 +318,12 @@ final class EngineBridge {
 }
 
 @MainActor
-public func runAtelierEngine() throws {
+public func runAtelierEngine(stateDirectory: URL? = nil, commandExtension: NativeCommandExtension? = nil) throws {
   setbuf(stdout, nil)
   let processLock = try SingletonProcessLock()
   let app = NSApplication.shared
   app.setActivationPolicy(.accessory)
-  let bridge = try EngineBridge()
+  let bridge = try EngineBridge(stateDirectory: stateDirectory, commandExtension: commandExtension)
   signal(SIGTERM, SIG_IGN)
   signal(SIGINT, SIG_IGN)
   let signals = [SIGTERM, SIGINT].map { number in

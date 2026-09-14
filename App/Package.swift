@@ -5,6 +5,8 @@ let package = Package(
   name: "Atelier",
   platforms: [.macOS(.v26)],
   products: [
+    .library(name: "SpaceControlCore", targets: ["SpaceControlCore"]),
+    .library(name: "AtelierEngine", targets: ["AtelierEngine"]),
     .executable(name: "atelier-config", targets: ["AtelierConfig"]),
     .executable(name: "atelier-engine", targets: ["AtelierHelper"]),
     .executable(name: "atelier-tools", targets: ["AtelierTools"]),

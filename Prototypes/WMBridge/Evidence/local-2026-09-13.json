@@ -1,0 +1,754 @@
+{
+  "issue": "ATE-40",
+  "verdict": "Do not adopt on tested macOS 26.5.2 configuration: type-0 census creation succeeded, usable native Desktop creation was not demonstrated.",
+  "environment": {
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+    "architecture": "arm64",
+    "sip": "System Integrity Protection status: enabled.",
+    "screens": [
+      {
+        "frame": "{{0, 0}, {1470, 922}}",
+        "id": 14,
+        "name": "Jump Desktop Display 1",
+        "scale": 2
+      }
+    ],
+    "separateSpaces": true,
+    "hs2Pin": {
+      "revision": "7a218ddfc3c6c49246bff3e538c9c46e29a59caf",
+      "sha256": "23c2902cbb511365a8965559fe10700ff79d2a3f3f70871c23eafe7ac1e370f0",
+      "version": "0.0.12"
+    }
+  },
+  "dispatchedCreateCount": 2,
+  "trials": [
+    {
+      "run": "trial-04",
+      "startedUTC": "2026-09-14T02:45:31Z",
+      "createdID": "126",
+      "bootstrap": "NSApplication.shared + app.run",
+      "nativeDispatchMilliseconds": 4.2706666645244695,
+      "dispatchToCensusMilliseconds": 4.653374999179505,
+      "before": [
+        {
+          "Current Space": {
+            "id64": 3,
+            "ManagedSpaceID": 3,
+            "type": 0,
+            "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+          },
+          "Display Identifier": "BF1BDA7D-2A5B-41FB-933D-405802D73ED3",
+          "Spaces": [
+            {
+              "id64": 3,
+              "ManagedSpaceID": 3,
+              "type": 0,
+              "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+            },
+            {
+              "id64": 14,
+              "ManagedSpaceID": 14,
+              "type": 0,
+              "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+            }
+          ]
+        }
+      ],
+      "afterCreation": [
+        {
+          "Current Space": {
+            "id64": 3,
+            "ManagedSpaceID": 3,
+            "type": 0,
+            "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+          },
+          "Display Identifier": "BF1BDA7D-2A5B-41FB-933D-405802D73ED3",
+          "Spaces": [
+            {
+              "id64": 3,
+              "ManagedSpaceID": 3,
+              "type": 0,
+              "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+            },
+            {
+              "id64": 14,
+              "ManagedSpaceID": 14,
+              "type": 0,
+              "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+            },
+            {
+              "id64": 126,
+              "ManagedSpaceID": 126,
+              "type": 0,
+              "uuid": "0BE3E466-56C2-40F6-81B5-D1A449147970"
+            }
+          ]
+        }
+      ],
+      "pointerUnchanged": true,
+      "focusKnownUnchanged": true,
+      "allWindowMembershipsUnchangedAtCreation": false,
+      "entryResults": [
+        {
+          "id": 1,
+          "ok": true,
+          "milliseconds": 4.586833332723472,
+          "trusted": true
+        },
+        {
+          "id": 2,
+          "ok": true,
+          "milliseconds": 0.7241666608024389
+        },
+        {
+          "id": 3,
+          "ok": false,
+          "error": "Native shortcut sent but destination was not verified",
+          "milliseconds": 3046.664708330354
+        },
+        {
+          "id": 4,
+          "ok": false,
+          "error": "Expected Desktop is not active",
+          "milliseconds": 0.775583328504581
+        },
+        {
+          "id": 5,
+          "ok": false,
+          "error": "Active Space changed before operation",
+          "milliseconds": 1.5899166683084331
+        },
+        {
+          "id": 6,
+          "ok": true,
+          "milliseconds": 133.6186666667345,
+          "current": [
+            "3"
+          ],
+          "trusted": true
+        }
+      ],
+      "cleanup": {
+        "status": "removed",
+        "after": [
+          {
+            "Current Space": {
+              "id64": 14,
+              "ManagedSpaceID": 14,
+              "type": 0,
+              "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+            },
+            "Display Identifier": "BF1BDA7D-2A5B-41FB-933D-405802D73ED3",
+            "Spaces": [
+              {
+                "id64": 3,
+                "ManagedSpaceID": 3,
+                "type": 0,
+                "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+              },
+              {
+                "id64": 14,
+                "ManagedSpaceID": 14,
+                "type": 0,
+                "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+              }
+            ]
+          }
+        ],
+        "originalFullTopologyRestored": false,
+        "originalSpaceIDOrderRestored": true,
+        "missingPreviouslyMemberWindowIDs": [],
+        "changedRetainedWindowMemberships": [
+          {
+            "id": "36",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "37",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "38",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "39",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "40",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "44",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "66",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "2185",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "2310",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          }
+        ],
+        "occupancy": {
+          "backgroundSurfaces": [
+            {
+              "bundle": null,
+              "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer",
+              "id": 2312,
+              "layer": 24,
+              "pid": 167,
+              "spaces": [
+                126
+              ]
+            },
+            {
+              "bundle": null,
+              "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer",
+              "id": 2313,
+              "layer": -2147483602,
+              "pid": 167,
+              "spaces": [
+                126
+              ]
+            }
+          ],
+          "blockers": [
+            {
+              "bundle": "com.apple.AccessibilityUIServer",
+              "executable": "/System/Library/CoreServices/AccessibilityUIServer.app/Contents/MacOS/AccessibilityUIServer",
+              "id": 16,
+              "layer": 3,
+              "pid": 436,
+              "spaces": [
+                126,
+                14
+              ]
+            },
+            {
+              "bundle": "com.apple.calculator",
+              "executable": "/System/Applications/Calculator.app/Contents/MacOS/Calculator",
+              "id": 1116,
+              "layer": 0,
+              "pid": 62386,
+              "spaces": [
+                126,
+                14
+              ]
+            }
+          ],
+          "empty": 0,
+          "query": "SLSCopyWindowsWithOptionsAndTags(connection, 0, [spaceID], 7, &0, &0) + all-window metadata",
+          "retainedBaselineOccupants": [
+            {
+              "bundle": "com.apple.AccessibilityUIServer",
+              "executable": "/System/Library/CoreServices/AccessibilityUIServer.app/Contents/MacOS/AccessibilityUIServer",
+              "id": 16,
+              "layer": 3,
+              "pid": 436,
+              "spaces": [
+                126,
+                14
+              ]
+            },
+            {
+              "bundle": "com.apple.calculator",
+              "executable": "/System/Applications/Calculator.app/Contents/MacOS/Calculator",
+              "id": 1116,
+              "layer": 0,
+              "pid": 62386,
+              "spaces": [
+                126,
+                14
+              ]
+            }
+          ]
+        }
+      },
+      "runDirectory": ".build/ate-40-evidence/trial-04"
+    },
+    {
+      "run": "trial-05",
+      "startedUTC": "2026-09-14T03:05:51Z",
+      "createdID": "132",
+      "bootstrap": "NSApplicationLoad + actual AtelierEngine from HS2",
+      "nativeDispatchMilliseconds": 1.6594999979133718,
+      "dispatchToCensusMilliseconds": 2.016500002355315,
+      "before": [
+        {
+          "Current Space": {
+            "id64": 14,
+            "ManagedSpaceID": 14,
+            "type": 0,
+            "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+          },
+          "Display Identifier": "BF1BDA7D-2A5B-41FB-933D-405802D73ED3",
+          "Spaces": [
+            {
+              "id64": 3,
+              "ManagedSpaceID": 3,
+              "type": 0,
+              "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+            },
+            {
+              "id64": 14,
+              "ManagedSpaceID": 14,
+              "type": 0,
+              "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+            }
+          ]
+        }
+      ],
+      "afterCreation": [
+        {
+          "Current Space": {
+            "id64": 14,
+            "ManagedSpaceID": 14,
+            "type": 0,
+            "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+          },
+          "Display Identifier": "BF1BDA7D-2A5B-41FB-933D-405802D73ED3",
+          "Spaces": [
+            {
+              "id64": 3,
+              "ManagedSpaceID": 3,
+              "type": 0,
+              "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+            },
+            {
+              "id64": 14,
+              "ManagedSpaceID": 14,
+              "type": 0,
+              "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+            },
+            {
+              "id64": 132,
+              "ManagedSpaceID": 132,
+              "type": 0,
+              "uuid": "31F907EC-288E-4454-A160-30EFC43997A5"
+            }
+          ]
+        }
+      ],
+      "pointerUnchanged": true,
+      "focusKnownUnchanged": false,
+      "allWindowMembershipsUnchangedAtCreation": false,
+      "entryResults": [
+        {
+          "id": 1,
+          "ok": true,
+          "milliseconds": 3.958250003051944,
+          "trusted": true
+        },
+        {
+          "id": 2,
+          "ok": false,
+          "error": "Native shortcut sent but destination was not verified",
+          "milliseconds": 3030.8425833354704
+        },
+        {
+          "id": 3,
+          "ok": false,
+          "error": "Expected Desktop is not active",
+          "milliseconds": 0.918208337679971
+        },
+        {
+          "id": 4,
+          "ok": false,
+          "error": "Active Space changed before operation",
+          "milliseconds": 1.4386249968083575
+        },
+        {
+          "id": 5,
+          "ok": true,
+          "milliseconds": 126.52991666982416,
+          "current": [
+            "14"
+          ],
+          "trusted": true
+        }
+      ],
+      "cleanup": {
+        "status": "removed",
+        "after": [
+          {
+            "Current Space": {
+              "id64": 14,
+              "ManagedSpaceID": 14,
+              "type": 0,
+              "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+            },
+            "Display Identifier": "20B77EC1-97B7-45BD-8A54-C91C9A356516",
+            "Spaces": [
+              {
+                "id64": 3,
+                "ManagedSpaceID": 3,
+                "type": 0,
+                "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+              },
+              {
+                "id64": 14,
+                "ManagedSpaceID": 14,
+                "type": 0,
+                "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+              }
+            ]
+          }
+        ],
+        "originalFullTopologyRestored": false,
+        "originalSpaceIDOrderRestored": true,
+        "missingPreviouslyMemberWindowIDs": [
+          {
+            "id": "2185",
+            "bundle": "com.apple.controlcenter",
+            "layer": 25,
+            "pid": 426
+          },
+          {
+            "id": "2187",
+            "bundle": "com.apple.dock",
+            "layer": -2147483624,
+            "pid": 424
+          },
+          {
+            "id": "2188",
+            "bundle": "com.apple.dock",
+            "layer": -2147483624,
+            "pid": 424
+          },
+          {
+            "id": "2240",
+            "bundle": "",
+            "layer": -2147483602,
+            "pid": 167
+          },
+          {
+            "id": "2241",
+            "bundle": "",
+            "layer": -2147483602,
+            "pid": 167
+          },
+          {
+            "id": "2242",
+            "bundle": "com.apple.wallpaper.agent",
+            "layer": -2147483625,
+            "pid": 439
+          }
+        ],
+        "changedRetainedWindowMemberships": [],
+        "occupancy": {
+          "backgroundSurfaces": [
+            {
+              "bundle": null,
+              "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer",
+              "id": 2372,
+              "layer": 24,
+              "pid": 167,
+              "spaces": [
+                132
+              ]
+            },
+            {
+              "bundle": "com.apple.dock",
+              "executable": "/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock",
+              "id": 2380,
+              "layer": -2147483624,
+              "pid": 424,
+              "spaces": [
+                132
+              ]
+            },
+            {
+              "bundle": null,
+              "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer",
+              "id": 2377,
+              "layer": -2147483602,
+              "pid": 167,
+              "spaces": [
+                132
+              ]
+            }
+          ],
+          "blockers": [
+            {
+              "bundle": "com.apple.AccessibilityUIServer",
+              "executable": "/System/Library/CoreServices/AccessibilityUIServer.app/Contents/MacOS/AccessibilityUIServer",
+              "id": 16,
+              "layer": 3,
+              "pid": 436,
+              "spaces": [
+                132,
+                14
+              ]
+            },
+            {
+              "bundle": "com.apple.calculator",
+              "executable": "/System/Applications/Calculator.app/Contents/MacOS/Calculator",
+              "id": 1116,
+              "layer": 0,
+              "pid": 62386,
+              "spaces": [
+                132,
+                14
+              ]
+            }
+          ],
+          "empty": 0,
+          "query": "SLSCopyWindowsWithOptionsAndTags(connection, 0, [spaceID], 7, &0, &0) + all-window metadata",
+          "retainedBaselineOccupants": [
+            {
+              "bundle": "com.apple.AccessibilityUIServer",
+              "executable": "/System/Library/CoreServices/AccessibilityUIServer.app/Contents/MacOS/AccessibilityUIServer",
+              "id": 16,
+              "layer": 3,
+              "pid": 436,
+              "spaces": [
+                132,
+                14
+              ]
+            },
+            {
+              "bundle": "com.apple.calculator",
+              "executable": "/System/Applications/Calculator.app/Contents/MacOS/Calculator",
+              "id": 1116,
+              "layer": 0,
+              "pid": 62386,
+              "spaces": [
+                132,
+                14
+              ]
+            }
+          ]
+        }
+      },
+      "runDirectory": ".build/ate-40-evidence/trial-05"
+    }
+  ],
+  "delegateTrace": {
+    "explicitNSApplicationLoad": true,
+    "bridgeAnswered": true,
+    "bridgeMatchesCensus": true,
+    "tracedClasses": [
+      "NSWMWindowCoordinator",
+      "SLSWindowManagementFallbackBridge"
+    ],
+    "calls": [
+      {
+        "operation": "SLSBridgedCopyManagedDisplaySpacesOperation",
+        "receiver": "NSWMWindowCoordinator",
+        "result": "SLSBridgedWindowManagementOperationPropertyListArrayResult"
+      }
+    ]
+  },
+  "actualHS2Host": {
+    "hello": {
+      "pid": 97988,
+      "protocolVersion": 1,
+      "trusted": false
+    },
+    "inputToResultMilliseconds": 108.68275,
+    "createdID": "132",
+    "activation": "failed-or-uncertain",
+    "activationError": "Accessibility permission required for the helper's responsible app",
+    "helperStopped": true
+  },
+  "nativeControls": {
+    "indexedExistingDesktops": [
+      {
+        "id": 1,
+        "ok": true,
+        "milliseconds": 71.08254166814731,
+        "current": [
+          "3"
+        ]
+      },
+      {
+        "id": 2,
+        "ok": true,
+        "milliseconds": 412.7832916637999,
+        "current": [
+          "14"
+        ]
+      },
+      {
+        "id": 3,
+        "ok": true,
+        "milliseconds": 313.67841667088214,
+        "current": [
+          "3"
+        ]
+      },
+      {
+        "id": 4,
+        "ok": true,
+        "milliseconds": 14.86591667344328,
+        "current": [
+          "3"
+        ]
+      }
+    ],
+    "rightFromFirst": [
+      "3",
+      "14",
+      "126"
+    ],
+    "rightFromFirstCurrent": 14,
+    "rightFromSecondCurrent": 14,
+    "missionControlLabels": [
+      "Desktop 1",
+      "Desktop 2"
+    ],
+    "missionControlScreenshot": ".build/ate-40-evidence/native-mission-control.png"
+  },
+  "captures": [
+    {
+      "movie": ".build/ate-40-evidence/trial-04.mov",
+      "sha256": "481e07d9cc6313bd26edb9671c36cabf4404d85cdfd6090b8d0b029586331de9",
+      "bytes": 91381,
+      "frames": 24,
+      "nominalFrameRate": 1.9834710359573364,
+      "durationSeconds": 12.001666666666667,
+      "maximumPresentationGapSeconds": 0.6000000000000014,
+      "contactSheet": ".build/ate-40-evidence/trial-04-frames/frames-001.jpg",
+      "reviewed": "All decoded frames inspected; no Mission Control or concealment frame observed. Variable sparse capture does not establish zero flash between captured frames."
+    },
+    {
+      "movie": ".build/ate-40-evidence/trial-05-host.mov",
+      "sha256": "e7776a62858ceb27dacf0b2c9a91fd49c20b002bb22cc986cf70850cf013932e",
+      "bytes": 512081,
+      "frames": 9,
+      "nominalFrameRate": 0.5,
+      "durationSeconds": 12.006666666666666,
+      "maximumPresentationGapSeconds": 2.916666666666667,
+      "contactSheet": ".build/ate-40-evidence/trial-05-host-frames/frames-001.jpg",
+      "reviewed": "All decoded frames inspected; no Mission Control or concealment frame observed. Variable sparse capture does not establish zero flash between captured frames."
+    }
+  ],
+  "remainingTestCreatedIDs": [],
+  "limitations": [
+    "One display; initial Jump Desktop virtual display later replaced by another display identifier.",
+    "Copied HS2 app lacks Accessibility trust; trusted native engine still failed destination verification.",
+    "No successful input-to-active-ID or input-to-ready-for-typing measurement.",
+    "No macOS 26.6.x/27, two-display, fullscreen, gesture, capacity, or live mutation-timeout coverage.",
+    "User/external display and focus changes prevent a claim of full GUI-state restoration."
+  ],
+  "checks": {
+    "experimentSwift": 5,
+    "experimentNode": 5,
+    "applicationSwift": 22,
+    "applicationNode": 15,
+    "commands": [
+      "mise run wmbridge:test",
+      "mise run test"
+    ],
+    "allPassed": true
+  },
+  "finalState": {
+    "date": "2026-09-14T03:27:16Z",
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+    "sip": "System Integrity Protection status: enabled.",
+    "screens": [
+      {
+        "frame": "{{0, 0}, {1470, 924}}",
+        "id": 19,
+        "name": "Jump Desktop Display 1",
+        "scale": 2
+      }
+    ],
+    "topology": [
+      {
+        "Current Space": {
+          "id64": 14,
+          "ManagedSpaceID": 14,
+          "type": 0,
+          "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+        },
+        "Display Identifier": "BF1BDA7D-2A5B-41FB-933D-405802D73ED3",
+        "Spaces": [
+          {
+            "id64": 3,
+            "ManagedSpaceID": 3,
+            "type": 0,
+            "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+          },
+          {
+            "id64": 14,
+            "ManagedSpaceID": 14,
+            "type": 0,
+            "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+          }
+        ]
+      }
+    ],
+    "remainingTestCreatedIDs": [],
+    "savedTextEditFixtureClosed": true,
+    "originalAtelierRelaunched": true
+  },
+  "physicalDisplayAttempt": {
+    "status": "refused-before-dispatch",
+    "requestedDisplay": "20B77EC1-97B7-45BD-8A54-C91C9A356516",
+    "error": "Requested display does not match the only native display",
+    "recording": ".build/ate-40-evidence/trial-06-physical.mov",
+    "subsequentProbe": {
+      "date": "2026-09-14T03:27:16Z",
+      "screens": [
+        {
+          "frame": "{{0, 0}, {1470, 924}}",
+          "id": 19,
+          "name": "Jump Desktop Display 1",
+          "scale": 2
+        }
+      ],
+      "topology": [
+        {
+          "Current Space": {
+            "id64": 14,
+            "ManagedSpaceID": 14,
+            "type": 0,
+            "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+          },
+          "Display Identifier": "BF1BDA7D-2A5B-41FB-933D-405802D73ED3",
+          "Spaces": [
+            {
+              "id64": 3,
+              "ManagedSpaceID": 3,
+              "type": 0,
+              "uuid": "663F8913-CD95-4C30-BAF7-A9555757D7C8"
+            },
+            {
+              "id64": 14,
+              "ManagedSpaceID": 14,
+              "type": 0,
+              "uuid": "04836396-F8A0-40B0-991F-D1750C3F99AD"
+            }
+          ]
+        }
+      ]
+    },
+    "mutationDispatched": false
+  }
+}

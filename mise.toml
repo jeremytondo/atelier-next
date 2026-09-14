@@ -65,6 +65,30 @@ run = "scripts/timed.sh bundle-check scripts/build-app.sh --skip-build --app-onl
 description = "Fetch missing read-only reference source into repos/ (gitignored)"
 run = "scripts/refs.sh fetch"
 
+[tasks."wmbridge:probe"]
+description = "Run the isolated, read-only ATE-40 WMBridge capability probe"
+run = "node Prototypes/WMBridge/run.js probe"
+
+[tasks."wmbridge:build"]
+description = "Build the isolated ATE-40 experiment"
+run = "xcodebuildmcp swift-package build --package-path Prototypes/WMBridge"
+
+[tasks."wmbridge:test"]
+description = "Test ATE-40 confirmation and no-replay behavior without native mutations"
+run = ["xcodebuildmcp swift-package test --package-path Prototypes/WMBridge", "node --test Prototypes/WMBridge/*.test.js"]
+
+[tasks."wmbridge:run"]
+description = "Run an explicit ATE-40 experiment command (see --help)"
+run = 'node Prototypes/WMBridge/run.js "$@"'
+
+[tasks."wmbridge:record"]
+description = "Record one explicit ATE-40 mutation trial in a disposable session"
+run = 'node Prototypes/WMBridge/record.js "$@"'
+
+[tasks."wmbridge:host"]
+description = "Run an explicit ATE-40 scenario in a private copy of the installed HS2 host"
+run = 'node Prototypes/WMBridge/host.js "$@"'
+
 [tasks."refs:update"]
 description = "Update reference checkouts from upstream main (requires clean checkouts)"
 run = "scripts/refs.sh update"

@@ -3,10 +3,13 @@ import Foundation
 public struct ManagedSpaceSnapshot: Equatable, Sendable {
   public let id: UInt64
   public let isFullscreen: Bool
+  /// Preserve the native type for callers that require positive type-0 evidence.
+  public let rawType: UInt64?
 
-  public init(id: UInt64, isFullscreen: Bool) {
+  public init(id: UInt64, isFullscreen: Bool, rawType: UInt64? = nil) {
     self.id = id
     self.isFullscreen = isFullscreen
+    self.rawType = rawType
   }
 }
 
@@ -47,7 +50,8 @@ public enum SpaceTopology {
         let explicitFullscreen = integer(rawSpace["type"]) == 4
         return ManagedSpaceSnapshot(
           id: id,
-          isFullscreen: explicitFullscreen || rawSpace["TileLayoutManager"] != nil
+          isFullscreen: explicitFullscreen || rawSpace["TileLayoutManager"] != nil,
+          rawType: integer(rawSpace["type"])
         )
       }
       guard !spaces.isEmpty else { return nil }
