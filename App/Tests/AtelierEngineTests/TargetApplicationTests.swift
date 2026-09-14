@@ -1,5 +1,6 @@
-@testable import AtelierEngine
 import Testing
+
+@testable import AtelierEngine
 
 @Test @MainActor func resolvesNamesBundleIDsAndPathsToTheSameApp() throws {
   let named = try TargetApplication.resolve("Calculator")

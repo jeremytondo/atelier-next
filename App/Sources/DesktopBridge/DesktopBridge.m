@@ -1,29 +1,10 @@
 #import "DesktopBridge.h"
 #import <objc/message.h>
 #import <objc/runtime.h>
-#include <dlfcn.h>
 #include <pthread.h>
 
 static NSString *const performSelectorName = @"performWithWMBridgeDelegate";
 static NSString *const createClassName = @"SLSBridgedSpaceCreateOperation";
-
-static void *skyLight(void) {
-  static void *handle;
-  static dispatch_once_t once;
-  dispatch_once(&once, ^{
-    handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW | RTLD_LOCAL);
-  });
-  return handle;
-}
-
-static void *hiServices(void) {
-  static void *handle;
-  static dispatch_once_t once;
-  dispatch_once(&once, ^{
-    handle = dlopen("/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/HIServices", RTLD_NOW | RTLD_LOCAL);
-  });
-  return handle;
-}
 
 // The bridge classes are private; compare the exact Objective-C type encodings
 // instead of trusting selector names, and refuse to dispatch on any mismatch.
@@ -39,20 +20,14 @@ static BOOL signatureMatches(Class cls, NSString *name, NSString *result, NSArra
 }
 
 static BOOL createAvailable(void) {
-  Class cls = skyLight() ? NSClassFromString(createClassName) : Nil;
+  Class cls = NSClassFromString(createClassName);
   return signatureMatches(cls, @"initWithOptions:values:", @"@", @[@"I", @"@"]) &&
     signatureMatches(cls, performSelectorName, @"@", @[]);
 }
 
-static int32_t (*dockCountFunction(void))(uint32_t *, uint32_t *) {
-  return hiServices() ? dlsym(hiServices(), "CoreDockGetWorkspacesCount") : NULL;
-}
-
 @implementation DesktopBridge
 + (NSString *)unavailableReason {
-  if (!skyLight()) return @"SkyLight is unavailable";
   if (!createAvailable()) return @"The native Desktop creation operation is unavailable on this macOS";
-  if (!dockCountFunction()) return @"Dock's Desktop count is unavailable on this macOS";
   return nil;
 }
 
@@ -75,15 +50,5 @@ static int32_t (*dockCountFunction(void))(uint32_t *, uint32_t *) {
   } @catch (NSException *exception) {
     return @{@"error": exception.reason ?: exception.name, @"dispatched": @YES};
   }
-}
-
-+ (NSNumber *)dockDesktopCount {
-  // Two 32-bit grid dimensions and an OSStatus; Dock answers from its own
-  // Desktop list, so this is independent of SLSCopyManagedDisplaySpaces.
-  int32_t (*getCount)(uint32_t *, uint32_t *) = dockCountFunction();
-  if (!getCount) return nil;
-  uint32_t rows = 0, columns = 0;
-  if (getCount(&rows, &columns) != 0) return nil;
-  return @((uint64_t)rows * columns);
 }
 @end

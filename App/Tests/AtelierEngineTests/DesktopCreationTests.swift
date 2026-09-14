@@ -56,14 +56,15 @@ private final class FakeMac {
       enterDesktop: { number in
         self.entries.append(number)
         let display = self.topology[0]
-        if self.enterArrives, let target = SpaceTopology.desktop(number: number, on: "A", displays: self.topology) {
+        if self.enterArrives,
+          let target = SpaceTopology.desktop(number: number, on: "A", displays: self.topology)
+        {
           self.topology[0] = DisplaySpaceSnapshot(
             identifier: display.identifier, currentSpaceID: target.id, spaces: display.spaces)
         }
         return self.enterAccepted
       },
-      now: { self.time },
-      pause: { self.time += 0.02 })
+      poller: Poller(now: { self.time }, pause: { self.time += 0.02 }))
   }
 }
 
@@ -113,7 +114,8 @@ private func failure(_ mac: FakeMac) -> DesktopCreationError? {
   #expect(refusal?.createdID == nil)
   #expect(refusal?.errorDescription?.contains("unavailable") == true)
   let uncertain = FakeMac(start)
-  uncertain.dispatch = .uncertain("Desktop creation returned no ID; check Mission Control before trying again")
+  uncertain.dispatch = .uncertain(
+    "Desktop creation returned no ID; check Mission Control before trying again")
   let outcome = failure(uncertain)
   #expect(outcome?.createdID == nil)
   #expect(outcome?.errorDescription?.contains("check Mission Control") == true)
