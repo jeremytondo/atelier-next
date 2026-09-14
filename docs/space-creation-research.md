@@ -1,11 +1,16 @@
 **Native Desktop creation — September 13, 2026**
 
-Keep real macOS Desktops. The best first experiment is a shorter creation path
-that stops preparing Mission Control for interactive keyboard navigation. I did
-not establish a usable way for an ordinary Atelier installation to create a new
-native Desktop without Mission Control. Yabai achieves that through Dock
-injection; a reserve of already-created Desktops could avoid creation during the
-shortcut, with visible extra Desktops and replenishment as the tradeoff.
+The follow-up discussion requires real macOS Desktops, fully enabled System
+Integrity Protection, and no Mission Control flash from normal Atelier actions.
+The user prefers a compact keyboard panel and ideally wants no visible Mission
+Control preparation step either. Native macOS commands must remain available.
+
+No creation mechanism reviewed so far satisfies all of those requirements and
+preferences. Shortening the Mission Control sequence cannot meet zero flash;
+Dock injection is ruled out by the SIP requirement. Pre-created Desktops remain
+a candidate, but their initial provisioning and replenishment are unresolved.
+The earlier recommendation to optimize the visible creation sequence is
+superseded by these constraints.
 
 This is research, not an implementation decision or a performance benchmark.
 The user explicitly requires real macOS Desktops. No Desktop/window mutations,
@@ -125,40 +130,63 @@ direct creation is explicitly unmaintained; it documented Dock resets and broken
 multi-display creation even on 10.11. It is historical evidence, not a validated
 route for 26/27. [Old extension](https://github.com/asmagill/hs._asm.undocumented.spaces)
 
-**Recommended experiments, in order**
+**Direction after the follow-up discussion**
 
-1. **Shorten create-and-enter.** Separate it from interactive overview navigation.
-   First compare pressing the verified new thumbnail directly, which should
-   remove the intermediate symbolic activation and repeated stabilization.
-   Then test the more aggressive sequence: open overview, press Add as soon as
-   its AX action is available, verify exactly one new ordinary Space ID on the
-   captured display, close overview, and switch through the existing numbered
-   native route. The latter may eliminate all thumbnail and pointer preparation.
-   Hammerspoon's source supports testing it; it does not prove that early Add or
-   early dismissal is reliable on current macOS.
-2. **Consider a small reserve of real Desktops if the remaining flash is still
-   unacceptable.** Explicitly prepare one or two unused Desktops. The shortcut
-   claims a reserved Desktop and switches normally, so the common action need
-   not open Mission Control. Reserves remain visible in Mission Control and
-   native numbering. Replenishing still requires real creation: batch it during
-   an explicit preparation action or an appropriate existing overview session,
-   not an unexpected interruption while typing. Exhaustion uses ordinary
-   creation. This changes the command's semantics from always appending to
-   acquiring an unused Desktop and needs a product decision before adoption.
-3. **Treat Dock injection as a distinct product tradeoff.** It is the concrete
-   no-overview creation mechanism found, but requires changed system protections
-   and maintenance of OS-specific internals. It is a poor default for Atelier's
-   current maintainability priorities. If explicitly chosen later, evaluate a
-   narrowly scoped backend rather than duplicating an entire window manager.
+The compact keyboard panel can be designed around existing native Desktops:
+select a Desktop, inspect its Group, and reflect changes made through native
+commands. The native topology should remain authoritative. A custom panel does
+not itself grant additional creation, deletion, or reordering capabilities.
+
+A full-screen covering interface was also considered. Apple documents that
+`stationary` windows remain visible during Mission Control, and ThreeFingerSwitcher
+places its panel above the overview with a screen-saver window level. Neither
+source establishes flash-free Desktop creation under a covering interface.
+The user prefers a compact panel, so an opaque full-screen overview is not the
+chosen direction. [Apple stationary behavior](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/stationary),
+[overlay source](https://github.com/amitayks/ThreeFingerSwitcher/blob/be3e480b3dcf1db01672d616f72190c330ec7fa0/Sources/ThreeFingerSwitcher/Overlay/OverlayController.swift#L34)
+
+The remaining feasibility question is narrowly defined: can Atelier register a
+new ordinary Desktop with Dock while SIP stays fully enabled, without exposing
+Mission Control or relying on a full-screen covering interface? A candidate
+must preserve native switching, ordering, display association, and window
+membership. A returned low-level Space ID alone is insufficient. No such
+candidate has been validated; this is not proof that none exists.
+
+If that investigation does not establish a route, a reserve requires an explicit
+product compromise about provisioning. The user's preference against visible
+preparation is recorded as a preference, not approval for an exception. The
+following reserve rules are proposals, not an accepted design:
+
+- A reserve consists of real Desktops explicitly designated for reuse. It remains
+  visible in Mission Control and reachable through normal native navigation.
+- Native creation, deletion, reordering, and use of a reserved Desktop must be
+  reconciled. Atelier must not silently recreate a Desktop the user deleted.
+- Reserve exhaustion cannot fall back to opening Mission Control. Existing
+  Desktops remain usable, but new allocation needs available capacity.
+- Releasing a verified empty Desktop for reuse is different from deleting a
+  native Desktop. Native deletion can move windows to another Desktop; recycling
+  must not imply that behavior or close applications.
+- A separate Atelier-only order would disagree with native left/right navigation;
+  prefer native ordering unless the user explicitly chooses that difference.
+
+The current inventory uses `.optionOnScreenOnly` and excludes hidden applications,
+minimized windows, and several other window classes. It cannot establish that an
+inactive Desktop is empty. The current background observation also depends on
+Groups being present and has no independent native Space lifecycle event path.
+Reserve ownership and occupancy therefore need dedicated evidence and
+reconciliation, rather than reuse of Group membership as an emptiness test.
+[Native inventory](../App/Sources/AtelierEngine/EngineBridge.swift),
+[observation](../App/Resources/Atelier/index.js),
+[Group scope](../App/Resources/Atelier/groups.js)
 
 Prefer HS2 JavaScript for configurable policy and asynchronous orchestration.
 Reuse the existing native topology and switching boundary; extend it only for
 capabilities HS2 lacks. Do not port the entire helper into JS just to reduce a
 delay, and do not ship changes to the upstream HS2 pin merely for this research.
 
-For the first experiment, record input-to-new-ID, overview-visible duration,
+For any future creation experiment, record input-to-new-ID, overview-visible duration,
 input-to-active-ID, input-to-ready-for-typing, pointer displacement, and failures.
-Use a monotonic clock and compare the existing flow with both candidates on
+Use a monotonic clock and compare the existing flow with the candidate on
 disposable Desktops and saved test windows. Check one and multiple displays,
 fullscreen adjacency, already-open Mission Control, repeated shortcuts, Reduce
 Motion on/off, and both 26 and 27 when available. Do not lower waits without
@@ -171,6 +199,7 @@ would additionally need session-scoped ownership, fresh occupancy checks,
 invalidation after topology changes, and the existing global numbered-shortcut
 limit. An apparently empty user Desktop is not automatically an Atelier reserve.
 
-The immediate recommendation is experiment 1. It addresses concrete unnecessary
-work while preserving real Desktops and the existing installation model. Its
-actual improvement and reliability remain to be measured.
+The immediate recommendation is to resolve creation feasibility separately from
+the panel design. Do not adopt a reserve or a reduced-flash fallback as though it
+already satisfies the user's zero-flash requirement. No application behavior was
+changed during this discussion.
