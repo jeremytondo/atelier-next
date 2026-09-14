@@ -8,47 +8,48 @@ func missionControlInventory(select index: Int? = nil, inspectOnly: Bool = false
   guard AXIsProcessTrusted(), let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
     throw TrialError("Mission Control inventory requires existing Accessibility trust and Dock")
   }
-  func attribute(_ element: AXUIElement, _ name: String) -> Any? {
-    var result: CFTypeRef?
-    return AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success ? result : nil
+  let root = AXUIElementCreateApplication(dock.processIdentifier)
+  func attribute(_ element: AXUIElement, _ name: String, required: Bool = false) throws -> Any? {
+    try dockAttribute(element, name, required: required)
   }
-  func elements() -> [AXUIElement] {
-    var queue = [(AXUIElementCreateApplication(dock.processIdentifier), 0)], result: [AXUIElement] = [], index = 0
-    while index < queue.count && index < 2_000 {
-      let (item, depth) = queue[index]; index += 1; result.append(item)
-      if depth < 8, let children = attribute(item, kAXChildrenAttribute) as? [AXUIElement] {
-        queue.append(contentsOf: children.map { ($0, depth + 1) })
+  func elements() throws -> [AXUIElement] {
+    try dockHierarchy(root).map(\.element)
+  }
+  func visible() throws -> Bool {
+    for item in try elements() {
+      if let value = try attribute(item, "AXIdentifier") {
+        guard let identifier = value as? String else { throw TrialError("Dock returned a non-string AXIdentifier") }
+        if identifier == "mc" { return true }
       }
     }
-    return result
+    return false
   }
-  func visible() -> Bool { elements().contains { attribute($0, "AXIdentifier") as? String == "mc" } }
-  if inspectOnly { return ["visible": visible()] }
-  guard !visible() else { throw TrialError("Close Mission Control before a bounded inventory trial") }
+  if inspectOnly { return ["visible": try visible()] }
+  guard try !visible() else { throw TrialError("Close Mission Control before a bounded inventory trial") }
   let launch = commandOutput("/usr/bin/open", ["-a", "Mission Control"])
   RunLoop.current.run(until: Date().addingTimeInterval(0.6))
-  guard visible() else { throw TrialError("Mission Control did not expose its AX hierarchy: \(launch)") }
-  let lists = elements().filter { attribute($0, "AXIdentifier") as? String == "mc.spaces.list" }
-  let desktops = lists.map { list -> [[String: Any]] in
-    (attribute(list, kAXChildrenAttribute) as? [AXUIElement] ?? []).map { element in
-      ["title": attribute(element, kAXTitleAttribute) as? String ?? "",
-       "description": attribute(element, kAXDescriptionAttribute) as? String ?? "",
-       "identifier": attribute(element, "AXIdentifier") as? String ?? ""]
+  guard try visible() else { throw TrialError("Mission Control did not expose its AX hierarchy: \(launch)") }
+  let lists = try elements().filter { try attribute($0, "AXIdentifier") as? String == "mc.spaces.list" }
+  let desktops = try lists.map { list -> [[String: Any]] in
+    try (attribute(list, kAXChildrenAttribute) as? [AXUIElement] ?? []).map { element in
+      ["title": try attribute(element, kAXTitleAttribute) as? String ?? "",
+       "description": try attribute(element, kAXDescriptionAttribute) as? String ?? "",
+       "identifier": try attribute(element, "AXIdentifier") as? String ?? ""]
     }
   }
   var selectionError: AXError?
   if let index, lists.count == 1,
-    let buttons = attribute(lists[0], kAXChildrenAttribute) as? [AXUIElement], buttons.indices.contains(index) {
+    let buttons = try attribute(lists[0], kAXChildrenAttribute) as? [AXUIElement], buttons.indices.contains(index) {
     selectionError = AXUIElementPerformAction(buttons[index], kAXPressAction as CFString)
     RunLoop.current.run(until: Date().addingTimeInterval(0.4))
   }
   // Escape is posted only while the overview this function opened is present.
-  if visible() {
+  if try visible() {
     CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: true)?.post(tap: .cghidEventTap)
     CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: false)?.post(tap: .cghidEventTap)
   }
   RunLoop.current.run(until: Date().addingTimeInterval(0.35))
-  var result: [String: Any] = ["lists": desktops, "thumbnailCount": desktops.reduce(0) { $0 + $1.count }, "closed": !visible()]
+  var result: [String: Any] = ["lists": desktops, "thumbnailCount": desktops.reduce(0) { $0 + $1.count }, "closed": try !visible()]
   if let index { result["selectedIndex"] = index; result["selectionAXError"] = selectionError?.rawValue ?? AXError.illegalArgument.rawValue }
   return result
 }

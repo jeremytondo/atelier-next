@@ -25,6 +25,12 @@ time, including helper build/startup. See the
 `--enter` uses the enabled native next-Desktop
 shortcut; omit it to keep the current Desktop active. New numbered shortcut
 registrations remain unavailable, so use adjacent switching or Mission Control.
+The [direct Dock investigation](Evidence/2026-09-14-direct-dock-investigation.md)
+records the service restrictions and additional alternatives examined. Its
+`mise run wmbridge:run -- dock-inspect` command reads the currently exposed Dock
+Accessibility actions without opening Mission Control. The creation guard now
+refuses incomplete Accessibility hierarchy reads instead of treating them as a
+closed overview.
 `--raw` retains the original WMBridge-only creation trial. It saves private logs
 under `.build/ate-40-manual/` and prints commands to inspect and clean up that
 specific trial. Check whether Mission Control shows the new Desktop, whether
