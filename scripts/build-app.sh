@@ -3,8 +3,6 @@
 # timestamp, notarization, stapling, and Gatekeeper verification must all pass.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-# shellcheck source=scripts/phase-timing.sh
-source "$root/scripts/phase-timing.sh"
 cd "$root"
 
 usage() {
@@ -132,7 +130,6 @@ for executable in atelier-engine atelier-tools; do
   [[ $(lipo -archs "$binaries/$executable") == arm64 ]] || die "expected an arm64 executable: $executable"
 done
 app="$temporary/Atelier.app"
-phase_start
 contents="$app/Contents"
 hs2_app="$temporary/native/host/Hammerspoon 2.app"
 [[ -x "$hs2_app/Contents/MacOS/Hammerspoon 2" ]] || die 'missing HS2 release bundle'
@@ -175,8 +172,6 @@ plutil -insert AtelierBuildDate -string "$built_at" "$contents/Info.plist"
 umask 022
 chmod -R u=rwX,go=rX "$app"
 # Sign nested bundles inside out, preserving HS2's automation services.
-phase_end assembly
-phase_start
 for directory in "$contents/Frameworks" "$contents/XPCServices"; do
   [[ -d $directory ]] || continue
   while IFS= read -r -d '' path; do
@@ -203,23 +198,19 @@ fi
 codesign --force --sign "$identity" --options runtime "$timestamp" \
   --entitlements "$app_entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
-phase_end signing
 probe_args=()
 if [[ $channel == local && $identity == - ]]; then probe_args=(--ad-hoc); fi
-"$root/scripts/timed.sh" bundle-probe "$root/scripts/bundle-test.sh" "$app" ${probe_args[@]+"${probe_args[@]}"}
+"$root/scripts/bundle-test.sh" "$app" ${probe_args[@]+"${probe_args[@]}"}
 
 if [[ $channel != local ]]; then
   if [[ ${GITHUB_ACTIONS:-} == true ]]; then "$root/scripts/release-current.sh" "$plan"; fi
   ditto -c -k --sequesterRsrc --keepParent "$app" "$temporary/notarization.zip"
   mkdir -p "$output/notarization"
-  phase_start
   if ! "$notarytool" submit "$temporary/notarization.zip" "${notary_args[@]}" \
       --wait --timeout 20m --output-format json > "$output/notarization/submission.json"; then
-    phase_end notary-wait 1
     cat "$output/notarization/submission.json" >&2
     die 'Notarization failed or timed out; no release package was produced.'
   fi
-  phase_end notary-wait
   if [[ $(jq -r .status "$output/notarization/submission.json") != Accepted ]]; then
     submission_id=$(jq -er .id "$output/notarization/submission.json")
     "$notarytool" log "$submission_id" "${notary_args[@]}" "$output/notarization/log.json"
@@ -234,7 +225,6 @@ else
   archive_name="Atelier-$marketing_version-$build_number-local.zip"
 fi
 # Nothing replaces the last package until signing and notarization have passed.
-phase_start
 if [[ $app_only == false ]]; then ditto -c -k --sequesterRsrc --keepParent "$app" "$temporary/$archive_name"; fi
 rm -rf "$output/Atelier.app"
 mv "$app" "$output/Atelier.app"
@@ -245,7 +235,6 @@ if [[ $channel != local ]]; then
     hammerspoon2: $hs2[0], asset: "Atelier-macos-arm64.zip"}' "$plan" > "$output/manifest.json"
   (cd "$output" && shasum -a 256 Atelier-macos-arm64.zip manifest.json > checksums.txt)
 fi
-phase_end final-package
 
 launch_path="$output/Atelier.app"
 if [[ $install_app == true ]]; then

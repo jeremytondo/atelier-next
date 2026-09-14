@@ -17,10 +17,10 @@ if receipt_valid "$output" "$receipt" "$inputs"; then
   exit 0
 fi
 [[ ${1:-} != --verify ]] || { echo 'HS2 output missing, stale, or corrupted; run mise run hs2:build.' >&2; exit 1; }
-"$root/scripts/timed.sh" prepare "$root/scripts/prepare-hammerspoon.sh" --locked
+"$root/scripts/prepare-hammerspoon.sh" --locked
 # Release defaults include Intel slices even with an arm64 destination.
 # Restrict the build setting as well as the destination to avoid compiling both.
-"$root/scripts/timed.sh" host-build xcodebuildmcp macos build --project-path "$root/.build/hammerspoon2/Hammerspoon 2.xcodeproj" \
+xcodebuildmcp macos build --project-path "$root/.build/hammerspoon2/Hammerspoon 2.xcodeproj" \
   --scheme Atelier --configuration Release --arch arm64 \
   --derived-data-path "$root/.build/hs2-derived" \
   --extra-args ARCHS=arm64 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \

@@ -8,7 +8,7 @@ if [[ ${1:-} != --locked ]]; then
 fi
 shift
 if [[ ${1:-} == --test ]]; then
-  exec "$root/scripts/timed.sh" native-test xcodebuildmcp swift-package test --package-path "$root/App" --configuration debug
+  exec xcodebuildmcp swift-package test --package-path "$root/App" --configuration debug
 fi
 # shellcheck source=scripts/build-state.sh
 source "$root/scripts/build-state.sh"
@@ -20,7 +20,7 @@ if receipt_valid "$output" "$receipt" "$inputs"; then
   exit 0
 fi
 [[ ${1:-} != --verify ]] || { echo 'Helper output missing, stale, or corrupted; run mise run helpers:build.' >&2; exit 1; }
-"$root/scripts/timed.sh" helpers-build xcodebuildmcp swift-package build --package-path "$root/App" --configuration release --architectures arm64
+xcodebuildmcp swift-package build --package-path "$root/App" --configuration release --architectures arm64
 mkdir -p "$root/.build/native"
 stage=$(mktemp -d "$root/.build/native/helpers-stage.XXXXXX")
 trap 'rm -rf "$stage"' EXIT

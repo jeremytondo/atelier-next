@@ -24,7 +24,7 @@ depends = ["test:js", "test:native"]
 
 [tasks."test:js"]
 description = "Run JavaScript behavior tests immediately"
-run = "scripts/timed.sh js-test node --test App/Tests/JavaScript/*.test.js"
+run = "node --test App/Tests/JavaScript/*.test.js"
 
 [tasks."test:native"]
 description = "Build and run native helper tests in Debug"
@@ -46,7 +46,7 @@ run = "scripts/build-helpers.sh"
 [tasks."bundle:check"]
 description = "Assemble, ad-hoc sign, and probe current resources with verified native outputs"
 depends = ["native:build"]
-run = "scripts/timed.sh bundle-check scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
+run = "scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
 
 [tasks."hs2:build"]
 description = "Build the pinned Hammerspoon 2 application with Atelier integration"
@@ -59,7 +59,7 @@ depends = ["test:js", "release:check", "check:native"]
 [tasks."check:native"]
 description = "Native CI gate after portable checks"
 depends = ["native:check", "hs2:build"]
-run = "scripts/timed.sh bundle-check scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
+run = "scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
 
 [tasks.refs]
 description = "Fetch missing read-only reference source into repos/ (gitignored)"
@@ -100,7 +100,7 @@ run = "scripts/build-app.sh --release-plan"
 [tasks."release:verify-package"]
 description = "Run the full gate, then package its verified same-run native outputs"
 depends = ["check"]
-run = "scripts/timed.sh package scripts/build-app.sh --skip-build --release-plan"
+run = "scripts/build-app.sh --skip-build --release-plan"
 
 [tasks."release:publish"]
 description = "Publish verified release assets (used by GitHub Actions)"
@@ -112,16 +112,12 @@ depends = ["lint", "test:release", "test:build"]
 
 [tasks.lint]
 description = "Lint shell scripts and explicitly selected workflows (including jj workspaces)"
-run = ["scripts/timed.sh shell-lint shellcheck scripts/*.sh", "scripts/timed.sh workflow-lint actionlint .github/workflows/*.yml"]
+run = ["shellcheck scripts/*.sh", "actionlint .github/workflows/*.yml"]
 
 [tasks."test:release"]
 description = "Test release behavior with disposable history and fake credentials"
-run = "scripts/timed.sh release-test scripts/release-test.sh"
+run = "scripts/release-test.sh"
 
 [tasks."test:build"]
-description = "Test build reuse, preparation recovery, and conservative CI selection"
-run = "scripts/timed.sh build-test scripts/build-test.sh"
-
-[tasks."ci:report"]
-description = "Read exact completed workflow/job/transfer timings from GitHub"
-run = "scripts/ci-run-report.sh"
+description = "Test build reuse, preparation recovery, and cache handling"
+run = "scripts/build-test.sh"

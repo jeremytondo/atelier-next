@@ -37,13 +37,10 @@ jobs:
           fetch-depth: ${{ inputs.bump == 'dev' && 1 || 0 }}
           persist-credentials: false
 
-      - run: scripts/ci-metrics.sh start
-
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
           version: 2026.6.14
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - run: scripts/ci-metrics.sh tools
 
       - name: Plan release
         env:
@@ -78,19 +75,6 @@ jobs:
           retention-days: 14
           compression-level: 0
 
-      - name: Measurements
-        if: always()
-        run: scripts/ci-metrics.sh summary
-
-      - name: Build diagnostics
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: release-build-diagnostics
-          path: .build/metrics
-          include-hidden-files: true
-          retention-days: 7
-
       - name: Upload notarization failure details
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -114,8 +98,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - run: scripts/ci-metrics.sh start
-
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: atelier-release
@@ -128,13 +110,7 @@ jobs:
           install_args: gh jq
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - run: scripts/ci-metrics.sh tools
-
       - name: Publish verified assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: mise run release:publish dist/release
-
-      - name: Measurements
-        if: always()
-        run: scripts/ci-metrics.sh summary

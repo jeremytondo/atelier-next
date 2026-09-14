@@ -27,7 +27,6 @@ cp "$project"/scripts/*.sh "$root/scripts/"
 cp "$project/mise.toml" "$root/"
 cp "$project/.xcodebuildmcp/config.yaml" "$root/.xcodebuildmcp/"
 printf 'package\n' > "$root/App/Package.swift"
-printf 'lockfile\n' > "$root/App/Package.resolved"
 printf 'helper source\n' > "$root/App/Sources/helper.swift"
 printf '#!/usr/bin/env bash\necho test-toolchain\n' > "$root/scripts/toolchain.sh"
 upstream="$temporary/upstream/hs2"
@@ -156,7 +155,7 @@ host
 chmod -x "$root/.build/native/helpers/atelier-engine"
 expect_failure helpers --verify
 helpers
-printf 'changed lockfile\n' >> "$root/App/Package.resolved"
+printf 'changed manifest\n' >> "$root/App/Package.swift"
 expect_failure helpers --verify
 helpers
 printf 'changed host\n' >> "$root/App/Hammerspoon/Shell/AtelierHost.swift"
@@ -187,37 +186,4 @@ helpers & second=$!
 wait "$first"; wait "$second"
 helpers --verify
 [[ $(wc -l < "$FAKE_BUILD_LOG") -eq $((compilations_before + 1)) ]] || fail 'concurrent callers both compiled helpers'
-
-select_case() {
-  local expected=$1 status=$2 path=$3
-  printf '%s\0%s\0' "$status" "$path" > "$temporary/diff"
-  actual=$("$project/scripts/ci-select.sh" --diff "$temporary/diff")
-  [[ $actual == "mode=$expected"$'\n'* ]] || fail "selection for $status $path: $actual"
-}
-select_case docs M docs/releases.md
-select_case docs M Prototypes/NativeWindowTilingPOC/main.swift
-select_case js M App/Resources/Configuration.md
-select_case js M App/Resources/Atelier/overlay.js
-select_case js A App/Tests/JavaScript/runtime.test.js
-select_case full M App/Sources/AtelierEngine/main.swift
-select_case full M App/Hammerspoon/Shell/AtelierHost.swift
-select_case full M scripts/build-app.sh
-select_case full M .github/workflows/check.yml
-select_case full M mise.toml
-select_case full M unknown.md
-select_case full D docs/releases.md
-select_case full R100 docs/releases.md
-[[ $("$project/scripts/ci-select.sh") == mode=full$'\n'* ]] || fail 'missing comparison did not select full checks'
-printf 'M\0' > "$temporary/diff"
-[[ $("$project/scripts/ci-select.sh" --diff "$temporary/diff") == mode=full$'\n'* ]] || fail 'truncated diff did not select full checks'
-printf 'M\0README.md\0unterminated' > "$temporary/diff"
-[[ $("$project/scripts/ci-select.sh" --diff "$temporary/diff") == mode=full$'\n'* ]] || fail 'unterminated diff did not select full checks'
-"$project/scripts/ci-result.sh" success true success
-"$project/scripts/ci-result.sh" success false skipped
-for portable in failure cancelled skipped; do expect_failure "$project/scripts/ci-result.sh" "$portable" false skipped; done
-for native in failure cancelled skipped; do expect_failure "$project/scripts/ci-result.sh" success true "$native"; done
-expect_failure "$project/scripts/ci-result.sh" success '' skipped
-status=0
-"$root/scripts/timed.sh" intentional-failure sh -c 'exit 7' || status=$?
-[[ $status == 7 ]] || fail 'timing wrapper lost command failure status'
-echo 'Build reuse, preparation, and change-selection tests passed.'
+echo 'Build reuse, preparation, and cache tests passed.'
