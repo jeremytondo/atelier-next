@@ -1,6 +1,7 @@
 "use strict";
 // HS2 0.0.12 canvas positions use AppKit's y-up coordinates; screen frames use
 // y-down coordinates. Input event flags are reliable on this pinned build.
+// Each canvas belongs to one display/Space; hiding retains HS2's native window.
 const white = alpha => ({red:1, green:1, blue:1, alpha});
 function frameFor(screen, primary, width, height) {
   return {x:screen.x + screen.w - width - 20, y:primary.h - screen.y - screen.h + 20, w:width, h:height};
@@ -27,6 +28,13 @@ class Overlay {
     const primary = this.hs.screen.primary();
     const screen = group.display === "Main" ? primary : this.hs.screen.all().find(s => s.uuid.toUpperCase() === group.display.toUpperCase());
     if (!screen || !primary) { this.hide(); return; }
+    const canvasGroup = JSON.stringify([group.display, group.space]);
+    if (canvasGroup !== this.canvasGroup) {
+      // Recreate on the target Desktop instead of relying on a hidden window's
+      // all-Spaces behavior to carry its previous placement across Desktops.
+      if (this.canvas) this.canvas.destroy();
+      this.canvas = null; this.signature = null; this.canvasGroup = canvasGroup;
+    }
     const focus = this.hs.window.focusedWindow(), usable = screen.frame;
     const rows = Math.max(1, Math.floor((usable.h - 120) / 42));
     const columns = Math.ceil(group.members.length / rows), width = Math.min(320 * columns, usable.w - 40);
@@ -55,6 +63,7 @@ class Overlay {
     if (this.tap) this.hs.eventtap.removeWatcher(this.tap);
     if (this.canvas) this.canvas.destroy();
     this.tap = this.canvas = null; this.active = false;
+    this.signature = this.canvasGroup = null;
   }
 }
 module.exports = {Overlay, frameFor};
