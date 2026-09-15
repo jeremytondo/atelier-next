@@ -1,6 +1,6 @@
 # Atelier Next
 
-Atelier is a customizable macOS workspace built on [Hammerspoon 2](https://github.com/cmsj/Hammerspoon2) (HS2): Desktop shortcuts, window Groups with native Fill, Quick Apps, and a Group overlay, for Apple silicon Macs running macOS 27.
+Atelier is a customizable macOS workspace built on [Hammerspoon 2](https://github.com/cmsj/Hammerspoon2) (HS2) 
 
 ## Install and use
 
