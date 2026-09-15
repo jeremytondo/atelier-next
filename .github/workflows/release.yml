@@ -1,5 +1,5 @@
-# Both channels are manually dispatched from repository branches: mutable dev and permanent
-# stable SemVer releases. Never cancel midway through updating release assets.
+# Both channels are manually dispatched from repository branches: versioned dev
+# releases and permanent stable SemVer releases. Never cancel midway through publication.
 name: Atelier Release
 run-name: Atelier Release (${{ inputs.bump }}, ${{ github.ref_name }})
 
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Refresh dev or cut a stable semantic release from the selected branch
+        description: Publish a dev release or cut a stable semantic release from the selected branch
         type: choice
         default: dev
         options: [dev, patch, minor, major]
@@ -34,7 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: ${{ inputs.bump == 'dev' && 1 || 0 }}
+          # Both channels derive their version from the stable tags.
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
@@ -68,7 +69,7 @@ jobs:
         with:
           name: atelier-release
           path: |
-            dist/release/Atelier-macos-arm64.zip
+            dist/release/atelier-*-macos-arm64.tar.gz
             dist/release/manifest.json
             dist/release/checksums.txt
           if-no-files-found: error
@@ -110,7 +111,8 @@ jobs:
           install_args: gh jq
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish verified assets
+      - name: Publish verified assets and push the casks
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATELIER_TAP_TOKEN: ${{ secrets.ATELIER_TAP_TOKEN }}
         run: mise run release:publish dist/release

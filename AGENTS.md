@@ -21,12 +21,14 @@ do not follow it blindly or deviate from it silently.
 
 ## Maintainability
 
-Atelier owns its native app shell. Hammerspoon 2 supplies the in-process
-JavaScript runtime, automation APIs, and Console; the native Space helper stays
-out of process. Implement customizable defaults through JavaScript APIs first.
-Compose by excluding upstream shell files and adding Atelier source; keep
-remaining upstream patches small. Add native mechanisms only for demonstrated
-gaps, and preserve user-owned configuration across updates.
+Atelier runs on stock Hammerspoon 2 installed by Homebrew; it owns no app
+shell and carries no upstream patches. The stack is config, defaults, API,
+then `hs.*` or a provider: the defaults call only `hs.*` and the `atelier`
+API, and each API function uses `hs.*` where Hammerspoon 2 can do the job and
+the out-of-process providers binary where it cannot. Name a provider after the
+HS2 module it stands in for, and delete it when upstream gains the ability.
+Add native mechanisms only for demonstrated gaps, and preserve user-owned
+configuration across updates.
 
 Long-term maintainability is a core priority. Prefer shared, plainly named
 logic over duplication, and change an existing design when that produces a

@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# The atelier command: install, doctor, and uninstall for a Homebrew-installed
+# Atelier. It reads disk and Homebrew only and never talks to the running app.
+# `atelier install` is what the cask's post-install runs; it is safe to rerun.
+set -euo pipefail
+
+bundle=net.tenshu.Hammerspoon-2
+app_name='Hammerspoon 2'
+app=${ATELIER_HS2_APP:-/Applications/$app_name.app}
+prefix=${ATELIER_PREFIX:-$(brew --prefix 2>/dev/null || echo /opt/homebrew)}
+share="$prefix/share/atelier"
+config_dir="$HOME/.config/atelier"
+init="$config_dir/init.js"
+tap=jeremytondo/atelier
+
+usage() {
+  cat <<'USAGE'
+usage: atelier install    Point Hammerspoon 2 at ~/.config/atelier/init.js, seed it once,
+                          add the login item, and start Hammerspoon 2
+       atelier doctor     Check the installation and print what to fix
+       atelier uninstall  Remove the login item and the Hammerspoon 2 settings Atelier wrote;
+                          the init file and the Homebrew packages stay
+       atelier version    Print the installed package version
+USAGE
+}
+die() { echo "atelier: $*" >&2; exit 1; }
+hs2_running() { pgrep -x "$app_name" > /dev/null; }
+hs2_build() { defaults read "$app/Contents/Info" CFBundleVersion 2>/dev/null || true; }
+login_items() { osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | tr ',' '\n' | sed -E 's/^ +| +$//g'; }
+login_item_present() { login_items | grep -qx "$app_name"; }
+setting() { defaults read "$bundle" "$1" 2>/dev/null || true; }
+
+install() {
+  [[ -d $app ]] || die "$app_name is not installed; run: brew install --cask $tap/hammerspoon2"
+  [[ $(sw_vers -productVersion | cut -d. -f1) -ge 27 ]] || die 'Atelier requires macOS 27 or later.'
+  [[ -x $share/atelier-providers ]] || die "$share is incomplete; reinstall with: brew reinstall --cask atelier"
+  defaults write "$bundle" configLocation -string "$init"
+  defaults write "$bundle" hasCompletedOnboarding -bool true
+  defaults write "$bundle" dockMenuBehaviour -string menuBar
+  defaults write "$bundle" SUEnableAutomaticChecks -bool false
+  mkdir -p "$config_dir"
+  if [[ ! -e $init ]]; then
+    sed "s|/opt/homebrew/share/atelier|$share|" "$share/init.js" > "$init"
+    echo "Seeded $init"
+  fi
+  if ! login_item_present; then
+    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$app\", hidden:false}" > /dev/null \
+      || echo 'Could not add the login item; allow this terminal to control System Events, then rerun atelier install.' >&2
+  fi
+  if hs2_running; then
+    echo "$app_name is running; choose Reload Config from its menu to load $init."
+  else
+    open -a "$app"
+    echo "Started $app_name. Grant Accessibility access when asked; Atelier notifies if it is missing."
+  fi
+}
+
+failed=0
+ok() { printf 'ok    %s\n' "$*"; }
+fail() { printf 'FAIL  %s\n' "$*"; failed=1; }
+unknown() { printf '?     %s\n' "$*"; }
+doctor() {
+  local expected actual
+  if [[ $(sw_vers -productVersion | cut -d. -f1) -ge 27 && $(uname -m) == arm64 ]]; then
+    ok "macOS $(sw_vers -productVersion) on Apple silicon"
+  else
+    fail "Atelier needs macOS 27 or later on Apple silicon; this is macOS $(sw_vers -productVersion) on $(uname -m)"
+  fi
+  if [[ -f $share/hammerspoon2.json && -x $share/atelier-providers ]]; then
+    ok "Package installed in $share ($(jq -r .version "$share/version.json" 2>/dev/null || echo unknown version))"
+  else
+    fail "Package missing or incomplete in $share; run: brew reinstall --cask atelier"
+  fi
+  if [[ -d $app ]]; then
+    expected=$(jq -r .build "$share/hammerspoon2.json" 2>/dev/null || true)
+    actual=$(hs2_build)
+    if [[ -n $expected && $actual == "$expected" ]]; then
+      ok "$app_name build $actual matches the pinned build"
+    else
+      fail "$app_name build ${actual:-unknown} is not the pinned build ${expected:-unknown}; run: brew reinstall --cask $tap/hammerspoon2"
+    fi
+  else
+    fail "$app_name is not installed at $app; run: brew install --cask $tap/hammerspoon2"
+  fi
+  if hs2_running; then ok "$app_name is running"; else fail "$app_name is not running; run: open -a '$app'"; fi
+  if [[ $(setting configLocation) == "$init" && $(setting hasCompletedOnboarding) == 1 ]]; then
+    ok "$app_name loads $init"
+  else
+    fail "$app_name settings do not point at $init; run: atelier install"
+  fi
+  if [[ $(setting dockMenuBehaviour) == menuBar ]]; then
+    ok "$app_name shows its menu bar item only"
+  else
+    fail "$app_name Dock behaviour is not menuBar; run: atelier install"
+  fi
+  if [[ ! -f $init ]]; then
+    fail "$init does not exist; run: atelier install"
+  elif grep -Fq "require(\"$share\")" "$init"; then
+    ok "$init requires $share"
+  else
+    fail "$init does not require \"$share\"; add: const atelier = require(\"$share\");"
+  fi
+  if login_item_present; then
+    ok "$app_name is a login item"
+  else
+    fail "$app_name is not a login item; run: atelier install"
+  fi
+  if [[ -x $share/atelier-providers ]]; then
+    if codesign --verify --strict "$share/atelier-providers" 2>/dev/null; then
+      ok "atelier-providers signature is valid ($(codesign -dv "$share/atelier-providers" 2>&1 | sed -n 's/^Authority=//p' | head -1 || true))"
+    else
+      fail "atelier-providers signature is invalid; run: brew reinstall --cask atelier"
+    fi
+  fi
+  # macOS keeps permission grants in a database only the app itself can query.
+  unknown "Accessibility for $app_name cannot be read from a shell. Atelier notifies 'Grant Accessibility access' when it is missing; enable $app_name in System Settings > Privacy & Security > Accessibility."
+  if defaults read com.apple.ncprefs apps 2>/dev/null | grep -q "\"bundle-id\" = \"$bundle\""; then
+    ok "$app_name has asked for notification permission; the answer is in System Settings > Notifications"
+  else
+    unknown "$app_name has not asked for notification permission yet; it asks when the defaults first start"
+  fi
+  if [[ $failed == 0 ]]; then echo 'Everything checked out.'; else echo 'Fix the FAIL lines above, then run atelier doctor again.'; fi
+  return "$failed"
+}
+
+uninstall() {
+  if login_item_present; then
+    osascript -e "tell application \"System Events\" to delete every login item whose name is \"$app_name\"" > /dev/null \
+      || echo 'Could not remove the login item; remove it in System Settings > General > Login Items.' >&2
+  fi
+  for key in configLocation hasCompletedOnboarding dockMenuBehaviour SUEnableAutomaticChecks; do
+    defaults delete "$bundle" "$key" 2>/dev/null || true
+  done
+  echo "Removed the login item and Atelier's $app_name settings. Kept $init."
+  echo 'Remove the packages with: brew uninstall --cask atelier hammerspoon2'
+}
+
+case "${1:-}" in
+  install) install ;;
+  doctor) doctor ;;
+  uninstall) uninstall ;;
+  version|--version) jq -r .version "$share/version.json" ;;
+  --help|-h|help|'') usage; [[ ${1:-} ]] ;;
+  *) usage >&2; exit 2 ;;
+esac

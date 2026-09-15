@@ -2,94 +2,101 @@
 # only in the tools their environment can install.
 
 [build]
-description = "Build, sign, and ZIP the local macOS app"
-run = "scripts/build-app.sh"
-
-[install]
-description = "Build and install Atelier in /Applications, preserving the previous app"
-run = "scripts/build-app.sh --app-only --install"
+description = "Build the package in dist/: compiled TypeScript, declarations, CLI, signed providers"
+run = "scripts/build-package.sh"
 
 [dev]
-description = "Build, install, and launch Atelier (quit the running app first)"
-run = "scripts/build-app.sh --app-only --install --launch"
+description = "Build and install the package into the Homebrew prefix, then reload Hammerspoon 2 yourself"
+run = "scripts/build-package.sh --install"
 
 [test]
-description = "Run native helper and JavaScript behavior tests"
+description = "Run the TypeScript and Swift provider tests"
 depends = ["test:js", "test:native"]
 
 ["test:js"]
-description = "Run JavaScript behavior tests immediately"
-run = "node --test App/Tests/JavaScript/*.test.js"
+description = "Type-check against the pinned HS2 declarations, then run the TypeScript tests"
+run = [
+  "scripts/fetch-types.sh",
+  "tsc -p tsconfig.json --noEmit",
+  "node --test 'tests/*.test.ts'",
+]
 
 ["test:native"]
-description = "Build and run native helper tests in Debug"
-run = "scripts/build-helpers.sh --test"
+description = "Build and run the Swift provider tests in Debug"
+run = "scripts/build-providers.sh --test"
 
 ["test:release"]
-description = "Test release behavior with disposable history and fake credentials"
+description = "Test release behavior with disposable history and a fake GitHub"
 run = "scripts/release-test.sh"
 
 ["test:build"]
-description = "Test build reuse, preparation recovery, and cache handling"
+description = "Test providers build reuse and cache handling with a fake compiler"
 run = "scripts/build-test.sh"
 
+["test:cli"]
+description = "Test the atelier command against a fake Mac"
+run = "scripts/cli-test.sh"
+
 [lint]
-description = "Lint scripts and workflows; check JavaScript and Swift formatting and lint"
+description = "Lint scripts and workflows; check TypeScript and Swift formatting and lint"
 depends = ["lint:scripts", "lint:js", "lint:swift"]
 
 ["lint:scripts"]
-description = "Lint shell scripts and explicitly selected workflows (including jj workspaces)"
-run = ["shellcheck scripts/*.sh", "actionlint .github/workflows/*.yml"]
+description = "Lint shell scripts and the workflows"
+run = ["shellcheck scripts/*.sh cli/atelier install/install.sh", "actionlint .github/workflows/*.yml"]
 
 ["lint:js"]
-description = "Check JavaScript formatting and lint with Biome"
-run = "biome ci --error-on-warnings App"
+description = "Check TypeScript and JavaScript formatting and lint with Biome"
+run = "biome ci --error-on-warnings ."
 
 ["lint:swift"]
 description = "Check Swift formatting with the selected Xcode's swift-format"
-run = "xcrun swift-format lint --strict --recursive App/Package.swift App/Sources App/Tests App/Hammerspoon"
+run = "xcrun swift-format lint --strict --recursive providers/Package.swift providers/Sources providers/Tests"
 
 [format]
-description = "Format JavaScript and Swift sources in place and apply safe lint fixes"
+description = "Format TypeScript, JavaScript, and Swift sources in place and apply safe lint fixes"
 run = [
-  "biome check --write App",
-  "xcrun swift-format format --in-place --recursive App/Package.swift App/Sources App/Tests App/Hammerspoon",
+  "biome check --write .",
+  "xcrun swift-format format --in-place --recursive providers/Package.swift providers/Sources providers/Tests",
 ]
 
-["helpers:build"]
-description = "Build or verify Release helper executables"
-run = "scripts/build-helpers.sh"
-
-["hs2:build"]
-description = "Build the pinned Hammerspoon 2 application with Atelier integration"
-run = "scripts/build-hammerspoon.sh"
-
-["native:build"]
-description = "Prepare verified host and Release helper outputs"
-depends = ["hs2:build", "helpers:build"]
+["providers:build"]
+description = "Build or verify the Release atelier-providers executable"
+run = "scripts/build-providers.sh"
 
 ["native:check"]
-description = "Sequence Debug tests before Release helper compilation"
+description = "Sequence Debug tests before Release providers compilation"
 depends = ["test:native"]
-run = "scripts/build-helpers.sh"
+run = "scripts/build-providers.sh"
 
-["bundle:check"]
-description = "Assemble, ad-hoc sign, and probe current resources with verified native outputs"
-depends = ["native:build"]
-run = "scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
+["types:fetch"]
+description = "Fetch upstream's hammerspoon.d.ts for the pinned revision into .build/types"
+run = "scripts/fetch-types.sh"
+
+["hs2:build"]
+description = "Dev only: build stock Hammerspoon 2 at the pinned revision into .build/native/hs2"
+run = "scripts/build-hammerspoon.sh"
+
+["hs2:install"]
+description = "Dev only: build stock Hammerspoon 2 at the pin and replace /Applications/Hammerspoon 2.app (quit it first)"
+run = "scripts/build-hammerspoon.sh --install"
+
+[casks]
+description = "Preview the generated Homebrew casks in dist/casks: [MANIFEST.json]"
+run = "scripts/casks.sh dist/casks"
 
 [check]
-description = "Run the complete gate, including an isolated real-bundle probe"
+description = "Run the complete gate"
 depends = ["check:portable", "check:native"]
 
 ["check:portable"]
-description = "The gate's Linux-capable half: JavaScript tests, lint, and release/build fixtures"
+description = "The gate's Linux-capable half: TypeScript tests, lint, and release/build/CLI fixtures"
 depends = ["test:js", "release:check"]
 
 ["check:native"]
-description = "The gate's macOS half: Swift format, native tests, and the real-bundle probe"
-depends = ["lint:swift", "native:check", "hs2:build"]
-run = "scripts/build-app.sh --skip-build --app-only --identity - --output-dir .build/bundle-check"
+description = "The gate's macOS half: Swift format, provider tests, and a locally signed package"
+depends = ["lint:swift", "native:check"]
+run = "scripts/build-package.sh --skip-build --identity - --output-dir .build/package-check"
 
 [refs]
 description = "Fetch missing read-only reference source into repos/ (gitignored)"
@@ -116,7 +123,7 @@ description = "Dispatch a stable major release: [BRANCH] (default: main)"
 run = "scripts/release-dispatch.sh major"
 
 ["release:dev"]
-description = "Dispatch the rolling dev release: [BRANCH] (default: main)"
+description = "Dispatch a dev release: [BRANCH] (default: main)"
 run = "scripts/release-dispatch.sh dev"
 
 ["release:plan"]
@@ -125,17 +132,17 @@ run = "scripts/release-plan.sh"
 
 ["release:package"]
 description = "Build, sign, notarize, and package an existing release plan JSON"
-run = "scripts/build-app.sh --release-plan"
+run = "scripts/build-package.sh --release-plan"
 
 ["release:verify-package"]
-description = "Run the full gate, then package its verified same-run native outputs"
+description = "Run the full gate, then package its verified same-run providers output"
 depends = ["check"]
-run = "scripts/build-app.sh --skip-build --release-plan"
+run = "scripts/build-package.sh --skip-build --release-plan"
 
 ["release:publish"]
-description = "Publish verified release assets (used by GitHub Actions)"
+description = "Publish verified release assets and push the casks (used by GitHub Actions)"
 run = "scripts/publish-release.sh"
 
 ["release:check"]
-description = "Lint scripts, workflows, and JavaScript, and test release and build behavior"
-depends = ["lint:scripts", "lint:js", "test:release", "test:build"]
+description = "Lint scripts, workflows, and TypeScript, and test release, build, and CLI behavior"
+depends = ["lint:scripts", "lint:js", "test:release", "test:build", "test:cli"]

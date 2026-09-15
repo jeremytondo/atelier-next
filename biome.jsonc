@@ -1,15 +1,20 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
-  "files": {"includes": ["App/**/*.js", "!App/.build/**"]},
-  "formatter": {"indentStyle": "space", "indentWidth": 2, "lineWidth": 100},
-  "javascript": {"formatter": {"quoteStyle": "double", "bracketSpacing": false}},
+  "files": { "includes": ["**/*.ts", "**/*.js", "!.build", "!dist", "!repos", "!providers"] },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": { "formatter": { "quoteStyle": "double", "bracketSpacing": false } },
   "linter": {
     "rules": {
-      "recommended": true,
-      // HS2 loads these files as CommonJS scripts, where "use strict" is not redundant.
-      "suspicious": {"noRedundantUseStrict": "off"},
+      "preset": "recommended",
       // Concatenation versus template literals is taste, not a defect.
-      "style": {"useTemplate": "off"}
+      "style": { "useTemplate": "off" }
     }
-  }
+  },
+  "overrides": [
+    {
+      // Tests assert on fixtures they built; a missing entry should throw right there.
+      "includes": ["tests/**"],
+      "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+    }
+  ]
 }

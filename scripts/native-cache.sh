@@ -1,28 +1,27 @@
 #!/usr/bin/env bash
-# Transfer only compact unsigned outputs, never DerivedData. Exact-key cache
-# restores still go through the normal input/output checks before any reuse.
+# Transfer only the compact unsigned providers output, never DerivedData. An
+# exact-key cache restore still goes through the normal input/output checks.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 if [[ ${1:-} == --locked ]]; then shift; locked=true; else locked=false; fi
-operation=${1:-}; kind=${2:-}
-[[ $kind == host || $kind == helpers ]] || exit 2
+operation=${1:-}
 if [[ $locked == false ]]; then
-  exec "$root/scripts/with-lock.sh" "$root/.build/locks/$kind" "$0" --locked "$@"
+  exec "$root/scripts/with-lock.sh" "$root/.build/locks/providers" "$0" --locked "$@"
 fi
 # shellcheck source=scripts/build-state.sh
 source "$root/scripts/build-state.sh"
+kind=providers
 mkdir -p "$root/.build/cache" "$root/.build/native"
 archive="$root/.build/cache/$kind.tar.gz"
 case "$operation" in
   pack)
-    if [[ $kind == host ]]; then command=build-hammerspoon.sh; else command=build-helpers.sh; fi
-    "$root/scripts/$command" --locked --verify
+    "$root/scripts/build-providers.sh" --locked --verify
     COPYFILE_DISABLE=1 tar -czf "$archive.tmp" -C "$root/.build/native" "$kind" "$kind.json"
     mv "$archive.tmp" "$archive" ;;
   unpack)
     [[ -f $archive ]] || { echo "$kind cache miss; native task will build."; exit 0; }
     # Check archives are scoped by GitHub ref; privileged release jobs never
-    # restore them. Incompatible/damaged transfers fall back to compilation.
+    # restore them. Incompatible or damaged transfers fall back to compilation.
     stage=$(mktemp -d "$root/.build/cache/unpack.XXXXXX")
     trap 'rm -rf "$stage"' EXIT
     # Reject paths outside this layer before extraction. Corrupt archives never
@@ -36,6 +35,6 @@ case "$operation" in
     fi
     replace_directory "$stage/$kind" "$root/.build/native/$kind"
     mv "$stage/$kind.json" "$root/.build/native/$kind.json" ;;
-  *) exit 2 ;;
+  *) echo 'usage: native-cache.sh pack|unpack' >&2; exit 2 ;;
 esac
 if [[ -f $archive ]]; then printf '%s cache payload bytes: %s\n' "$kind" "$(wc -c < "$archive")"; fi
