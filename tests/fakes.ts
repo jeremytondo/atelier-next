@@ -48,11 +48,6 @@ export interface FakeState {
   build: string;
   notifications: string[];
   hostTrusted?: boolean;
-  menus: {
-    title: string;
-    tooltip: string;
-    items: {title: string; disabled?: boolean; fn?: () => void}[];
-  }[];
   dialogs: {
     message: string;
     detail: string;
@@ -91,7 +86,6 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     lockedLaunches: 0,
     build: "133.1",
     notifications: [],
-    menus: [],
     dialogs: [],
     openedURLs: [],
     openURLResult: true,
@@ -118,23 +112,6 @@ export function fakeHS(): {hs: HS; state: FakeState} {
       openURL: (url: string) => {
         state.openedURLs.push(url);
         return state.openURLResult;
-      },
-    },
-    menubar: {
-      create: () => {
-        const menu = {
-          title: "",
-          tooltip: "",
-          items: [],
-          setTooltip(value: string) {
-            this.tooltip = value;
-          },
-          setMenu(value: []) {
-            this.items = value;
-          },
-        };
-        state.menus.push(menu);
-        return menu;
       },
     },
     ui: {

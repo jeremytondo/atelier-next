@@ -1,7 +1,7 @@
 // The Atelier defaults: Groups, Desktop shortcuts, Quick Apps, and the overlay,
 // as policy over `hs.*` and the API. One session owns every binding, observer,
 // timer, and the providers process; stopping releases all of them and leaves
-// independent HS2 scripts untouched. The status menu remains available to resume.
+// independent HS2 scripts untouched.
 import type {ResolvedApplication} from "../api/application.ts";
 import type {HS} from "../api/hs.ts";
 import type {AtelierAPI} from "../api/index.ts";
@@ -49,7 +49,7 @@ export interface Status {
 export interface Defaults {
   /** Starts the defaults; a later call without options resumes with the previous ones. */
   start(options?: Options): Promise<Defaults>;
-  /** Stops automation and pending startup; the status menu remains available. */
+  /** Stops automation and pending startup, releasing owned resources. */
   stop(): void;
   status(): Status;
   /** A fresh copy of the shipped options. */
@@ -110,9 +110,6 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     metrics.push({name, milliseconds: Date.now() - began});
     if (metrics.length > 100) metrics.shift();
   }
-  function showStatus() {
-    startup.update(state, lastError, () => fire(session.start()));
-  }
   function notify(message: string) {
     // Notifications are optional; the HS2 Console always retains the line.
     try {
@@ -124,7 +121,6 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   function report(error: unknown) {
     lastError = String(error instanceof Error ? error.message : error);
     console.error("Atelier: " + lastError);
-    showStatus();
     notify(lastError);
   }
   function fire(promise: Promise<unknown>) {
@@ -470,7 +466,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   async function waitForAccessibility(epoch: number, provider: boolean) {
     assertValid(epoch);
     state = "Waiting for Accessibility";
-    showStatus();
+    console.log("Atelier: Waiting for Accessibility");
     startup.permission();
     let trusted = false;
     while (!trusted) {
@@ -481,7 +477,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       assertValid(epoch);
     }
     state = "Starting";
-    showStatus();
+    startup.close();
   }
   let ready: Promise<Defaults> | null = null;
   const session: Defaults = {
@@ -493,7 +489,6 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       lastError = null;
       state = "Starting";
       ready = (async () => {
-        showStatus();
         config = normalize(startOptions);
         checkBuild();
         if (!hs.permissions.checkAccessibility()) await waitForAccessibility(epoch, false);
@@ -537,7 +532,6 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
           overlay.start();
         }
         state = "Running";
-        showStatus();
         console.log("Atelier: Running");
         requestNotifications();
         poll = hs.timer.doEvery(1, observe);
@@ -573,7 +567,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       if (unwatchFailures) unwatchFailures();
       unwatchFailures = null;
       api.providers.stop();
-      showStatus();
+      startup.close();
     },
     status,
     defaults: defaultOptions,
@@ -587,4 +581,4 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
 }
 
 const accessibilityMessage =
-  "Accessibility access is unavailable. Open Accessibility Settings from the Atelier menu, enable Hammerspoon 2, then retry startup";
+  "Accessibility access is unavailable. Enable Hammerspoon 2 in System Settings > Privacy & Security > Accessibility, then run atelier install to restart";

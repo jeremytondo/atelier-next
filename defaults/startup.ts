@@ -1,10 +1,9 @@
-// Persistent startup feedback uses HS2 UI, independent of notification permission.
-// The status item survives stop so users can resume; HS2 destroys it on reload.
+// Accessibility setup dialog and System Settings navigation. Startup owns the
+// dialog and closes it when access is granted or the session stops.
 import type {HS} from "../api/hs.ts";
 
 export class Startup {
   private readonly hs: HS;
-  private menu: HSMenuBarItem | null = null;
   private dialog: HSUIDialog | null = null;
   private prompted = false;
 
@@ -34,28 +33,6 @@ export class Startup {
         "Atelier: Open System Settings > Privacy & Security and enable Hammerspoon 2 under Accessibility / Device Control and Data Access.",
       );
     }
-  }
-
-  update(state: string, error: string | null, retry: () => void): void {
-    this.menu ??= this.hs.menubar.create();
-    const menu = this.menu;
-    menu.title = state === "Running" ? "Atelier" : "Atelier: " + state;
-    menu.setTooltip(error ?? "Atelier: " + state);
-    menu.setMenu([
-      {title: state, disabled: true},
-      ...(error ? [{title: error, disabled: true}] : []),
-      {title: "-"},
-      {title: "Open Accessibility Settings…", fn: () => this.settings()},
-      {title: "Reload Config", fn: () => this.hs.reload()},
-      {
-        title: "Retry Startup",
-        disabled:
-          state === "Running" || state === "Starting" || state === "Waiting for Accessibility",
-        fn: retry,
-      },
-      {title: "Open Console", fn: () => this.hs.openConsole()},
-    ]);
-    if (state !== "Waiting for Accessibility") this.close();
   }
 
   permission(): void {
