@@ -64,7 +64,7 @@ Groups belong to a native display/Space pair. Creating a Group records the focus
 
 Native Fill invokes Apple's menu action through HS2 Accessibility. Unsupported applications produce an error; Atelier does not silently substitute geometry resizing. Animation settles in the background so repeated selection remains responsive. Repair the Group to retry a member whose Fill previously failed.
 
-Groups survive Reload Config and quitting Hammerspoon 2: their identities are saved to `~/Library/Application Support/Atelier/groups.json` within a second of each change and checked against the live windows on the next start. The `reload-config` shortcut and `atelier.stop()` save immediately; Reload Config or Quit from the Hammerspoon 2 menu can lose changes made in the last second. Deleting the file is safe. Failed Fills are retried after a reload. Groups do not survive a restart or logout: a saved Group is restored only if at least one of its windows still exists.
+Groups survive Reload Config and quitting Hammerspoon 2: their identities are saved to `~/Library/Application Support/Atelier/groups.json` within a second of each change and checked against the live windows on the next start. The `reload-config` shortcut and `atelier.stop()` save immediately; Reload Config or Quit from the Hammerspoon 2 menu can lose changes made in the last second. Deleting the file is safe. Failed Fills are retried after a reload. Groups do not survive a restart or logout: a saved Group is restored only if at least one of its windows still exists somewhere.
 
 ## Quick Apps
 

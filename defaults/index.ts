@@ -21,7 +21,7 @@ import {type Group, Groups, identity, type Member, sameFrame} from "./groups.ts"
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
 import {Startup} from "./startup.ts";
-import {StateFile} from "./state.ts";
+import {type SavedMember, StateFile} from "./state.ts";
 
 export interface DefaultsInfo {
   /** The Hammerspoon 2 build number Atelier was tested against. */
@@ -151,6 +151,14 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   function persist() {
     if (persisting) file.save(groups.serialize());
   }
+  // Whether a saved window still exists on any Desktop; false for every window
+  // after a logout or restart, so nothing from before it comes back.
+  function alive(member: SavedMember) {
+    const app = hs.application.fromPID(member.pid);
+    return (
+      !!app && app.bundleID === member.bundleID && app.allWindows.some((w) => w.id === member.id)
+    );
+  }
   function restore(first: Snapshot) {
     restored = null;
     const read = file.read();
@@ -161,7 +169,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       groups.entries.clear();
       console.log("Atelier: Ignoring " + read.status + " Groups state at " + file.path);
     } else {
-      restored = groups.restore(read.groups, first);
+      restored = groups.restore(read.groups, first, alive);
       console.log(
         "Atelier: Restored " + restored.restored + " Groups, dropped " + restored.dropped,
       );

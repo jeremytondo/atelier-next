@@ -39,6 +39,9 @@ const saved = (space: string, ...members: [number, number, string?][]): SavedGro
   members: members.map(([pid, id, bundleID = "app.a"]) => ({pid, id, app: bundleID, bundleID})),
 });
 const fileText = (groups: SavedGroup[]) => JSON.stringify({version: stateVersion, groups});
+/** Alive when a window with the same process, ID, and app is in the list. */
+const present = (windows: WindowInfo[]) => (m: {pid: number; id: number; bundleID: string}) =>
+  windows.some((w) => w.pid === m.pid && w.id === m.id && w.bundleID === m.bundleID);
 const debounce = (state: FakeState) =>
   state.timers.find((t) => !t.stopped && !t.repeats && t.seconds === debounceSeconds);
 function session(hs: HS) {
@@ -59,6 +62,7 @@ function capture(run: () => Promise<void> | void): Promise<string[]> {
 /** Two windows of process 42 that focus and Fill through the fakes. */
 function fakeApp(hs: HS, state: FakeState, ids: number[]) {
   const application: Record<string, unknown> = {
+    bundleID: "fixture",
     axElement: () => ({setAttributeValueValue: () => true}),
   };
   const windows = ids.map((id) => ({
@@ -121,7 +125,10 @@ test("serialize and restore round-trip identities and Fill frames, not titles or
   group.members[1]!.fillFailed = true;
   const text = fileText(store.serialize());
   const restored = new Groups();
-  assert.deepEqual(restored.restore(parse(text)!, snap), {restored: 1, dropped: 0});
+  assert.deepEqual(restored.restore(parse(text)!, snap, present(snap.windows)), {
+    restored: 1,
+    dropped: 0,
+  });
   assert.deepEqual(restored.serialize(), store.serialize());
   const members = restored.current(snap)!.members;
   assert.deepEqual(members[0]!.filledFrame, {x: 1, y: 2, w: 3, h: 4});
@@ -131,18 +138,20 @@ test("serialize and restore round-trip identities and Fill frames, not titles or
 
 test("restore drops Groups without a Desktop and members whose window is gone or reused", () => {
   const store = new Groups();
+  const visible = snapshot("1", [
+    window(101, 11, "1"),
+    window(102, 12, "1", "app.other"),
+    window(100, 10, "1"),
+    window(300, 30, "1"),
+  ]);
   const result = store.restore(
     [
       saved("1", [12, 102], [10, 100], [11, 101], [13, 103]),
       saved("9", [10, 100]),
       saved("2", [20, 200]),
     ],
-    snapshot("1", [
-      window(101, 11, "1"),
-      window(102, 12, "1", "app.other"),
-      window(100, 10, "1"),
-      window(300, 30, "1"),
-    ]),
+    visible,
+    present([...visible.windows, window(200, 20, "2")]),
   );
   assert.deepEqual(result, {restored: 2, dropped: 1});
   // The reused ID 102 lost its saved slot and joins as a new window with live data.
@@ -163,7 +172,11 @@ test("restore drops Groups without a Desktop and members whose window is gone or
 
 test("Groups on inactive Desktops stay as saved until that Desktop is visible", () => {
   const store = new Groups();
-  store.restore([saved("2", [20, 200], [21, 201])], snapshot("1", [window(100, 10, "1")]));
+  store.restore(
+    [saved("2", [20, 200], [21, 201])],
+    snapshot("1", [window(100, 10, "1")]),
+    present([window(200, 20, "2")]),
+  );
   assert.equal(store.entries.get("D:2")!.members.length, 2);
   store.reconcile(snapshot("2", [window(201, 21, "2")]));
   assert.deepEqual(
@@ -284,34 +297,25 @@ test("disabling Groups leaves the state file alone", async () => {
   assert.equal(state.files[path], text);
 });
 
-test("a restored Group needs one saved window alive before it is trusted", () => {
+test("a saved Group comes back only if one of its windows still exists somewhere", () => {
   // Display and Space IDs can repeat after a restart; identities must prove the match.
   const store = new Groups();
+  const visible = snapshot("1", [window(300, 30, "1")], ["1", "2", "3"]);
   const result = store.restore(
-    [saved("1", [10, 100], [11, 101]), saved("2", [20, 200])],
-    snapshot("1", [window(300, 30, "1")]),
+    [saved("1", [10, 100], [11, 101]), saved("2", [20, 200], [21, 201]), saved("3")],
+    visible,
+    present([window(201, 21, "2")]),
   );
-  assert.deepEqual(result, {restored: 1, dropped: 1});
+  assert.deepEqual(result, {restored: 1, dropped: 2});
   assert.equal(store.entries.has("D:1"), false);
-  assert.equal(store.entries.get("D:2")!.unverified, true);
-  store.reconcile(snapshot("2", [window(200, 20, "2"), window(201, 21, "2")]));
-  const group = store.entries.get("D:2")!;
-  assert.equal(group.unverified, false);
   assert.deepEqual(
-    group.members.map((m) => m.id),
+    store.entries.get("D:2")!.members.map((m) => m.id),
     [200, 201],
   );
-  // Once seen alive, a Group behaves as before and survives losing every member.
-  store.reconcile(snapshot("2", []));
-  assert.equal(store.entries.get("D:2")!.members.length, 0);
-  const waiting = new Groups();
-  waiting.restore([saved("2", [20, 200])], snapshot("1", []));
-  waiting.reconcile(snapshot("2", [window(300, 30, "2")]));
-  assert.equal(waiting.entries.has("D:2"), false);
-  assert.equal(
-    new Groups().restore([saved("1")], snapshot("1", [window(300, 30, "1")])).restored,
-    0,
-  );
+  // A window that exists but belongs to another app now does not count.
+  const reused = new Groups();
+  reused.restore([saved("1", [10, 100])], visible, present([window(100, 10, "1", "app.other")]));
+  assert.equal(reused.entries.size, 0);
 });
 
 test("a resumed session takes the file as truth, even when it is missing or broken", async () => {

@@ -2,7 +2,7 @@
 // Config and a Hammerspoon 2 relaunch but not a restart. Reconcile only visible
 // Desktops: inventories cannot establish membership on inactive Spaces.
 import type {Frame, Snapshot, WindowInfo} from "../api/spaces.ts";
-import type {SavedGroup} from "./state.ts";
+import type {SavedGroup, SavedMember} from "./state.ts";
 
 export interface Member extends WindowInfo {
   fillFailed?: boolean;
@@ -13,9 +13,6 @@ export interface Group {
   display: string;
   space: string;
   members: Member[];
-  /** Restored from the state file and not yet seen alive; dropped, not refilled,
-   *  if none of its saved windows exist when its Desktop is first visible. */
-  unverified?: boolean;
 }
 
 export const identity = (window: {pid: number; id: number}): string => window.pid + ":" + window.id;
@@ -49,13 +46,6 @@ export class Groups {
       const found = new Map(windows.map((w) => [identity(w), w]));
       // A reused process or window ID from another app is a different window.
       group.members = group.members.filter((w) => found.get(identity(w))?.bundleID === w.bundleID);
-      if (group.unverified && !group.members.length) {
-        // Display and Space IDs can repeat after a restart; without one saved
-        // window alive this is not the Group that was saved.
-        this.entries.delete(this.key(display.id, display.current));
-        continue;
-      }
-      group.unverified = false;
       for (const member of group.members) {
         Object.assign(member, found.get(identity(member)));
         found.delete(identity(member));
@@ -98,16 +88,21 @@ export class Groups {
     }));
   }
 
-  /** Replaces every Group with the saved ones that still have a Desktop, then
-   *  reconciles visible Desktops. Groups on inactive Desktops wait, unverified,
-   *  as saved. */
-  restore(saved: SavedGroup[], snapshot: Snapshot): {restored: number; dropped: number} {
+  /** Replaces every Group with the saved ones whose Desktop still exists and
+   *  that `alive` confirms for at least one member, then reconciles visible
+   *  Desktops. Display and Space IDs can repeat after a restart, so a saved
+   *  window must still exist somewhere or the Group is not the one saved. */
+  restore(
+    saved: SavedGroup[],
+    snapshot: Snapshot,
+    alive: (member: SavedMember) => boolean,
+  ): {restored: number; dropped: number} {
     this.entries.clear();
     for (const group of saved) {
+      if (!group.members.some(alive)) continue;
       this.entries.set(this.key(group.display, group.space), {
         display: group.display,
         space: group.space,
-        unverified: true,
         members: group.members.map((m) => ({
           id: m.id,
           pid: m.pid,
