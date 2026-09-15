@@ -20,8 +20,8 @@ import {
 import {type Group, Groups, identity, type Member, sameFrame} from "./groups.ts";
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
-
 import {Startup} from "./startup.ts";
+import {StateFile} from "./state.ts";
 
 export interface DefaultsInfo {
   /** The Hammerspoon 2 build number Atelier was tested against. */
@@ -43,6 +43,13 @@ export interface Status {
   hammerspoon2: {build: string; expectedBuild: string};
   quickApps: {app: string; bundleID: string; shortcut: string}[];
   groups: number;
+  /** The Groups state file, its last write in this context, and the start-up restore result. */
+  groupsFile: {
+    path: string;
+    savedAt: string | null;
+    restored: number | null;
+    dropped: number | null;
+  };
   metrics: {name: string; milliseconds: number}[];
 }
 
@@ -79,6 +86,7 @@ const spaceActions: SpaceAction[] = ["switch", "create", "reorder", "delete"];
 
 export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Defaults {
   const groups = new Groups(),
+    file = new StateFile(hs),
     timers = new Timers(hs),
     startup = new Startup(hs);
   const bindings: {key: HSHotkey; space: boolean}[] = [],
@@ -100,7 +108,10 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     quickApps: QuickApp[] = [],
     startOptions: Options | undefined,
     observedFocus: string | null = null,
-    unwatchFailures: (() => void) | null = null;
+    unwatchFailures: (() => void) | null = null,
+    // Saving starts after restore so start-up cannot overwrite the file with nothing.
+    persisting = false,
+    restored: {restored: number; dropped: number} | null = null;
   const valid = (epoch: number) =>
     generation === epoch && ["Starting", "Waiting for Accessibility", "Running"].includes(state);
   function assertValid(epoch: number) {
@@ -137,6 +148,27 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   function redraw() {
     if (overlay && snapshot) overlay.update(snapshot, groups.current(snapshot));
   }
+  function persist() {
+    if (persisting) file.save(groups.serialize());
+  }
+  function restore(first: Snapshot) {
+    restored = null;
+    const read = file.read();
+    if (read.status === "missing") {
+      console.log("Atelier: No saved Groups at " + file.path);
+    } else if (read.status !== "ok") {
+      console.log("Atelier: Ignoring " + read.status + " Groups state at " + file.path);
+    } else {
+      restored = groups.restore(read.groups, first);
+      syncObservers();
+      redraw();
+      console.log(
+        "Atelier: Restored " + restored.restored + " Groups, dropped " + restored.dropped,
+      );
+    }
+    persisting = true;
+    persist();
+  }
   async function refresh(epoch: number) {
     const next = await api.spaces.snapshot();
     assertValid(epoch);
@@ -147,6 +179,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     );
     snapshot = next;
     groups.reconcile(next);
+    persist();
     syncObservers();
     redraw();
     return next;
@@ -270,6 +303,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
         }
         if (current && (changed ? now - lastChange >= 100 : now - began >= 300)) {
           member.filledFrame = {x: current.x, y: current.y, w: current.w, h: current.h};
+          persist();
           return;
         }
       }
@@ -401,6 +435,12 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     hammerspoon2: {build: hs.appinfo.build, expectedBuild: info.expectedBuild},
     quickApps: quickApps.map((a) => ({app: a.app, bundleID: a.bundleID, shortcut: a.shortcut})),
     groups: groups.entries.size,
+    groupsFile: {
+      path: file.path,
+      savedAt: file.savedAt,
+      restored: restored?.restored ?? null,
+      dropped: restored?.dropped ?? null,
+    },
     metrics,
   });
   function bind(binding: Binding | QuickApp, action: () => Promise<unknown>) {
@@ -430,7 +470,11 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     group,
     "cycle-previous": () => cycle(-1),
     "cycle-next": () => cycle(1),
-    "reload-config": async () => hs.reload(),
+    // Stop first so pending Groups state reaches disk before the context goes.
+    "reload-config": async () => {
+      session.stop();
+      hs.reload();
+    },
     "desktop-create": () => space("create"),
     "desktop-left": () => space("reorder", {offset: -1}),
     "desktop-right": () => space("reorder", {offset: 1}),
@@ -517,7 +561,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
             report(error);
           }
         }
-        await refresh(epoch);
+        const first = await refresh(epoch);
+        if (config.groups) restore(first);
         for (const binding of config.shortcuts) {
           const action = actions[binding.name];
           if (!action) throw new Error("Unknown binding: " + binding.name);
@@ -549,6 +594,9 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     stop() {
       generation++;
       state = "Paused";
+      persist();
+      file.flush();
+      persisting = false;
       busy = observing = false;
       observedFocus = null;
       if (poll) poll.stop();

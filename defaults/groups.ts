@@ -1,6 +1,8 @@
-// Groups use session-only PID/window and display/Space identities. Reconcile only
-// visible Desktops: inventories cannot establish membership on inactive Spaces.
+// Groups key on PID/window and display/Space identities, which survive Reload
+// Config and a Hammerspoon 2 relaunch but not a restart. Reconcile only visible
+// Desktops: inventories cannot establish membership on inactive Spaces.
 import type {Frame, Snapshot, WindowInfo} from "../api/spaces.ts";
+import type {SavedGroup} from "./state.ts";
 
 export interface Member extends WindowInfo {
   fillFailed?: boolean;
@@ -42,7 +44,8 @@ export class Groups {
       if (!group) continue;
       const windows = snapshot.windows.filter((w) => w.space === display.current);
       const found = new Map(windows.map((w) => [identity(w), w]));
-      group.members = group.members.filter((w) => found.has(identity(w)));
+      // A reused process or window ID from another app is a different window.
+      group.members = group.members.filter((w) => found.get(identity(w))?.bundleID === w.bundleID);
       for (const member of group.members) {
         Object.assign(member, found.get(identity(member)));
         found.delete(identity(member));
@@ -67,5 +70,46 @@ export class Groups {
     }
     for (const member of group.members) member.fillFailed = false;
     return group;
+  }
+
+  /** The identities and Fill frames worth keeping across a reload; titles and
+   *  frames come from the live snapshot, and a reload retries failed Fills. */
+  serialize(): SavedGroup[] {
+    return [...this.entries.values()].map((group) => ({
+      display: group.display,
+      space: group.space,
+      members: group.members.map((m) => ({
+        pid: m.pid,
+        id: m.id,
+        app: m.app,
+        bundleID: m.bundleID,
+        ...(m.filledFrame ? {filledFrame: {...m.filledFrame}} : {}),
+      })),
+    }));
+  }
+
+  /** Replaces every Group with the saved ones that still have a Desktop, then
+   *  reconciles visible Desktops. Groups on inactive Desktops wait as saved. */
+  restore(saved: SavedGroup[], snapshot: Snapshot): {restored: number; dropped: number} {
+    this.entries.clear();
+    for (const group of saved) {
+      this.entries.set(this.key(group.display, group.space), {
+        display: group.display,
+        space: group.space,
+        members: group.members.map((m) => ({
+          id: m.id,
+          pid: m.pid,
+          space: group.space,
+          frame: {x: 0, y: 0, w: 0, h: 0},
+          title: "",
+          app: m.app,
+          bundleID: m.bundleID,
+          ...(m.filledFrame ? {filledFrame: {...m.filledFrame}} : {}),
+        })),
+      });
+    }
+    this.reconcile(snapshot);
+    const dropped = saved.filter((g) => !this.entries.has(this.key(g.display, g.space))).length;
+    return {restored: this.entries.size, dropped};
   }
 }

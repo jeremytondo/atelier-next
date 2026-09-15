@@ -16,6 +16,8 @@ export interface FakeTask {
 }
 
 export interface FakeTimer {
+  seconds: number;
+  repeats: boolean;
   callback: () => void;
   stopped: boolean;
   stop(): void;
@@ -61,6 +63,9 @@ export interface FakeState {
   accessibilityRequests: number;
   notificationRequests: number;
   reloaded?: boolean;
+  /** Path to contents, the fake disk. */
+  files: Record<string, string>;
+  writable: boolean;
 }
 
 export function fakeHS(): {hs: HS; state: FakeState} {
@@ -92,9 +97,13 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     consoleOpened: false,
     accessibilityRequests: 0,
     notificationRequests: 0,
+    files: {},
+    writable: true,
   };
-  const timer = (callback: () => void): FakeTimer => {
+  const timer = (seconds: number, repeats: boolean, callback: () => void): FakeTimer => {
     const value: FakeTimer = {
+      seconds,
+      repeats,
       callback,
       stopped: false,
       stop() {
@@ -148,6 +157,17 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     reload: () => {
       state.reloaded = true;
     },
+    fs: {
+      homeDirectory: () => "/Users/fake",
+      isFile: (path: string) => Object.hasOwn(state.files, path),
+      read: (path: string) => state.files[path] ?? null,
+      mkdir: () => state.writable,
+      write: (path: string, content: string) => {
+        if (!state.writable) return false;
+        state.files[path] = content;
+        return true;
+      },
+    },
     appinfo: {
       get build() {
         return state.build;
@@ -165,8 +185,8 @@ export function fakeHS(): {hs: HS; state: FakeState} {
       },
     },
     timer: {
-      doAfter: (_: number, callback: () => void) => timer(callback),
-      doEvery: (_: number, callback: () => void) => timer(callback),
+      doAfter: (seconds: number, callback: () => void) => timer(seconds, false, callback),
+      doEvery: (seconds: number, callback: () => void) => timer(seconds, true, callback),
     },
     task: {
       create(
