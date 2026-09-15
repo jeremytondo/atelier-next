@@ -66,7 +66,7 @@ Native Fill invokes Apple's menu action through HS2 Accessibility. Unsupported a
 
 ## Quick Apps
 
-Each entry needs `app` and `shortcut`. App names, bundle IDs, and absolute `.app` paths are supported. Optional `size` has positive width and height in points; applications may enforce their own minimum size. Missing applications are reported and omitted while valid defaults continue.
+Each entry needs `app` and `shortcut`. App names, bundle IDs, and absolute `.app` paths are supported. Without a `size`, Atelier preserves smaller windows but limits larger ones to 1,000 × 720 points and 80% of the display's usable area. Optional `size` has positive width and height in points and overrides that floating-window limit; applications may enforce their own minimum size. Missing applications are reported and omitted while valid defaults continue.
 
 A toggle launches or reopens the app quietly, unhides it, centers it on the originating display, pins it to every Desktop of that display, and focuses it. Toggling while it is frontmost hides the app and restores the remembered exact window if it still exists on the original active Desktop. Quick Apps stay excluded from Groups. All Desktops assignment can persist, and its Dock fallback may show a menu briefly. Undo the assignment through **Dock → Options → Assign To → None**. Removing a Quick App or quitting does not reverse that macOS setting. Fullscreen overlays, permanent always-on-top behavior, and moving windows between Spaces are unsupported.
 

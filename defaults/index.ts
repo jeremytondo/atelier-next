@@ -7,6 +7,7 @@ import type {HS} from "../api/hs.ts";
 import type {AtelierAPI} from "../api/index.ts";
 import type {Snapshot} from "../api/spaces.ts";
 import {Timers} from "../api/timers.ts";
+import {setAXAttribute} from "./accessibility.ts";
 import {
   type Binding,
   type Config,
@@ -199,24 +200,12 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       record(name, began);
     }
   }
-  function setAX(element: HSAXElement | null | undefined, name: string, value: unknown) {
-    // The tested release exports this setter with its argument name appended.
-    const candidate = element as unknown as
-      | {
-          setAttributeValue?: (n: string, v: unknown) => boolean;
-          setAttributeValueValue?: (n: string, v: unknown) => boolean;
-        }
-      | null
-      | undefined;
-    const setter = candidate && (candidate.setAttributeValue || candidate.setAttributeValueValue);
-    return setter?.call(candidate, name, value);
-  }
   async function focus(member: Member, epoch: number): Promise<HSWindow> {
     const window = find(member);
     if (!window) throw new Error("The selected window closed");
     if (!focused(member)) {
-      setAX(window.application?.axElement(), "AXFrontmost", true);
-      setAX(window.axElement(), "AXMain", true);
+      setAXAttribute(window.application?.axElement(), "AXFrontmost", true);
+      setAXAttribute(window.axElement(), "AXMain", true);
       window.axElement().performAction("AXRaise");
       const began = Date.now();
       while (!focused(member) && Date.now() - began < 500) {

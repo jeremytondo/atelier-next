@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {QuickApps, windowTimeout} from "../defaults/quick-apps.ts";
+import type {HS} from "../api/hs.ts";
+import {liveWorkspace, QuickApps, windowTimeout} from "../defaults/quick-apps.ts";
 import {desktop, display, FakeWorkspace, quick} from "./fake-workspace.ts";
 
 async function failure(mac: FakeWorkspace, size?: {width: number; height: number}) {
@@ -24,11 +25,11 @@ test("summon launches, places, pins, and focuses", async () => {
   assert.equal(shown.assignment, "assigned");
   assert.equal(mac.pins.length, 1);
   assert.deepEqual(mac.pins[0]!.required, ["1", "2"]);
-  // An oversized window shrinks to the usable area, inset by 8 points, and centers there.
+  // An oversized window shrinks to a floating default and centers in the usable area.
   const usable = {x: 8, y: 33, w: 1440 - 16, h: 875 - 16};
   const frame = mac.frame(200)!;
-  assert.equal(frame.w, usable.w);
-  assert.equal(frame.h, usable.h);
+  assert.equal(frame.w, 1000);
+  assert.equal(frame.h, Math.floor(usable.h * 0.8));
   assert.equal(frame.x + frame.w / 2, usable.x + usable.w / 2);
   assert.equal(frame.y + frame.h / 2, usable.y + usable.h / 2);
   assert.equal(mac.focused, 200);
@@ -37,6 +38,42 @@ test("summon launches, places, pins, and focuses", async () => {
     pid: 10,
     bundleID: "com.example.editor",
   });
+});
+
+test("the live workspace focuses with the setter exported by stock Hammerspoon 2", () => {
+  const attributes: [string, unknown][] = [];
+  const element = {
+    subrole: "AXStandardWindow",
+    attributeValue: () => false,
+    setAttributeValueValue: (name: string, value: unknown) => {
+      attributes.push([name, value]);
+      return true;
+    },
+  };
+  const window = {
+    id: 200,
+    axElement: () => element,
+    isFullscreen: false,
+    focus: () => true,
+    raise: () => true,
+  };
+  const app = {allWindows: [window], activate: () => true};
+  const hs = {application: {fromPID: () => app}} as unknown as HS;
+  const workspace = liveWorkspace(hs, {} as never, {} as never);
+
+  assert.deepEqual(workspace.windows(20), [200]);
+  workspace.focus(20, 200);
+
+  assert.deepEqual(attributes, [["AXMain", true]]);
+});
+
+test("the floating default does not enlarge an existing smaller window", async () => {
+  const mac = new FakeWorkspace();
+  mac.launchedWindowFrame = {x: 0, y: 0, w: 800, h: 600};
+
+  const shown = await new QuickApps(mac).toggle(quick);
+
+  assert.deepEqual(shown.frame, {x: 320, y: 162.5, w: 800, h: 600});
 });
 
 test("hiding restores the window the user came from", async () => {
