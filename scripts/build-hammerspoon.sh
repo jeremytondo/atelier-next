@@ -53,6 +53,7 @@ contents="$app/Contents"
 cp "$source_dir/LICENSE" "$contents/Resources/Hammerspoon2-LICENSE"
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$contents/Info.plist") == "$build" ]] || die 'the built app does not carry the pinned build number'
 # Sign nested bundles inside out, preserving HS2's automation service.
+# Sparkle's standalone Autoupdate executable must be signed before its framework.
 for directory in "$contents/Frameworks" "$contents/XPCServices"; do
   [[ -d $directory ]] || continue
   while IFS= read -r -d '' path; do
@@ -63,7 +64,7 @@ for directory in "$contents/Frameworks" "$contents/XPCServices"; do
       codesign --force --sign "$identity" --options runtime "$timestamp" \
         --preserve-metadata=identifier,entitlements "$path"
     fi
-  done < <(find "$directory" -depth \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' -o -name '*.dylib' \) -print0)
+  done < <(find "$directory" -depth \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' -o -name '*.dylib' -o -type f -name Autoupdate \) -print0)
 done
 [[ ! -x $contents/MacOS/hs2 ]] || codesign --force --sign "$identity" --options runtime "$timestamp" "$contents/MacOS/hs2"
 entitlements=scripts/hs2/entitlements.plist
