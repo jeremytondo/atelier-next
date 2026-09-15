@@ -1,5 +1,6 @@
 [tools]
 node = "26.4.0"
+"npm:typescript" = "6.0.3"
 "npm:xcodebuildmcp" = "2.6.2"
 gh = "2.95.0"
 jq = "1.8.1"

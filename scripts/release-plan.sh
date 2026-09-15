@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # One build identity is created before packaging and carried through publication.
+# Dev versions are the next patch version with a `-dev.<build>` suffix, so each
+# dev release has its own tag and the atelier@dev cask can point at it.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -20,22 +22,23 @@ esac
 if [[ $source_ref != refs/heads/* ]] || ! git check-ref-format "$source_ref"; then
   die 'release planning requires a branch ref'
 fi
-if [[ $channel == stable && $(repository_git rev-parse --is-shallow-repository) != false ]]; then
-  die 'stable release planning requires full history and tags (fetch-depth: 0 in CI)'
+if [[ $(repository_git rev-parse --is-shallow-repository) != false ]]; then
+  die 'release planning requires full history and tags (fetch-depth: 0 in CI)'
 fi
+# shellcheck disable=SC2034  # every plan field is read through ${!field}
 commit=$("$root/scripts/source-commit.sh")
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-# Keep the local alpha's timestamp convention. Seconds also distinguish rebuilds
-# of the same commit and let a later stable build follow a calendar-versioned dev.
+# Seconds distinguish rebuilds of the same commit and order dev releases.
 build_number=${built_at//[-:TZ]/}
 if [[ $channel == stable ]]; then
   tag=$("$root/scripts/next-version.sh" "$2")
   version=${tag#v}
   marketing_version=$version
 else
-  tag=dev
-  marketing_version="${built_at:0:4}.$((10#${built_at:5:2})).$((10#${built_at:8:2}))"
-  version="$marketing_version-dev.t${build_number:8}+${commit:0:8}"
+  marketing_version=$("$root/scripts/next-version.sh" patch)
+  marketing_version=${marketing_version#v}
+  version="$marketing_version-dev.$build_number"
+  tag="v$version"
 fi
 arguments=()
 for field in "${release_plan_fields[@]}"; do arguments+=(--arg "$field" "${!field}"); done

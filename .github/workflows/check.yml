@@ -42,51 +42,25 @@ jobs:
           version: 2026.6.14
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - id: inputs
-        run: |
-          host=$(scripts/native-inputs.sh host)
-          helpers=$(scripts/native-inputs.sh helpers)
-          echo "host=$host" >> "$GITHUB_OUTPUT"
-          echo "helpers=$helpers" >> "$GITHUB_OUTPUT"
-      - name: Restore unsigned host
-        id: host
+        run: echo "providers=$(scripts/native-inputs.sh providers)" >> "$GITHUB_OUTPUT"
+      - name: Restore Release providers
+        id: providers
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: .build/cache/host.tar.gz
-          key: atelier-host-v1-${{ steps.inputs.outputs.host }}
-      - name: Restore Release helpers
-        id: helpers
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: .build/cache/helpers.tar.gz
-          key: atelier-helpers-v1-${{ steps.inputs.outputs.helpers }}
-      - name: Unpack native outputs
-        run: |
-          scripts/native-cache.sh unpack host
-          scripts/native-cache.sh unpack helpers
-      - name: Native checks and real-bundle probe
+          path: .build/cache/providers.tar.gz
+          key: atelier-providers-v1-${{ steps.inputs.outputs.providers }}
+      - name: Unpack native output
+        run: scripts/native-cache.sh unpack
+      - name: Native checks and package assembly
         run: mise run check:native
       # GitHub scopes PR caches to the PR merge ref; main cannot restore them.
-      # Release compiles its own outputs and never restores executable caches.
-      - name: Pack reusable outputs
-        env:
-          HOST_CACHE_HIT: ${{ steps.host.outputs.cache-hit }}
-          HELPERS_CACHE_HIT: ${{ steps.helpers.outputs.cache-hit }}
-        run: |
-          if [[ "$HOST_CACHE_HIT" != true ]]; then
-            scripts/native-cache.sh pack host
-          fi
-          if [[ "$HELPERS_CACHE_HIT" != true ]]; then
-            scripts/native-cache.sh pack helpers
-          fi
-      - name: Save unsigned host
-        if: steps.host.outputs.cache-hit != 'true'
+      # Release compiles its own output and never restores executable caches.
+      - name: Pack reusable output
+        if: steps.providers.outputs.cache-hit != 'true'
+        run: scripts/native-cache.sh pack
+      - name: Save Release providers
+        if: steps.providers.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: .build/cache/host.tar.gz
-          key: atelier-host-v1-${{ steps.inputs.outputs.host }}
-      - name: Save Release helpers
-        if: steps.helpers.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: .build/cache/helpers.tar.gz
-          key: atelier-helpers-v1-${{ steps.inputs.outputs.helpers }}
+          path: .build/cache/providers.tar.gz
+          key: atelier-providers-v1-${{ steps.inputs.outputs.providers }}
