@@ -72,6 +72,8 @@ export interface ToggleResult {
 
 export const windowTimeout = 4;
 const placementAttempts = 20;
+const defaultMaximumSize = {width: 1000, height: 720};
+const defaultDisplayFraction = 0.8;
 
 export class QuickApps {
   readonly states = new Map<string, State>();
@@ -229,7 +231,7 @@ export class QuickApps {
     };
   }
 
-  /** Centers the window in the display's usable area, shrinking it to fit. */
+  /** Centers the window in the display's usable area, shrinking large implicit sizes to float. */
   private async place(window: number, display: string, size?: QuickAppSize): Promise<void> {
     const ws = this.ws;
     const visible = ws.usableFrame(display);
@@ -244,9 +246,15 @@ export class QuickApps {
     // Move without activation so the window reaches the captured display first.
     const first = center(Math.min(old.w, usable.w), Math.min(old.h, usable.h));
     if (!ws.move(window, first.x, first.y)) throw new Error("Quick app refused window placement");
-    if (size || old.w > usable.w || old.h > usable.h) {
-      const w = Math.min(size?.width ?? old.w, usable.w),
-        h = Math.min(size?.height ?? old.h, usable.h);
+    const maximum = size
+      ? {w: usable.w, h: usable.h}
+      : {
+          w: Math.min(defaultMaximumSize.width, Math.floor(usable.w * defaultDisplayFraction)),
+          h: Math.min(defaultMaximumSize.height, Math.floor(usable.h * defaultDisplayFraction)),
+        };
+    const w = Math.min(size?.width ?? old.w, maximum.w),
+      h = Math.min(size?.height ?? old.h, maximum.h);
+    if (size || w !== old.w || h !== old.h) {
       if (!ws.resize(window, w, h)) throw new Error("Quick app refused the requested size");
     }
     // Recenter using the actual size: apps may impose their own minimum dimensions.
