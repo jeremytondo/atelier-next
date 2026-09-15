@@ -1,7 +1,7 @@
 // The Atelier defaults: Groups, Desktop shortcuts, Quick Apps, and the overlay,
 // as policy over `hs.*` and the API. One session owns every binding, observer,
 // timer, and the providers process; stopping releases all of them and leaves
-// independent HS2 scripts untouched.
+// independent HS2 scripts untouched. The status menu remains available to resume.
 import type {ResolvedApplication} from "../api/application.ts";
 import type {HS} from "../api/hs.ts";
 import type {AtelierAPI} from "../api/index.ts";
@@ -20,6 +20,8 @@ import {type Group, Groups, identity, type Member, sameFrame} from "./groups.ts"
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
 
+import {Startup} from "./startup.ts";
+
 export interface DefaultsInfo {
   /** The Hammerspoon 2 build number Atelier was tested against. */
   expectedBuild: string;
@@ -28,7 +30,7 @@ export interface DefaultsInfo {
   workspace?: (timers: Timers) => Workspace;
 }
 
-export type State = "Paused" | "Starting" | "Running" | "Stopped";
+export type State = "Paused" | "Starting" | "Waiting for Accessibility" | "Running" | "Stopped";
 export type SpaceAction = "switch" | "create" | "reorder" | "delete";
 export type Busy = {busy: true};
 export type Noop = {noop: true};
@@ -46,7 +48,7 @@ export interface Status {
 export interface Defaults {
   /** Starts the defaults; a later call without options resumes with the previous ones. */
   start(options?: Options): Promise<Defaults>;
-  /** Synchronously releases everything the session owns. */
+  /** Stops automation and pending startup; the status menu remains available. */
   stop(): void;
   status(): Status;
   /** A fresh copy of the shipped options. */
@@ -76,7 +78,8 @@ const spaceActions: SpaceAction[] = ["switch", "create", "reorder", "delete"];
 
 export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Defaults {
   const groups = new Groups(),
-    timers = new Timers(hs);
+    timers = new Timers(hs),
+    startup = new Startup(hs);
   const bindings: {key: HSHotkey; space: boolean}[] = [],
     observers = new Map<number, {element: HSAXElement; callback: () => void}>(),
     settling = new Set<string>(),
@@ -97,7 +100,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     startOptions: Options | undefined,
     observedFocus: string | null = null,
     unwatchFailures: (() => void) | null = null;
-  const valid = (epoch: number) => generation === epoch && ["Starting", "Running"].includes(state);
+  const valid = (epoch: number) =>
+    generation === epoch && ["Starting", "Waiting for Accessibility", "Running"].includes(state);
   function assertValid(epoch: number) {
     if (!valid(epoch)) throw new Error("Atelier session changed");
   }
@@ -105,10 +109,13 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     metrics.push({name, milliseconds: Date.now() - began});
     if (metrics.length > 100) metrics.shift();
   }
+  function showStatus() {
+    startup.update(state, lastError, () => fire(session.start()));
+  }
   function notify(message: string) {
     // Notifications are optional; the HS2 Console always retains the line.
     try {
-      hs.notify.show("Atelier", message, () => {});
+      hs.notify.show("Atelier", message, () => hs.openConsole());
     } catch (_) {
       /* notifications may be denied */
     }
@@ -116,6 +123,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   function report(error: unknown) {
     lastError = String(error instanceof Error ? error.message : error);
     console.error("Atelier: " + lastError);
+    showStatus();
     notify(lastError);
   }
   function fire(promise: Promise<unknown>) {
@@ -470,29 +478,46 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       /* the module may be unavailable while permissions are being set up */
     }
   }
+  async function waitForAccessibility(epoch: number, provider: boolean) {
+    assertValid(epoch);
+    state = "Waiting for Accessibility";
+    showStatus();
+    startup.permission();
+    let trusted = false;
+    while (!trusted) {
+      await timers.sleep(2);
+      assertValid(epoch);
+      trusted = hs.permissions.checkAccessibility();
+      if (trusted && provider) trusted = (await api.spaces.snapshot()).trusted;
+      assertValid(epoch);
+    }
+    state = "Starting";
+    showStatus();
+  }
   let ready: Promise<Defaults> | null = null;
   const session: Defaults = {
     start(options) {
-      if (state === "Running" || state === "Starting") return ready ?? Promise.resolve(session);
+      if (["Running", "Starting", "Waiting for Accessibility"].includes(state))
+        return ready ?? Promise.resolve(session);
       if (options !== undefined) startOptions = options;
       const epoch = ++generation;
       lastError = null;
       state = "Starting";
       ready = (async () => {
+        showStatus();
         config = normalize(startOptions);
         checkBuild();
-        requestNotifications();
+        if (!hs.permissions.checkAccessibility()) await waitForAccessibility(epoch, false);
+        assertValid(epoch);
         unwatchFailures = api.providers.onFailure((error) => {
           if (generation !== epoch) return;
           session.stop();
+          state = "Stopped";
           report(error);
         });
         const hello = await api.providers.start();
         assertValid(epoch);
-        if (!hello.trusted) {
-          hs.permissions.requestAccessibility();
-          throw new Error(accessibilityMessage);
-        }
+        if (!hello.trusted) await waitForAccessibility(epoch, true);
         quick = new QuickApps((info.workspace ?? ((t) => liveWorkspace(hs, api, t)))(timers));
         quickApps = [];
         const seen = new Set<string>();
@@ -523,6 +548,9 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
           overlay.start();
         }
         state = "Running";
+        showStatus();
+        console.log("Atelier: Running");
+        requestNotifications();
         poll = hs.timer.doEvery(1, observe);
         return session;
       })().catch((error) => {
@@ -556,6 +584,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       if (unwatchFailures) unwatchFailures();
       unwatchFailures = null;
       api.providers.stop();
+      showStatus();
     },
     status,
     defaults: defaultOptions,
@@ -569,4 +598,4 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
 }
 
 const accessibilityMessage =
-  "Grant Accessibility access to Hammerspoon 2 in System Settings, then choose Reload Config";
+  "Accessibility access is unavailable. Open Accessibility Settings from the Atelier menu, enable Hammerspoon 2, then retry startup";

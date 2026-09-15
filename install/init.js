@@ -1,5 +1,5 @@
 // Your Atelier configuration. Hammerspoon 2 loads this file at start and on
-// Reload Config. Atelier seeded it once and never changes it again.
+// Reload Config. Updates preserve it; atelier repair backs it up before restoring defaults.
 const atelier = require("/opt/homebrew/share/atelier");
 
 atelier

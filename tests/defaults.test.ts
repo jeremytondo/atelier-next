@@ -146,15 +146,99 @@ test("Quick Apps resolve absolute references through the API and toggle in JavaS
   app.stop();
 });
 
-test("missing Accessibility asks for it and leaves defaults stopped without active shortcuts", async () => {
+test("Accessibility setup opens settings and resumes without reload or notifications", async () => {
   const {hs, state} = fakeHS();
   state.trusted = false;
   const app = session(hs);
-  await assert.rejects(app.start(options), /Accessibility/);
-  assert.equal(state.accessibilityRequests, 1);
-  assert.ok(state.notifications.some((n) => /Accessibility/.test(n)));
+  const pending = app.start(options);
+  assert.equal(app.start(), pending);
+  assert.equal(app.status().state, "Waiting for Accessibility");
   assert.equal(state.keys.length, 0);
-  assert.equal(state.tasks[0]!.isRunning, false);
+  assert.equal(state.tasks.length, 0);
+  assert.equal(state.notificationRequests, 0);
+  assert.match(state.menus[0]!.title, /Waiting for Accessibility/);
+  assert.deepEqual(state.dialogs[0]!.labels, ["Open Settings", "Later"]);
+  state.dialogs[0]!.click(0);
+  assert.equal(state.accessibilityRequests, 1);
+  assert.match(state.openedURLs[0]!, /Privacy_Accessibility/);
+  state.trusted = true;
+  state.timers.find((timer) => !timer.stopped)!.callback();
+  await pending;
+  assert.equal(app.status().state, "Running");
+  assert.equal(state.dialogs[0]!.closed, true);
+  assert.equal(state.menus[0]!.items[0]!.title, "Running");
+  assert.ok(state.keys.some((key) => key.enabled));
+  app.stop();
+});
+
+test("permission waiting can be cancelled without a delayed startup", async () => {
+  const {hs, state} = fakeHS();
+  state.trusted = false;
+  const app = session(hs);
+  const pending = app.start(options);
+  const rejected = assert.rejects(pending, /stopped/);
+  app.stop();
+  await rejected;
+  assert.equal(app.status().state, "Paused");
+  assert.ok(state.timers.every((timer) => timer.stopped));
+  assert.equal(state.dialogs[0]!.closed, true);
+  state.trusted = true;
+  await app.start();
+  assert.equal(state.menus.length, 1);
+  app.stop();
+});
+
+test("host permission alone does not start shortcuts before the provider is trusted", async () => {
+  const {hs, state} = fakeHS();
+  state.hostTrusted = true;
+  state.trusted = false;
+  state.snapshot.trusted = false;
+  const app = session(hs);
+  const pending = app.start(options);
+  // Settle the fake provider handshake without firing its deadline timers.
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(app.status().state, "Waiting for Accessibility");
+  assert.equal(state.keys.length, 0);
+  state.snapshot.trusted = true;
+  state.timers.findLast((timer) => !timer.stopped)!.callback();
+  await pending;
+  assert.equal(app.status().state, "Running");
+  assert.equal(state.tasks.length, 1);
+  app.stop();
+});
+
+test("startup errors stay visible when notifications are denied and can be retried", async () => {
+  const {hs, state} = fakeHS();
+  hs.notify.show = () => {
+    throw new Error("denied");
+  };
+  state.failBinding = "g";
+  const app = session(hs);
+  await assert.rejects(app.start(options), /Shortcut unavailable/);
+  assert.match(state.menus[0]!.tooltip, /Shortcut unavailable/);
+  assert.equal(state.menus[0]!.items[0]!.title, "Stopped");
+  state.failBinding = null;
+  state.menus[0]!.items.find((item) => item.title === "Retry Startup")!.fn!();
+  await app.start();
+  assert.equal(app.status().state, "Running");
+  assert.equal(state.menus.length, 1);
+  app.stop();
+});
+
+test("settings failure provides instructions in Console and Later has no side effects", async () => {
+  const {hs, state} = fakeHS();
+  state.trusted = false;
+  state.openURLResult = false;
+  const app = session(hs);
+  const pending = app.start(options);
+  const rejected = assert.rejects(pending, /stopped/);
+  state.dialogs[0]!.click(1);
+  assert.equal(state.openedURLs.length, 0);
+  state.menus[0]!.items.find((item) => item.title === "Open Accessibility Settings…")!.fn!();
+  assert.equal(state.openedURLs.length, 2);
+  assert.equal(state.consoleOpened, true);
+  app.stop();
+  await rejected;
 });
 
 test("a Hammerspoon 2 build other than the pinned one warns but still starts", async () => {
@@ -259,13 +343,18 @@ test("stop and defaults failures preserve independent HS2 scripts", async () => 
     const app = session(hs);
     if (failure === "permission") state.trusted = false;
     if (failure === "shortcut") state.failBinding = "g";
-    if (["options", "permission", "shortcut"].includes(failure ?? "")) {
+    if (failure === "permission") {
+      const pending = app.start(options);
+      const rejected = assert.rejects(pending, /stopped/);
+      app.stop();
+      await rejected;
+    } else if (["options", "shortcut"].includes(failure ?? "")) {
       await assert.rejects(app.start(failure === "options" ? {unknown: true} : options));
     } else {
       await app.start(options);
       if (failure === "providers") {
         state.tasks[0]!.ended(9, "crash");
-        assert.equal(app.status().state, "Paused", failure);
+        assert.equal(app.status().state, "Stopped", failure);
         assert.match(app.status().error ?? "", /exited/, failure);
       } else app.stop();
     }

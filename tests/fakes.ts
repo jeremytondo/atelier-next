@@ -47,6 +47,22 @@ export interface FakeState {
   lockedLaunches: number;
   build: string;
   notifications: string[];
+  hostTrusted?: boolean;
+  menus: {
+    title: string;
+    tooltip: string;
+    items: {title: string; disabled?: boolean; fn?: () => void}[];
+  }[];
+  dialogs: {
+    message: string;
+    detail: string;
+    labels: string[];
+    click: (index: number) => void;
+    closed: boolean;
+  }[];
+  openedURLs: string[];
+  openURLResult: boolean;
+  consoleOpened: boolean;
   accessibilityRequests: number;
   notificationRequests: number;
   reloaded?: boolean;
@@ -75,6 +91,11 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     lockedLaunches: 0,
     build: "133.1",
     notifications: [],
+    menus: [],
+    dialogs: [],
+    openedURLs: [],
+    openURLResult: true,
+    consoleOpened: false,
     accessibilityRequests: 0,
     notificationRequests: 0,
   };
@@ -90,6 +111,63 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     return value;
   };
   const hs = {
+    openConsole: () => {
+      state.consoleOpened = true;
+    },
+    urlevent: {
+      openURL: (url: string) => {
+        state.openedURLs.push(url);
+        return state.openURLResult;
+      },
+    },
+    menubar: {
+      create: () => {
+        const menu = {
+          title: "",
+          tooltip: "",
+          items: [],
+          setTooltip(value: string) {
+            this.tooltip = value;
+          },
+          setMenu(value: []) {
+            this.items = value;
+          },
+        };
+        state.menus.push(menu);
+        return menu;
+      },
+    },
+    ui: {
+      dialog: (message: string) => {
+        const dialog = {
+          message,
+          detail: "",
+          labels: [] as string[],
+          click: (_: number) => {},
+          closed: false,
+          informativeText(value: string) {
+            this.detail = value;
+            return this;
+          },
+          buttons(value: string[]) {
+            this.labels = value;
+            return this;
+          },
+          onButton(value: (index: number) => void) {
+            this.click = value;
+            return this;
+          },
+          show() {
+            return this;
+          },
+          close() {
+            this.closed = true;
+          },
+        };
+        state.dialogs.push(dialog);
+        return dialog;
+      },
+    },
     reload: () => {
       state.reloaded = true;
     },
@@ -100,7 +178,7 @@ export function fakeHS(): {hs: HS; state: FakeState} {
       bundleIdentifier: "net.tenshu.Hammerspoon-2",
     },
     permissions: {
-      checkAccessibility: () => state.trusted,
+      checkAccessibility: () => state.hostTrusted ?? state.trusted,
       requestAccessibility: () => {
         state.accessibilityRequests++;
       },

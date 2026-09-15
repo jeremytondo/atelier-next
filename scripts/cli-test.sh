@@ -6,6 +6,7 @@ set -euo pipefail
 # shellcheck source=scripts/lib.sh
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+host_system=$(uname -s)
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-cli-tests.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT
 export HOME="$temporary/home"
@@ -97,7 +98,7 @@ grep -q 'Started Hammerspoon 2 with' "$temporary/reinstall.log" || fail 'install
 [[ $(grep -c '^osascript.*make login item' "$FAKE_LOG") == 1 ]] || fail 'login item added twice'
 
 FAKE_HS2_RUNNING=true FAKE_NCPREFS_ASKED=true atelier doctor > "$temporary/doctor.log"
-grep -q 'Everything checked out' "$temporary/doctor.log" || { cat "$temporary/doctor.log"; fail 'healthy doctor did not pass'; }
+grep -q 'Installation checks passed' "$temporary/doctor.log" || { cat "$temporary/doctor.log"; fail 'healthy doctor did not pass'; }
 ! grep -q '^FAIL' "$temporary/doctor.log" || fail 'healthy doctor reported failures'
 grep -q '^ok .*notification permission' "$temporary/doctor.log" || fail 'doctor missed the notification request'
 ! grep -q 'Accessibility' "$temporary/doctor.log" || fail 'doctor reported an Accessibility status it cannot check'
@@ -107,7 +108,7 @@ grep -q '^ok .*notification permission' "$temporary/doctor.log" || fail 'doctor 
 jq '.configLocation = "~/.config/atelier/init.js"' "$FAKE_STORE" > "$FAKE_STORE.tmp"
 mv "$FAKE_STORE.tmp" "$FAKE_STORE"
 FAKE_HS2_RUNNING=true atelier doctor > "$temporary/tilde-doctor.log"
-grep -q 'Everything checked out' "$temporary/tilde-doctor.log" || fail 'doctor rejected the equivalent tilde path'
+grep -q 'Installation checks passed' "$temporary/tilde-doctor.log" || fail 'doctor rejected the equivalent tilde path'
 
 # A refused or delayed quit must leave preferences and user config untouched.
 cp "$FAKE_STORE" "$temporary/before-quit.json"
@@ -151,6 +152,48 @@ for pattern in 'build 133 is not the pinned build 133.1' 'is not running' 'could
   grep -q "^FAIL .*$pattern" "$temporary/broken.log" || { cat "$temporary/broken.log"; fail "doctor missed: $pattern"; }
 done
 grep -q 'Fix the FAIL lines' "$temporary/broken.log" || fail 'broken doctor did not tell the user what to do'
+
+# Exercise both choices through a disposable pseudo-terminal, without changing
+# real settings or relying on Homebrew to forward interactive stdin.
+export ATELIER_TEST_CLI="$root/cli/atelier"
+interactive_install() {
+  if [[ $host_system == Darwin ]]; then
+    script -q "$temporary/interactive.log" "$ATELIER_TEST_CLI" install
+  else
+    # The child shell expands the exported path, keeping it out of shell source.
+    # shellcheck disable=SC2016
+    script -q -e -c '"$ATELIER_TEST_CLI" install' "$temporary/interactive.log"
+  fi
+}
+# Keep stdin open briefly: BSD script otherwise forwards EOF before the answer.
+{ printf 'n\n'; /bin/sleep 1; } | interactive_install > /dev/null
+cmp -s "$HOME/.config/atelier/init.js" "$temporary/legacy.js" || fail 'declining recovery changed config'
+grep -Fq 'Back up this file and replace it' "$temporary/interactive.log" || fail 'interactive install did not offer recovery'
+{ printf 'y\n'; /bin/sleep 1; } | interactive_install > /dev/null
+grep -Fq "require(\"$share\")" "$HOME/.config/atelier/init.js" || { cat "$temporary/interactive.log"; fail 'accepting recovery did not restore defaults'; }
+interactive_backup=$(tr -d '\r' < "$temporary/interactive.log" | sed -n 's/^.*Backed up .* to //p')
+cmp -s "$interactive_backup" "$temporary/legacy.js" || fail 'interactive recovery lost the old config'
+cp "$temporary/legacy.js" "$HOME/.config/atelier/init.js"
+
+# Explicit recovery always preserves the previous config in a unique backup.
+atelier repair > "$temporary/repair.log"
+backup=$(sed -n 's/^Backed up .* to //p' "$temporary/repair.log")
+cmp -s "$backup" "$temporary/legacy.js" || fail 'repair did not preserve the original config'
+grep -Fq "require(\"$share\")" "$HOME/.config/atelier/init.js" || fail 'repair did not restore the import'
+grep -q 'Check the Atelier menu' "$temporary/repair.log" || fail 'repair claimed runtime readiness without checking'
+cp "$HOME/.config/atelier/init.js" "$temporary/repaired.js"
+atelier repair > "$temporary/second-repair.log"
+second_backup=$(sed -n 's/^Backed up .* to //p' "$temporary/second-repair.log")
+[[ $backup != "$second_backup" ]] || fail 'repair reused a backup path'
+cmp -s "$backup" "$temporary/legacy.js" || fail 'second repair overwrote original backup'
+cmp -s "$second_backup" "$temporary/repaired.js" || fail 'second repair backup differs'
+# A backup failure must leave the init file intact.
+mv "$HOME/.config/atelier/backups" "$temporary/backups"
+printf 'blocked\n' > "$HOME/.config/atelier/backups"
+expect_failure atelier repair
+cmp -s "$HOME/.config/atelier/init.js" "$temporary/repaired.js" || fail 'backup failure changed config'
+rm "$HOME/.config/atelier/backups"
+mv "$temporary/backups" "$HOME/.config/atelier/backups"
 
 echo 'Hammerspoon 2' > "$FAKE_LOGIN_ITEMS"
 atelier uninstall > "$temporary/uninstall.log"

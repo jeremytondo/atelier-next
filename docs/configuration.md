@@ -1,6 +1,6 @@
 # Atelier configuration
 
-Your configuration is `~/.config/atelier/init.js`, ordinary Hammerspoon 2 JavaScript with the full `hs` API. `atelier install` seeds it once and never touches it again; Atelier updates never overwrite it. If an existing file has no direct `require` of the installed Atelier package, installation warns and prints the import to add before `atelier.start(...)`. Edit it, then choose **Reload Config** from Hammerspoon 2's menu bar item. **Console** shows errors and lets you inspect the runtime; `hs.docs.show()` opens the HS2 API reference. Relative `require("./file.js")` paths resolve beside the requiring file, and `hs.loadSpoon` works as in stock Hammerspoon 2.
+Your configuration is `~/.config/atelier/init.js`, ordinary Hammerspoon 2 JavaScript with the full `hs` API. `atelier install` seeds it once; updates preserve it. If an existing file has no direct `require` of the installed Atelier package, interactive installation offers to back it up and replace it. Keeping the file is the default. Without an interactive terminal, installation warns and prints the import to add before `atelier.start(...)`, plus the recovery command. Edit it, then choose **Reload Config** from Hammerspoon 2's menu bar item. **Console** shows errors and lets you inspect the runtime; `hs.docs.show()` opens the HS2 API reference. Relative `require("./file.js")` paths resolve beside the requiring file, and `hs.loadSpoon` works as in stock Hammerspoon 2.
 
 ```js
 const atelier = require("/opt/homebrew/share/atelier");
@@ -29,6 +29,10 @@ globalThis.terminalShortcut = hs.hotkey.bind(["cmd", "alt"], "t", () => {
 `require` returns the `atelier` object; there is no global. Every option is optional. `atelier.defaults()` returns a fresh copy of the shipped defaults. Omitted bindings inherit defaults; `"none"` disables one. `quickApps` replaces the whole default list; `[]` disables Quick Apps. `spaces: false` and `groups: false` disable those default shortcut sets. `overlay` and `overlayModifiers` control the Group list. Unknown options are errors and nothing starts.
 
 You can omit `atelier.start()` entirely and use only your own HS2 automations, or use `atelier.spaces` and `atelier.application` from your own scripts without the defaults. Reload disposes the whole HS2 context, including your own hotkeys and tasks, and restarts the providers process.
+
+## Recover a broken configuration
+
+Run `atelier repair` to restore the shipped defaults and restart Hammerspoon 2. It first copies your existing `init.js` to a unique directory under `~/.config/atelier/backups/` and prints the exact backup path. If the backup fails, the original stays untouched. You can copy your customizations back from that file after confirming startup.
 
 ## What runs where
 
@@ -70,7 +74,7 @@ A toggle launches or reopens the app quietly, unhides it, centers it on the orig
 
 Functions return promises unless noted. Overlapping default actions return `{busy: true}`.
 
-- `atelier.start(options)`: start the defaults; a later call without options resumes with the previous ones. `atelier.stop()` synchronously releases owned bindings, observers, and timers and stops the providers.
+- `atelier.start(options)`: start the defaults; a later call without options resumes with the previous ones. `atelier.stop()` synchronously releases owned bindings, observers, and timers and stops the providers. The status menu stays available for resuming.
 - `atelier.status()`: synchronous runtime state, the last error, the package version, the running and expected Hammerspoon 2 build numbers, Quick Apps, Group count, and recent operation timings in milliseconds.
 - `atelier.group()`, `atelier.select(2)`, `atelier.cycle(-1)`, `atelier.space("switch", {number: 2})`, `atelier.space("create")`, `atelier.space("reorder", {offset: -1})`, `atelier.space("delete")`, `atelier.quickApp("Calculator")`.
 - `atelier.spaces.snapshot()`, `atelier.spaces.membership(windowID)`, `atelier.spaces.switch({number})`, `atelier.spaces.create()`, `atelier.spaces.reorder({offset})`, `atelier.spaces.delete()`, `atelier.spaces.pin({pid, window, app, spaces})`: the Spaces provider, usable from your own modules. Prefer `atelier.space()` for mutations so shortcut coordination applies.
@@ -81,4 +85,4 @@ Failed or timed-out provider mutations are never retried automatically: an actio
 
 ## Permissions, start-up, and diagnostics
 
-On start the defaults compare Hammerspoon 2's build number with the pin and warn by notification and Console line on a mismatch; the defaults still start. If Accessibility is missing they ask macOS for it, notify, and stop; grant access to Hammerspoon 2 in System Settings, then Reload Config. They request notification permission once per context, since `hs.notify.show` does not ask itself. A configuration error, a shortcut conflict, or a providers failure stops only the defaults; independent HS2 scripts keep running, and the failure is shown as a notification naming what failed plus a Console line. Run `atelier doctor` from a terminal to check the installation, and `atelier.status()` in the Console for runtime detail.
+On start the defaults compare Hammerspoon 2's build number with the pin and warn by notification and Console line on a mismatch; the defaults still start. If Accessibility is missing, the Atelier menu shows **Waiting for Accessibility** and a setup dialog offers **Open Settings**. Enable Hammerspoon 2 under Privacy & Security → Accessibility (Device Control and Data Access on macOS 27); startup resumes automatically once both Hammerspoon and the providers can use Accessibility. Choosing **Later** dismisses the dialog; the menu keeps the settings action available. If access is enabled but still not recognized, quit and reopen Hammerspoon 2. Stopping Atelier cancels the pending startup. Notification permission is requested after startup succeeds, once per context. A configuration error, a shortcut conflict, or a providers failure stops only the defaults; independent HS2 scripts keep running, and the failure remains visible in the Atelier menu, with **Retry Startup**, **Reload Config**, and **Open Console** actions. Notifications and Console lines also report errors. The menu shows **Running** only after shortcuts are registered; launching Hammerspoon alone does not establish that Atelier started. Run `atelier doctor` from a terminal to check the installation, and `atelier.status()` in the Console for runtime detail.
