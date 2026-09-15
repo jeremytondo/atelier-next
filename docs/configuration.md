@@ -62,7 +62,9 @@ Shortcut strings accept cmd/command, option/alt/opt, ctrl/control, and shift, fo
 
 Groups belong to a native display/Space pair. Creating a Group records the focused eligible window first and other eligible windows in deterministic inventory order. Only the selected/focused member receives native Fill; background members remain untouched until focused. Missing, minimized, hidden, fullscreen, modal, and Quick App windows are excluded. Arriving windows append to an existing Group.
 
-Native Fill invokes Apple's menu action through HS2 Accessibility. Unsupported applications produce an error; Atelier does not silently substitute geometry resizing. Animation settles in the background so repeated selection remains responsive. Repair the Group to retry a member whose Fill previously failed. Group identities are session-only: Reload Config resets them.
+Native Fill invokes Apple's menu action through HS2 Accessibility. Unsupported applications produce an error; Atelier does not silently substitute geometry resizing. Animation settles in the background so repeated selection remains responsive. Repair the Group to retry a member whose Fill previously failed.
+
+Groups survive Reload Config and quitting Hammerspoon 2: their identities are saved to `~/Library/Application Support/Atelier/groups.json` within a second of each change and checked against the live windows on the next start. The `reload-config` shortcut and `atelier.stop()` save immediately; Reload Config or Quit from the Hammerspoon 2 menu can lose changes made in the last second. Deleting the file is safe. Failed Fills are retried after a reload. Groups do not survive a restart or logout: a saved Group is restored only if at least one of its windows still exists somewhere.
 
 ## Quick Apps
 
@@ -75,7 +77,7 @@ A toggle launches or reopens the app quietly, unhides it, centers it on the orig
 Functions return promises unless noted. Overlapping default actions return `{busy: true}`.
 
 - `atelier.start(options)`: start the defaults; a later call without options resumes with the previous ones. `atelier.stop()` synchronously releases owned bindings, observers, and timers and stops the providers.
-- `atelier.status()`: synchronous runtime state, the last error, the package version, the running and expected Hammerspoon 2 build numbers, Quick Apps, Group count, and recent operation timings in milliseconds.
+- `atelier.status()`: synchronous runtime state, the last error, the package version, the running and expected Hammerspoon 2 build numbers, Quick Apps, Group count, the Groups state file with its last save and restore result, and recent operation timings in milliseconds.
 - `atelier.group()`, `atelier.select(2)`, `atelier.cycle(-1)`, `atelier.space("switch", {number: 2})`, `atelier.space("create")`, `atelier.space("reorder", {offset: -1})`, `atelier.space("delete")`, `atelier.quickApp("Calculator")`.
 - `atelier.spaces.snapshot()`, `atelier.spaces.membership(windowID)`, `atelier.spaces.switch({number})`, `atelier.spaces.create()`, `atelier.spaces.reorder({offset})`, `atelier.spaces.delete()`, `atelier.spaces.pin({pid, window, app, spaces})`: the Spaces provider, usable from your own modules. Prefer `atelier.space()` for mutations so shortcut coordination applies.
 - `atelier.application.resolve("Calculator")` and `atelier.application.launch(path)`: resolve a name, bundle ID, or path to an app on disk; launch or reopen without activation.
