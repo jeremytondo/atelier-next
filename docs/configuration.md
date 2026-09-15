@@ -52,9 +52,11 @@ Run `atelier repair` to restore the shipped defaults and restart Hammerspoon 2. 
 | `group` | Command–Option–G | Create or repair Group on current Desktop |
 | `select-1` … `select-10` | Command–Option–1 … 0 | Select exact Group member |
 | `cycle-previous`, `cycle-next` | Command–Option–[ / ] | Cycle Group members, including members beyond ten |
+| `move-previous`, `move-next` | Command–Option–Shift–[ / ] | Move the focused member one position earlier or later |
+| `move-1` … `move-10` | Command–Option–Shift–1 … 0 | Move the focused member to that position |
 | `reload-config` | Control–Option–Command–R | Reload the complete configuration |
 
-Hold Command–Option to show the Group overlay. Its modifier chord can be changed separately from selection bindings. The list shows app names, titles for duplicate apps, and the focused member. It does not take focus or intercept mouse clicks.
+Hold Command–Option, optionally with Shift, to show the Group overlay; its chord can be changed separately from the bindings. The list shows app names, titles for duplicate apps, and the focused member, and it updates as you move a member. It does not take focus or intercept mouse clicks. Moving a member changes only the Group order; focus, placement, and Fill are unchanged, and the order is saved like any other Group change.
 
 Shortcut strings accept cmd/command, option/alt/opt, ctrl/control, and shift, followed by a key. Examples: `cmd-shift-c`, `ctrl-option-space`, `option-grave`, `cmd-option-left-bracket`. Use `minus`, `equal`, `comma`, `period`, `slash`, `semicolon`, `quote`, or `backslash` where helpful. Duplicate default/Quick App shortcuts and unknown options are configuration errors. A conflict with another application can prevent registration; resolve it and reload.
 
@@ -78,7 +80,8 @@ Functions return promises unless noted. Overlapping default actions return `{bus
 
 - `atelier.start(options)`: start the defaults; a later call without options resumes with the previous ones. `atelier.stop()` synchronously releases owned bindings, observers, and timers and stops the providers.
 - `atelier.status()`: synchronous runtime state, the last error, the package version, the running and expected Hammerspoon 2 build numbers, Quick Apps, Group count, the Groups state file with its last save and restore result, and recent operation timings in milliseconds.
-- `atelier.group()`, `atelier.select(2)`, `atelier.cycle(-1)`, `atelier.space("switch", {number: 2})`, `atelier.space("create")`, `atelier.space("reorder", {offset: -1})`, `atelier.space("delete")`, `atelier.quickApp("Calculator")`.
+- `atelier.group()`, `atelier.space("switch", {number: 2})`, `atelier.space("create")`, `atelier.space("reorder", {offset: -1})`, `atelier.space("delete")`, `atelier.quickApp("Calculator")`.
+- `atelier.groups.selectMember(2)`, `atelier.groups.cycleMember(-1)`, `atelier.groups.moveMember(-1)`, `atelier.groups.moveMember({slot: 1})`: the current Desktop's Group members by one-based slot. Member operations resolve to `{window: id}`, `{noop: true}` when there is no member to act on, or `{busy: true}`. A move takes a whole-number offset or `{slot: n}`; other values are errors.
 - `atelier.spaces.snapshot()`, `atelier.spaces.membership(windowID)`, `atelier.spaces.switch({number})`, `atelier.spaces.create()`, `atelier.spaces.reorder({offset})`, `atelier.spaces.delete()`, `atelier.spaces.pin({pid, window, app, spaces})`: the Spaces provider, usable from your own modules. Prefer `atelier.space()` for mutations so shortcut coordination applies.
 - `atelier.application.resolve("Calculator")` and `atelier.application.launch(path)`: resolve a name, bundle ID, or path to an app on disk; launch or reopen without activation.
 - `atelier.providers.start()`, `atelier.providers.stop()`, `atelier.providers.running`: the providers process; the API starts it on first use.

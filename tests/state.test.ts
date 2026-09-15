@@ -12,7 +12,7 @@ import {
   StateFile,
   stateVersion,
 } from "../defaults/state.ts";
-import {type FakeState, fakeHS} from "./fakes.ts";
+import {type FakeState, fakeApp, fakeHS} from "./fakes.ts";
 
 const path = "/Users/fake/Library/Application Support/Atelier/groups.json";
 const options = {overlay: false, quickApps: []};
@@ -42,6 +42,7 @@ const fileText = (groups: SavedGroup[]) => JSON.stringify({version: stateVersion
 /** Alive when a window with the same process, ID, and app is in the list. */
 const present = (windows: WindowInfo[]) => (m: {pid: number; id: number; bundleID: string}) =>
   windows.some((w) => w.pid === m.pid && w.id === m.id && w.bundleID === m.bundleID);
+const savedIDs = (state: FakeState) => parse(state.files[path]!)![0]!.members.map((m) => m.id);
 const debounce = (state: FakeState) =>
   state.timers.find((t) => !t.stopped && !t.repeats && t.seconds === debounceSeconds);
 function session(hs: HS) {
@@ -59,43 +60,6 @@ function capture(run: () => Promise<void> | void): Promise<string[]> {
     })
     .then(() => lines);
 }
-/** Two windows of process 42 that focus and Fill through the fakes. */
-function fakeApp(hs: HS, state: FakeState, ids: number[]) {
-  const application: Record<string, unknown> = {
-    bundleID: "fixture",
-    axElement: () => ({setAttributeValueValue: () => true}),
-  };
-  const windows = ids.map((id) => ({
-    id,
-    pid: 42,
-    application,
-    frame: {x: 0, y: 0, w: 400, h: 300},
-    axElement: () => ({
-      setAttributeValueValue: () => true,
-      performAction: () => {
-        state.snapshot.focused = id;
-        return true;
-      },
-    }),
-  }));
-  application.allWindows = windows;
-  hs.application.fromPID = (() => application) as unknown as typeof hs.application.fromPID;
-  hs.window.focusedWindow = (() =>
-    windows.find(
-      (w) => w.id === state.snapshot.focused,
-    )) as unknown as typeof hs.window.focusedWindow;
-  hs.ax.applicationElement = (() => ({
-    attributeValue: () => ({
-      attributeValue: (name: string) => (name === "AXIdentifier" ? "_zoomFill:" : null),
-      children: () => [],
-      isEnabled: true,
-      performAction: () => true,
-    }),
-  })) as unknown as typeof hs.ax.applicationElement;
-  state.snapshot.focused = ids[0] ?? 0;
-  state.snapshot.windows = ids.map((id) => window(id, 42, "1", "fixture"));
-}
-
 test("parse accepts the file shape and rejects anything else", () => {
   const groups = [saved("1", [10, 100], [11, 101])];
   groups[0]!.members[0]!.filledFrame = {x: 1, y: 2, w: 3, h: 4};
@@ -230,7 +194,7 @@ test("Groups are written on stop and before reload, and come back on the next st
   assert.deepEqual(lines, ["Atelier: No saved Groups at " + path, "Atelier: Running"]);
   assert.equal(state.files[path], undefined);
   await first.group();
-  await first.select(2);
+  await first.groups.selectMember(2);
   assert.equal(state.files[path], undefined);
   first.stop();
   assert.deepEqual(
@@ -249,23 +213,17 @@ test("Groups are written on stop and before reload, and come back on the next st
   assert.equal(second.status().groups, 1);
   assert.deepEqual(second.status().groupsFile, {path, savedAt: null, restored: 1, dropped: 0});
   assert.equal(second.status().groupsFile.savedAt, null);
-  assert.deepEqual(await second.select(3), {window: 3});
+  assert.deepEqual(await second.groups.selectMember(3), {window: 3});
   debounce(state)!.callback();
-  assert.deepEqual(
-    parse(state.files[path]!)![0]!.members.map((m) => m.id),
-    [1, 2, 3],
-  );
+  assert.deepEqual(savedIDs(state), [1, 2, 3]);
   const reload = state.keys.find((k) => k.key === "r" && k.enabled)!;
   state.snapshot.windows.pop();
-  await second.cycle(1);
+  await second.groups.cycleMember(1);
   reload.callback();
   for (let i = 0; i < 5; i++) await Promise.resolve();
   assert.equal(state.reloaded, true);
   assert.equal(second.status().state, "Paused");
-  assert.deepEqual(
-    parse(state.files[path]!)![0]!.members.map((m) => m.id),
-    [1, 2],
-  );
+  assert.deepEqual(savedIDs(state), [1, 2]);
 });
 
 test("a malformed or off-Desktop file starts clean without being overwritten by an empty start", async () => {
@@ -340,4 +298,33 @@ test("a resumed session takes the file as truth, even when it is missing or brok
   assert.equal(app.status().groups, 0);
   app.stop();
   assert.deepEqual(parse(state.files[path]!), []);
+});
+
+test("a reordered Group saves its latest order, restores it, and keeps it through repair", async () => {
+  const {hs, state} = fakeHS();
+  fakeApp(hs, state, [1, 2, 3]);
+  const first = session(hs);
+  await first.start(options);
+  await first.group();
+  assert.deepEqual(await first.groups.moveMember(2), {window: 1});
+  assert.deepEqual(await first.groups.moveMember(-1), {window: 1});
+  assert.equal(
+    state.timers.filter((t) => !t.stopped && !t.repeats && t.seconds === debounceSeconds).length,
+    1,
+  );
+  debounce(state)!.callback();
+  assert.deepEqual(savedIDs(state), [2, 1, 3]);
+  assert.deepEqual(await first.groups.moveMember({slot: 2}), {noop: true});
+  assert.equal(debounce(state), undefined);
+  first.stop();
+  // The next context: window 3 has left the Desktop and window 4 has opened.
+  fakeApp(hs, state, [1, 2, 3, 4]);
+  state.snapshot.windows.splice(2, 1);
+  const second = session(hs);
+  await second.start(options);
+  await second.group();
+  debounce(state)!.callback();
+  assert.deepEqual(savedIDs(state), [2, 1, 4]);
+  assert.deepEqual(await second.groups.selectMember(1), {window: 2});
+  second.stop();
 });

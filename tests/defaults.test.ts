@@ -3,12 +3,23 @@ import {test} from "node:test";
 import type {HS} from "../api/hs.ts";
 import {createAPI} from "../api/index.ts";
 import {normalize, shortcut} from "../defaults/configuration.ts";
-import {Groups} from "../defaults/groups.ts";
+import {Groups, type MoveTarget, moveTarget} from "../defaults/groups.ts";
 import {createDefaults, type DefaultsInfo} from "../defaults/index.ts";
+import {parse} from "../defaults/state.ts";
 import {FakeWorkspace} from "./fake-workspace.ts";
-import {fakeHS} from "./fakes.ts";
+import {fakeApp, fakeHS} from "./fakes.ts";
 
 const options = {overlay: false, quickApps: []};
+const path = "/Users/fake/Library/Application Support/Atelier/groups.json";
+const window = (id: number, pid: number, space: string) => ({
+  id,
+  pid,
+  space,
+  frame: {x: 0, y: 0, w: 1, h: 1},
+  title: "",
+  app: "",
+  bundleID: "",
+});
 function session(hs: HS, extra: Partial<DefaultsInfo> = {}) {
   const api = createAPI(hs, {providers: "/share/atelier/atelier-providers"});
   return createDefaults(hs, api, {expectedBuild: "133.1", version: "test", ...extra});
@@ -21,6 +32,23 @@ test("custom bindings replace defaults, support disabling, and detect aliases", 
   });
   assert.equal(config.shortcuts.find((b) => b.name === "desktop-create")!.key, "n");
   assert.ok(!config.shortcuts.some((b) => b.name === "select-1"));
+  const move = (name: string, c = config) => c.shortcuts.find((b) => b.name === name);
+  assert.deepEqual([move("move-1")!.mods, move("move-1")!.key], [["cmd", "alt", "shift"], "1"]);
+  assert.deepEqual(
+    [move("move-10")!.key, move("move-previous")!.key, move("move-next")!.key],
+    ["0", "[", "]"],
+  );
+  const custom = normalize({bindings: {"select-1": "cmd-1", "move-next": "none"}});
+  assert.equal(move("move-1", custom)!.identity, move("move-1")!.identity);
+  assert.equal(move("move-next", custom), undefined);
+  assert.equal(
+    normalize({groups: false}).shortcuts.some((b) => b.name.startsWith("move-")),
+    false,
+  );
+  assert.throws(
+    () => normalize({bindings: {"move-1": "cmd-option-1"}}),
+    /move-1 conflicts with select-1/,
+  );
   assert.equal(shortcut("command-option-minus").identity, shortcut("alt-cmd--").identity);
   assert.throws(() => normalize({bindings: {"desktop-create": "alt-1"}}), /conflicts/);
   assert.throws(
@@ -36,15 +64,6 @@ test("custom bindings replace defaults, support disabling, and detect aliases", 
 
 test("groups retain inactive membership, distinguish PID reuse, and exclude fullscreen", () => {
   const store = new Groups();
-  const window = (id: number, pid: number, space: string) => ({
-    id,
-    pid,
-    space,
-    frame: {x: 0, y: 0, w: 1, h: 1},
-    title: "",
-    app: "",
-    bundleID: "",
-  });
   const snap = {
     trusted: true,
     missionControl: false,
@@ -81,6 +100,52 @@ test("groups retain inactive membership, distinguish PID reuse, and exclude full
     () => store.repair({...snap, displays: [{...snap.displays[0]!, current: "2"}]}),
     /ordinary Desktop/,
   );
+});
+
+test("moving a member keeps the others in order, stops at the edges, and rejects bad targets", () => {
+  const cases: [string, string, MoveTarget, string][] = [
+    ["ABCD", "D", {slot: 1}, "DABC"],
+    ["ABCD", "B", {slot: 4}, "ACDB"],
+    ["ABCD", "C", -1, "ACBD"],
+    ["ABCDE", "B", {slot: 7}, "ACDEB"],
+    ["ABCD", "B", -20, "BACD"],
+    ["ABCD", "A", -1, "ABCD"],
+    ["ABCD", "B", 0, "ABCD"],
+    ["A", "A", {slot: 5}, "A"],
+    ["ABCDEFGHIJKL", "A", 30, "BCDEFGHIJKLA"],
+  ];
+  const store = new Groups();
+  for (const [start, title, target, expected] of cases) {
+    const members = [...start].map((letter, i) => ({...window(i + 1, 10, "1"), title: letter}));
+    const group = {display: "D", space: "1", members},
+      member = members.find((m) => m.title === title)!,
+      label = JSON.stringify([start, title, target]);
+    assert.equal(store.move(group, member, target), start !== expected, label);
+    assert.equal(group.members.map((m) => m.title).join(""), expected, label);
+  }
+  // The moved member is the same object, so its Fill bookkeeping travels with it.
+  const marked = {...window(1, 10, "1"), fillFailed: true, filledFrame: {x: 1, y: 2, w: 3, h: 4}};
+  const group = {display: "D", space: "1", members: [marked, window(2, 10, "1")]};
+  assert.equal(store.move(group, marked, 1), true);
+  assert.equal(group.members[1], marked);
+  assert.equal(store.move(group, window(3, 10, "1"), -1), false);
+  for (const bad of [
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    "1",
+    null,
+    undefined,
+    {slot: 0},
+    {slot: -1},
+    {slot: 1.5},
+    {slot: "1"},
+    {slot: 1, extra: 1},
+    {},
+    Object.assign([], {slot: 2}),
+  ])
+    assert.throws(() => moveTarget(bad), /move target/, JSON.stringify(bad));
+  assert.deepEqual([moveTarget(-3), moveTarget(0), moveTarget({slot: 2})], [-3, 0, {slot: 2}]);
 });
 
 test("startup failure cleans partially installed bindings", async () => {
@@ -253,51 +318,8 @@ test("a Hammerspoon 2 build other than the pinned one warns but still starts", a
 });
 
 test("grouping fills only the front member and selection focuses exact same-app windows", async () => {
-  const {hs, state} = fakeHS(),
-    fills: number[] = [];
-  const application: Record<string, unknown> = {
-    axElement: () => ({setAttributeValueValue: () => true}),
-  };
-  const windows = [1, 2].map((id) => ({
-    id,
-    pid: 42,
-    application,
-    frame: {x: 0, y: 0, w: 400, h: 300},
-    axElement: () => ({
-      setAttributeValueValue: () => true,
-      performAction: () => {
-        state.snapshot.focused = id;
-        return true;
-      },
-    }),
-  }));
-  application.allWindows = windows;
-  hs.application.fromPID = (() => application) as unknown as typeof hs.application.fromPID;
-  hs.window.focusedWindow = (() =>
-    windows.find(
-      (w) => w.id === state.snapshot.focused,
-    )) as unknown as typeof hs.window.focusedWindow;
-  hs.ax.applicationElement = (() => ({
-    attributeValue: () => ({
-      attributeValue: (name: string) => (name === "AXIdentifier" ? "_zoomFill:" : null),
-      children: () => [],
-      isEnabled: true,
-      performAction: () => {
-        fills.push(state.snapshot.focused);
-        return true;
-      },
-    }),
-  })) as unknown as typeof hs.ax.applicationElement;
-  state.snapshot.focused = 1;
-  state.snapshot.windows = windows.map((w) => ({
-    id: w.id,
-    pid: 42,
-    space: "1",
-    app: "Fixture",
-    bundleID: "fixture",
-    title: "",
-    frame: w.frame,
-  }));
+  const {hs, state} = fakeHS();
+  const {fills, application} = fakeApp(hs, state, [1, 2]);
   const app = session(hs);
   await app.start(options);
   await app.group();
@@ -306,10 +328,10 @@ test("grouping fills only the front member and selection focuses exact same-app 
   assert.notEqual(state.watched[0]![0], application);
   assert.ok((state.watched[0]![1] as string[]).includes("AXWindowCreated"));
   assert.ok((state.watched[0]![1] as string[]).includes("AXFocusedWindowChanged"));
-  await app.select(2);
+  await app.groups.selectMember(2);
   assert.equal(state.snapshot.focused, 2);
   assert.deepEqual(fills, [1, 2]);
-  await app.select(2);
+  await app.groups.selectMember(2);
   assert.deepEqual(fills, [1, 2]);
   app.stop();
   assert.deepEqual(state.removedWatchers, state.watched);
@@ -367,4 +389,66 @@ test("stop and defaults failures preserve independent HS2 scripts", async () => 
     );
     assert.equal(timer.stopped, false, failure ?? "none");
   }
+});
+
+test("moving the focused member changes only the order and leaves focus, Fill, and Spaces alone", async () => {
+  const {hs, state} = fakeHS();
+  const fake = fakeApp(hs, state, [1, 2, 3, 4]);
+  fake.fillAvailable = false;
+  const app = session(hs);
+  await app.start(options);
+  await assert.rejects(app.group(), /not supported/);
+  fake.fillAvailable = true;
+  const requests = state.requests.length;
+  assert.deepEqual(await app.groups.moveMember({slot: 4}), {window: 1});
+  assert.deepEqual(await app.groups.moveMember(-2), {window: 1});
+  assert.ok(state.requests.slice(requests).every((r) => r.command === "spaces.snapshot"));
+  assert.equal(state.snapshot.focused, 1);
+  assert.deepEqual(fake.fills, []);
+  // The order is 2, 1, 3, 4, and the moved member keeps its failed-Fill suppression.
+  assert.deepEqual(await app.groups.selectMember(2), {window: 1});
+  assert.deepEqual(fake.fills, []);
+  assert.deepEqual(await app.groups.selectMember(1), {window: 2});
+  assert.deepEqual(fake.fills, [2]);
+  // The shortcut moves once per press, and the running Fill settlement follows the member.
+  const moveKeys = state.keys.filter((k) => k.mods.includes("shift"));
+  assert.equal(moveKeys.length, 12);
+  assert.ok(moveKeys.every((k) => k.repeat === null));
+  const moves = () => app.status().metrics.filter((m) => m.name === "moveMember").length;
+  const before = moves();
+  moveKeys.find((k) => k.key === "]")!.callback();
+  for (let i = 0; i < 100 && moves() === before; i++) await Promise.resolve();
+  assert.equal(moves(), before + 1);
+  assert.deepEqual(await app.groups.selectMember(2), {window: 2});
+  assert.deepEqual(fake.fills, [2]);
+  app.stop();
+});
+
+test("a move needs a Group, a focused member, valid arguments, and a free session", async () => {
+  const {hs, state} = fakeHS();
+  fakeApp(hs, state, [1, 2, 3]);
+  const third = state.snapshot.windows.pop()!;
+  const app = session(hs);
+  await app.start(options);
+  assert.deepEqual(await app.groups.moveMember(1), {noop: true});
+  await app.group();
+  state.snapshot.focused = 77;
+  assert.deepEqual(await app.groups.moveMember(1), {noop: true});
+  // A window that became eligible since the last snapshot is a member at once.
+  state.snapshot.windows.push(third);
+  state.snapshot.focused = 3;
+  assert.deepEqual(await app.groups.moveMember({slot: 1}), {window: 3});
+  await assert.rejects(app.groups.moveMember(1.5), /move target/);
+  await assert.rejects(app.groups.moveMember({slot: 0}), /move target/);
+  // A move during another action is dropped; a cancelled snapshot leaves the order alone.
+  state.replies = false;
+  const pending = app.groups.moveMember({slot: 3}),
+    rejected = assert.rejects(pending, /stopped/);
+  assert.deepEqual(await app.groups.moveMember(1), {busy: true});
+  app.stop();
+  await rejected;
+  assert.deepEqual(
+    parse(state.files[path]!)![0]!.members.map((m) => m.id),
+    [3, 1, 2],
+  );
 });

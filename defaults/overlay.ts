@@ -47,12 +47,12 @@ export class Overlay {
     this.tap = this.hs.eventtap.addWatcher(
       types,
       (event) => {
+        // Shift may join the chord so the move shortcuts can be pressed while
+        // the list is visible; any other extra modifier is a different chord.
         const flags = event.flags;
         const active =
           this.flags.every((f) => flags.includes(f)) &&
-          ["cmd", "alt", "ctrl", "shift"].every(
-            (f) => !flags.includes(f) || this.flags.includes(f),
-          );
+          ["cmd", "alt", "ctrl"].every((f) => !flags.includes(f) || this.flags.includes(f));
         if (active !== this.active) {
           this.active = active;
           if (active) this.refresh();

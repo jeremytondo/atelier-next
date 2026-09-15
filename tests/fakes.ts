@@ -27,6 +27,8 @@ export interface FakeKey {
   mods: string[];
   key: string;
   callback: () => void;
+  /** The key-repeat callback, null when holding the key does nothing more. */
+  repeat: (() => void) | null;
   enabled: boolean;
   destroyed: boolean;
   enable(): boolean;
@@ -260,11 +262,18 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     hotkey: {
       assignable: () => true,
       getHotkeys: () => state.keys.filter((k) => k.enabled),
-      create(mods: string[], name: string, callback: () => void) {
+      create(
+        mods: string[],
+        name: string,
+        callback: () => void,
+        _: unknown,
+        repeat: (() => void) | null,
+      ) {
         const key: FakeKey = {
           mods,
           key: name,
           callback,
+          repeat,
           enabled: false,
           destroyed: false,
           enable() {
@@ -298,4 +307,63 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     },
   };
   return {hs: hs as unknown as HS, state};
+}
+
+export interface FakeApp {
+  /** Window IDs whose native Fill was pressed, in order. */
+  fills: number[];
+  /** Whether the Fill menu item exists; false makes every Fill fail. */
+  fillAvailable: boolean;
+  application: Record<string, unknown>;
+}
+
+/** Windows of process 42 on Desktop 1 that focus and Fill through the fakes. */
+export function fakeApp(hs: HS, state: FakeState, ids: number[]): FakeApp {
+  const fake: FakeApp = {
+    fills: [],
+    fillAvailable: true,
+    application: {bundleID: "fixture", axElement: () => ({setAttributeValueValue: () => true})},
+  };
+  const windows = ids.map((id) => ({
+    id,
+    pid: 42,
+    application: fake.application,
+    frame: {x: 0, y: 0, w: 400, h: 300},
+    axElement: () => ({
+      setAttributeValueValue: () => true,
+      performAction: () => {
+        state.snapshot.focused = id;
+        return true;
+      },
+    }),
+  }));
+  fake.application.allWindows = windows;
+  hs.application.fromPID = (() => fake.application) as unknown as typeof hs.application.fromPID;
+  hs.window.focusedWindow = (() =>
+    windows.find(
+      (w) => w.id === state.snapshot.focused,
+    )) as unknown as typeof hs.window.focusedWindow;
+  hs.ax.applicationElement = (() => ({
+    attributeValue: () => ({
+      attributeValue: (name: string) =>
+        name === "AXIdentifier" && fake.fillAvailable ? "_zoomFill:" : null,
+      children: () => [],
+      isEnabled: true,
+      performAction: () => {
+        fake.fills.push(state.snapshot.focused);
+        return true;
+      },
+    }),
+  })) as unknown as typeof hs.ax.applicationElement;
+  state.snapshot.focused = ids[0] ?? 0;
+  state.snapshot.windows = ids.map((id) => ({
+    id,
+    pid: 42,
+    space: "1",
+    frame: {x: 0, y: 0, w: 400, h: 300},
+    title: "",
+    app: "fixture",
+    bundleID: "fixture",
+  }));
+  return fake;
 }

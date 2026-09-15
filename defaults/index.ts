@@ -17,7 +17,15 @@ import {
   type QuickAppEntry,
   shortcut,
 } from "./configuration.ts";
-import {type Group, Groups, identity, type Member, sameFrame} from "./groups.ts";
+import {
+  type Group,
+  Groups,
+  identity,
+  type Member,
+  type MoveTarget,
+  moveTarget,
+  sameFrame,
+} from "./groups.ts";
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
 import {Startup} from "./startup.ts";
@@ -35,6 +43,18 @@ export type State = "Paused" | "Starting" | "Waiting for Accessibility" | "Runni
 export type SpaceAction = "switch" | "create" | "reorder" | "delete";
 export type Busy = {busy: true};
 export type Noop = {noop: true};
+export type MemberResult = {window: number} | Noop | Busy;
+
+/** Operations on the current Desktop's Group members; a Group itself is created
+ *  or repaired by `group()`. */
+export interface GroupMembers {
+  /** Focuses the member at the one-based slot, with lazy Fill. */
+  selectMember(slot: number): Promise<MemberResult>;
+  /** Focuses the member `offset` places from the focused one, wrapping at either end. */
+  cycleMember(offset: number): Promise<MemberResult>;
+  /** Moves the focused member by an offset or to a final slot, without touching focus or geometry. */
+  moveMember(target: MoveTarget): Promise<MemberResult>;
+}
 
 export interface Status {
   state: State;
@@ -62,8 +82,7 @@ export interface Defaults {
   /** A fresh copy of the shipped options. */
   defaults(): Required<Options>;
   group(): Promise<Group | Busy>;
-  select(number: number): Promise<{window: number} | Noop | Busy>;
-  cycle(offset: number): Promise<{window: number} | Noop | Busy>;
+  groups: GroupMembers;
   space(
     command: SpaceAction,
     args?: {number?: number; offset?: -1 | 1},
@@ -374,17 +393,17 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       if (member) await activate(entry, member, epoch);
       return entry;
     });
-  const select = (number: number) =>
-    run("select", async (epoch): Promise<{window: number} | Noop> => {
+  const selectMember = (slot: number) =>
+    run("selectMember", async (epoch): Promise<{window: number} | Noop> => {
       const next = await refresh(epoch),
         entry = groups.current(next),
-        member = entry?.members[number - 1];
+        member = entry?.members[slot - 1];
       if (!entry || !member) return {noop: true};
       await activate(entry, member, epoch);
       return {window: member.id};
     });
-  const cycle = (offset: number) =>
-    run("cycle", async (epoch): Promise<{window: number} | Noop> => {
+  const cycleMember = (offset: number) =>
+    run("cycleMember", async (epoch): Promise<{window: number} | Noop> => {
       const next = await refresh(epoch),
         entry = groups.current(next);
       if (!entry?.members.length) return {noop: true};
@@ -393,6 +412,17 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
         entry.members[(current + offset + entry.members.length) % entry.members.length];
       if (!member) return {noop: true};
       await activate(entry, member, epoch);
+      return {window: member.id};
+    });
+  const moveMember = (target: MoveTarget) =>
+    run("moveMember", async (epoch): Promise<{window: number} | Noop> => {
+      const request = moveTarget(target);
+      const next = await refresh(epoch),
+        entry = groups.current(next),
+        member = entry?.members.find((w) => w.id === next.focused);
+      if (!entry || !member || !groups.move(entry, member, request)) return {noop: true};
+      persist();
+      redraw();
       return {window: member.id};
     });
   const space = (command: SpaceAction, args: {number?: number; offset?: -1 | 1} = {}) =>
@@ -478,8 +508,10 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   }
   const actions: Record<string, () => Promise<unknown>> = {
     group,
-    "cycle-previous": () => cycle(-1),
-    "cycle-next": () => cycle(1),
+    "cycle-previous": () => cycleMember(-1),
+    "cycle-next": () => cycleMember(1),
+    "move-previous": () => moveMember(-1),
+    "move-next": () => moveMember(1),
     // Stop first so pending Groups state reaches disk before the context goes.
     "reload-config": async () => {
       session.stop();
@@ -492,7 +524,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   };
   for (let n = 1; n <= 10; n++) {
     actions["desktop-" + n] = () => space("switch", {number: n});
-    actions["select-" + n] = () => select(n);
+    actions["select-" + n] = () => selectMember(n);
+    actions["move-" + n] = () => moveMember({slot: n});
   }
   function checkBuild() {
     const build = hs.appinfo.build;
@@ -630,8 +663,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     status,
     defaults: defaultOptions,
     group,
-    select,
-    cycle,
+    groups: {selectMember, cycleMember, moveMember},
     space,
     quickApp,
   };

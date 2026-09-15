@@ -4,25 +4,30 @@ import type {HS} from "../api/hs.ts";
 import type {Group} from "../defaults/groups.ts";
 import {frameFor, Overlay} from "../defaults/overlay.ts";
 
+interface Element {
+  text?: string;
+  roundedRectRadii?: {xRadius: number};
+}
+
 interface FakeCanvas {
   frame: unknown;
   showing: boolean;
   destroyed: boolean;
   shows: number;
-  elements: {text?: string}[];
+  elements: Element[];
   level(): FakeCanvas;
   behaviorList(): FakeCanvas;
   clickActivating(): FakeCanvas;
   ignoreMouseEvents(): FakeCanvas;
   setFrame(value: unknown): FakeCanvas;
-  replaceElements(value: {text?: string}[]): FakeCanvas;
+  replaceElements(value: Element[]): FakeCanvas;
   show(): FakeCanvas;
   hide(): void;
   destroy(): void;
 }
 
 // Records canvas lifetime and input events; does not simulate macOS placement.
-function fixture() {
+function fixture(chord = ["cmd", "alt"]) {
   const canvases: FakeCanvas[] = [],
     screen = {
       uuid: "D",
@@ -101,7 +106,7 @@ function fixture() {
     },
   };
   const redraw = () => overlay.update(state.snapshot, state.group);
-  const overlay = new Overlay(hs as unknown as HS, ["cmd", "alt"], redraw);
+  const overlay = new Overlay(hs as unknown as HS, chord, redraw);
   overlay.start();
   return {
     state,
@@ -181,5 +186,50 @@ test("overlay hides during Mission Control and on ungrouped Desktops, then shows
   f.state.group = group;
   f.redraw();
   assert.equal(f.canvases.at(-1)!.showing, true);
+  f.overlay.stop();
+});
+
+test("overlay chord allows Shift, hides on other extra modifiers, and needs a configured Shift", () => {
+  const cases: [string[], string[], boolean][] = [
+    [["cmd", "alt"], ["cmd", "alt"], true],
+    [["cmd", "alt"], ["cmd", "alt", "shift"], true],
+    [["cmd", "alt"], ["cmd", "alt", "ctrl"], false],
+    [["cmd", "alt"], ["cmd", "shift"], false],
+    [["cmd", "alt", "shift"], ["cmd", "alt"], false],
+    [["cmd", "alt", "shift"], ["cmd", "alt", "shift"], true],
+  ];
+  for (const [chord, flags, visible] of cases) {
+    const f = fixture(chord);
+    f.flags(flags);
+    assert.equal(f.canvases[0]?.showing ?? false, visible, JSON.stringify([chord, flags]));
+    f.overlay.stop();
+  }
+});
+
+test("overlay stays while Shift comes and goes and redraws a reordered Group at once", () => {
+  const f = fixture();
+  f.state.group!.members = [
+    {pid: 10, id: 1, app: "First", title: ""},
+    {pid: 20, id: 2, app: "Second", title: ""},
+  ] as Group["members"];
+  f.flags(["cmd", "alt"]);
+  const canvas = f.canvases[0]!;
+  const apps = () =>
+    canvas.elements.map((e) => e.text).filter((t) => t === "First" || t === "Second");
+  // The focus highlight is drawn just before the focused member's number and name.
+  const highlighted = () => {
+    const index = canvas.elements.findIndex((e) => e.roundedRectRadii?.xRadius === 7);
+    return canvas.elements[index + 2]?.text;
+  };
+  assert.deepEqual([apps(), highlighted()], [["First", "Second"], "First"]);
+  f.flags(["cmd", "alt", "shift"]);
+  f.state.group!.members.reverse();
+  f.redraw();
+  assert.deepEqual([canvas.showing, canvas.shows], [true, 2]);
+  assert.deepEqual([apps(), highlighted()], [["Second", "First"], "First"]);
+  f.flags(["cmd", "alt"]);
+  assert.equal(canvas.showing, true);
+  f.flags(["cmd"]);
+  assert.equal(canvas.showing, false);
   f.overlay.stop();
 });

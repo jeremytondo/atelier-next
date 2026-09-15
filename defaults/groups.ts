@@ -17,6 +17,23 @@ export interface Group {
 
 export const identity = (window: {pid: number; id: number}): string => window.pid + ":" + window.id;
 
+/** A move request: a relative offset, or an object naming the final one-based slot. */
+export type MoveTarget = number | {slot: number};
+
+/** Checks a move request from configuration or the Console; nothing is coerced. */
+export function moveTarget(value: unknown): MoveTarget {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  const slot =
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).join() === "slot"
+      ? (value as {slot: unknown}).slot
+      : undefined;
+  if (typeof slot === "number" && Number.isInteger(slot) && slot > 0) return {slot};
+  throw new Error("A move target must be a whole-number offset or {slot: n} with n at least 1");
+}
+
 export const sameFrame = (
   a: Frame | null | undefined,
   b: Frame | null | undefined,
@@ -70,6 +87,21 @@ export class Groups {
     }
     for (const member of group.members) member.fillFailed = false;
     return group;
+  }
+
+  /** Moves `member` to a new position in `group`, keeping the others in their
+   *  relative order. Returns false when nothing changed: the member is absent,
+   *  the destination is its current slot, or the move would pass an edge. */
+  move(group: Group, member: Member, target: MoveTarget): boolean {
+    const from = group.members.indexOf(member),
+      last = group.members.length - 1;
+    if (from < 0) return false;
+    const requested = typeof target === "number" ? from + target : target.slot - 1;
+    const to = Math.max(0, Math.min(last, requested));
+    if (to === from) return false;
+    group.members.splice(from, 1);
+    group.members.splice(to, 0, member);
+    return true;
   }
 
   /** The identities and Fill frames worth keeping across a reload; titles and

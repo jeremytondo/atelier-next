@@ -105,6 +105,8 @@ export function defaultBindings(): Record<string, string> {
     group: "cmd-option-g",
     "cycle-previous": "cmd-option-left-bracket",
     "cycle-next": "cmd-option-right-bracket",
+    "move-previous": "cmd-option-shift-left-bracket",
+    "move-next": "cmd-option-shift-right-bracket",
     "desktop-create": "option-grave",
     "desktop-left": "ctrl-option-left",
     "desktop-right": "ctrl-option-right",
@@ -113,6 +115,7 @@ export function defaultBindings(): Record<string, string> {
   for (let n = 1; n <= 10; n++) {
     bindings["desktop-" + n] = "option-" + (n % 10);
     bindings["select-" + n] = "cmd-option-" + (n % 10);
+    bindings["move-" + n] = "cmd-option-shift-" + (n % 10);
   }
   return bindings;
 }
