@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {QuickApps, windowTimeout} from "../defaults/quick-apps.ts";
+import type {HS} from "../api/hs.ts";
+import {liveWorkspace, QuickApps, windowTimeout} from "../defaults/quick-apps.ts";
 import {desktop, display, FakeWorkspace, quick} from "./fake-workspace.ts";
 
 async function failure(mac: FakeWorkspace, size?: {width: number; height: number}) {
@@ -37,6 +38,33 @@ test("summon launches, places, pins, and focuses", async () => {
     pid: 10,
     bundleID: "com.example.editor",
   });
+});
+
+test("the live workspace focuses with the setter exported by stock Hammerspoon 2", () => {
+  const attributes: [string, unknown][] = [];
+  const element = {
+    subrole: "AXStandardWindow",
+    attributeValue: () => false,
+    setAttributeValueValue: (name: string, value: unknown) => {
+      attributes.push([name, value]);
+      return true;
+    },
+  };
+  const window = {
+    id: 200,
+    axElement: () => element,
+    isFullscreen: false,
+    focus: () => true,
+    raise: () => true,
+  };
+  const app = {allWindows: [window], activate: () => true};
+  const hs = {application: {fromPID: () => app}} as unknown as HS;
+  const workspace = liveWorkspace(hs, {} as never, {} as never);
+
+  assert.deepEqual(workspace.windows(20), [200]);
+  workspace.focus(20, 200);
+
+  assert.deepEqual(attributes, [["AXMain", true]]);
 });
 
 test("hiding restores the window the user came from", async () => {

@@ -9,6 +9,7 @@ import type {ApplicationAPI, ResolvedApplication} from "../api/application.ts";
 import type {HS} from "../api/hs.ts";
 import type {Frame, Snapshot, SpacesAPI} from "../api/spaces.ts";
 import type {Timers} from "../api/timers.ts";
+import {setAXAttribute} from "./accessibility.ts";
 import type {QuickAppSize} from "./configuration.ts";
 
 export interface RunningApp {
@@ -336,7 +337,7 @@ export function liveWorkspace(
     focus: (pid, id) => {
       const window = byID.get(id);
       if (!window) return;
-      window.axElement().setAttributeValue("AXMain", true);
+      setAXAttribute(window.axElement(), "AXMain", true);
       app(pid)?.activate(false);
       window.focus();
       window.raise();
