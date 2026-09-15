@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The atelier command: install, doctor, and uninstall for a Homebrew-installed
-# Atelier. It reads disk and Homebrew only and never talks to the running app.
+# Atelier. Runtime diagnosis reads disk and Homebrew; installation quits HS2
+# gracefully before changing its preferences, then starts it again.
 # `atelier install` is what the cask's post-install runs; it is safe to rerun.
 set -euo pipefail
 
@@ -24,7 +25,7 @@ if [[ $channel == dev ]]; then atelier_cask=atelier@dev; hs2_cask=hammerspoon2@d
 usage() {
   cat <<'USAGE'
 usage: atelier install    Point Hammerspoon 2 at ~/.config/atelier/init.js, seed it once,
-                          add the login item, and start Hammerspoon 2
+                          add the login item, and restart Hammerspoon 2 if running
        atelier doctor     Check the installation and print what to fix
        atelier uninstall  Remove the login item and the Hammerspoon 2 settings Atelier wrote;
                           the init file and the Homebrew packages stay
@@ -38,6 +39,28 @@ login_items() { osascript -e 'tell application "System Events" to get the name o
 login_item_present() { login_items | grep -qx "$app_name"; }
 setting() { defaults read "$bundle" "$1" 2>/dev/null || true; }
 
+config_path() {
+  local path
+  path=$(setting configLocation)
+  case "$path" in
+    \~/*) printf '%s/%s\n' "$HOME" "${path#\~/}" ;;
+    *) printf '%s\n' "$path" ;;
+  esac
+}
+
+quit_hs2() {
+  hs2_running || return 0
+  echo "Quitting $app_name before changing its settings…"
+  osascript -e "tell application id \"$bundle\" to quit" > /dev/null \
+    || die "Could not quit $app_name. Quit it from its menu, then rerun atelier install."
+  local attempt
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    hs2_running || return 0
+    sleep 0.1
+  done
+  die "$app_name is still running; settings were not changed. Quit it, then rerun atelier install."
+}
+
 init_requires_atelier() {
   local escaped_share
   escaped_share=$(printf '%s' "$share" | sed 's/[][\\.^$*+?(){}|]/\\&/g')
@@ -48,10 +71,16 @@ install() {
   [[ -d $app ]] || die "$app_name is not installed; run: brew install --cask $tap/$hs2_cask"
   [[ $(sw_vers -productVersion | cut -d. -f1) -ge 27 ]] || die 'Atelier requires macOS 27 or later.'
   [[ -x $share/atelier-providers ]] || die "$share is incomplete; reinstall with: brew reinstall --cask $tap/$atelier_cask"
+  # The app observes and writes these preferences too. Let it finish saving
+  # before changing them, so its cached values cannot overwrite installation.
+  quit_hs2
   defaults write "$bundle" configLocation -string "$init"
   defaults write "$bundle" hasCompletedOnboarding -bool true
   defaults write "$bundle" dockMenuBehaviour -string menuBar
   defaults write "$bundle" SUEnableAutomaticChecks -bool false
+  [[ $(config_path) == "$init" && $(setting hasCompletedOnboarding) == 1 \
+    && $(setting dockMenuBehaviour) == menuBar && $(setting SUEnableAutomaticChecks) == 0 ]] \
+    || die 'Hammerspoon 2 settings were not saved; rerun atelier install.'
   mkdir -p "$config_dir"
   if [[ ! -e $init ]]; then
     sed "s|/opt/homebrew/share/atelier|$share|" "$share/init.js" > "$init"
@@ -64,12 +93,8 @@ install() {
     osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$app\", hidden:false}" > /dev/null \
       || echo 'Could not add the login item; allow this terminal to control System Events, then rerun atelier install.' >&2
   fi
-  if hs2_running; then
-    echo "$app_name is running; choose Reload Config from its menu to load $init."
-  else
-    open -a "$app"
-    echo "Started $app_name. Grant Accessibility access when asked; Atelier notifies if it is missing."
-  fi
+  open -a "$app"
+  echo "Started $app_name with $init. Grant Accessibility access when asked."
 }
 
 failed=0
@@ -100,8 +125,8 @@ doctor() {
     fail "$app_name is not installed at $app; run: brew install --cask $tap/$hs2_cask"
   fi
   if hs2_running; then ok "$app_name is running"; else fail "$app_name is not running; run: open -a '$app'"; fi
-  if [[ $(setting configLocation) == "$init" && $(setting hasCompletedOnboarding) == 1 ]]; then
-    ok "$app_name loads $init"
+  if [[ $(config_path) == "$init" && $(setting hasCompletedOnboarding) == 1 ]]; then
+    ok "$app_name is configured to load $init"
   else
     fail "$app_name settings do not point at $init; run: atelier install"
   fi

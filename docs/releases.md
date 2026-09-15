@@ -13,7 +13,7 @@ After `brew tap jeremytondo/atelier`, choose one channel:
 | Stable | `brew install --cask atelier` | `brew upgrade --cask hammerspoon2 atelier` |
 | Rolling dev | `brew install --cask atelier@dev` | `brew upgrade --cask hammerspoon2@dev atelier@dev` |
 
-Quit Hammerspoon 2 before updating its app and run `brew update` before upgrading. An upgrade stays on the selected channel. Run `atelier doctor` afterwards to check the installed build and setup.
+Quit Hammerspoon 2 before updating its app and run `brew update` before upgrading. An upgrade stays on the selected channel. The Atelier post-install step gracefully restarts Hammerspoon 2 so preference changes are saved before startup; no manual config reload is needed after installation. Run `atelier doctor` afterwards to check the installed build and setup.
 
 The channels install to the same locations and cannot coexist. To switch from stable to dev, quit Hammerspoon 2, then run:
 

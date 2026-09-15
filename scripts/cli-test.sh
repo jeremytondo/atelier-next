@@ -13,7 +13,7 @@ export ATELIER_PREFIX="$temporary/prefix"
 export ATELIER_HS2_APP="$temporary/Hammerspoon 2.app"
 export FAKE_STORE="$temporary/defaults.json"
 export FAKE_LOGIN_ITEMS="$temporary/login-items"
-export FAKE_LOG="$temporary/log"
+export FAKE_LOG="$temporary/log" FAKE_HS2_STOPPED="$temporary/hs2-stopped"
 export FAKE_HS2_BUILD=133.1 FAKE_HS2_RUNNING=false FAKE_NCPREFS_ASKED=false
 share="$ATELIER_PREFIX/share/atelier"
 mkdir -p "$HOME" "$share" "$temporary/bin" "$ATELIER_HS2_APP/Contents"
@@ -31,6 +31,8 @@ case "$1 $2" in
   "read com.apple.ncprefs") [[ $FAKE_NCPREFS_ASKED == true ]] && printf '( { "bundle-id" = "net.tenshu.Hammerspoon-2"; } )\n' || printf '( )\n' ;;
   "read net.tenshu.Hammerspoon-2") jq -er --arg key "$3" '.[$key] // empty' "$FAKE_STORE" ;;
   "write net.tenshu.Hammerspoon-2")
+    [[ $FAKE_HS2_RUNNING == false || -f $FAKE_HS2_STOPPED ]] || { echo 'settings changed while HS2 was running' >&2; exit 99; }
+    [[ ${FAKE_DROP_SETTING:-} != "$3" ]] || exit 0
     case "$4" in -bool) value=$([[ $5 == true ]] && echo 1 || echo 0) ;; *) value=$5 ;; esac
     jq --arg key "$3" --arg value "$value" '.[$key] = $value' "$FAKE_STORE" > "$FAKE_STORE.tmp"; mv "$FAKE_STORE.tmp" "$FAKE_STORE" ;;
   "delete net.tenshu.Hammerspoon-2") jq -e --arg key "$3" 'has($key)' "$FAKE_STORE" > /dev/null; jq --arg key "$3" 'del(.[$key])' "$FAKE_STORE" > "$FAKE_STORE.tmp"; mv "$FAKE_STORE.tmp" "$FAKE_STORE" ;;
@@ -43,6 +45,13 @@ set -euo pipefail
 printf 'osascript %s\n' "$*" >> "$FAKE_LOG"
 script=$2
 case "$script" in
+  *'tell application id "net.tenshu.Hammerspoon-2" to quit'*)
+    [[ ${FAKE_QUIT_FAIL:-false} == false ]] || exit 1
+    [[ ${FAKE_QUIT_STUCK:-false} == false ]] || exit 0
+    # Model a pending app save at exit. Installation must write after this.
+    jq '.configLocation = "~/.config/Hammerspoon2/init.js" | .dockMenuBehaviour = "both" | .hasCompletedOnboarding = "0"' "$FAKE_STORE" > "$FAKE_STORE.tmp"
+    mv "$FAKE_STORE.tmp" "$FAKE_STORE"
+    touch "$FAKE_HS2_STOPPED" ;;
   *"get the name of every login item"*) paste -sd, "$FAKE_LOGIN_ITEMS" | sed 's/,/, /g' ;;
   *"make login item"*) echo 'Hammerspoon 2' >> "$FAKE_LOGIN_ITEMS" ;;
   *"delete every login item whose name is"*) grep -vx 'Hammerspoon 2' "$FAKE_LOGIN_ITEMS" > "$FAKE_LOGIN_ITEMS.tmp" || true; mv "$FAKE_LOGIN_ITEMS.tmp" "$FAKE_LOGIN_ITEMS" ;;
@@ -52,10 +61,11 @@ FAKE
 cat > "$temporary/bin/open" <<'FAKE'
 #!/usr/bin/env bash
 printf 'open %s\n' "$*" >> "$FAKE_LOG"
+rm -f "$FAKE_HS2_STOPPED"
 FAKE
 cat > "$temporary/bin/pgrep" <<'FAKE'
 #!/usr/bin/env bash
-[[ $FAKE_HS2_RUNNING == true ]]
+[[ $FAKE_HS2_RUNNING == true && ! -f $FAKE_HS2_STOPPED ]]
 FAKE
 printf '#!/usr/bin/env bash\necho 27.1\n' > "$temporary/bin/sw_vers"
 printf '#!/usr/bin/env bash\necho arm64\n' > "$temporary/bin/uname"
@@ -64,6 +74,10 @@ cat > "$temporary/bin/codesign" <<'FAKE'
 if [[ $1 == -dv ]]; then echo "Authority=Fixture Authority" >&2; fi
 FAKE
 printf '#!/usr/bin/env bash\necho unexpected-brew >&2; exit 99\n' > "$temporary/bin/brew"
+cat > "$temporary/bin/sleep" <<'FAKE'
+#!/usr/bin/env bash
+[[ $1 == 0.1 ]]
+FAKE
 chmod +x "$temporary/bin/"*
 export PATH="$temporary/bin:$PATH"
 atelier() { "$root/cli/atelier" "$@"; }
@@ -77,7 +91,9 @@ grep -q "^open -a $ATELIER_HS2_APP" "$FAKE_LOG" || fail 'HS2 not started'
 printf '// mine\nconst atelier = require("%s");\n' "$share" > "$HOME/.config/atelier/init.js"
 FAKE_HS2_RUNNING=true atelier install > "$temporary/reinstall.log"
 [[ $(head -1 "$HOME/.config/atelier/init.js") == '// mine' ]] || fail 'rerunning install rewrote the init file'
-grep -q 'Reload Config' "$temporary/reinstall.log" || fail 'install did not explain reload while HS2 runs'
+grep -q 'Quitting Hammerspoon 2' "$temporary/reinstall.log" || fail 'install did not explain the restart'
+grep -q 'Started Hammerspoon 2 with' "$temporary/reinstall.log" || fail 'install did not restart HS2'
+[[ $(jq -r .configLocation "$FAKE_STORE") == "$HOME/.config/atelier/init.js" && $(jq -r .dockMenuBehaviour "$FAKE_STORE") == menuBar ]] || fail 'app exit overwrote installation settings'
 [[ $(grep -c '^osascript.*make login item' "$FAKE_LOG") == 1 ]] || fail 'login item added twice'
 
 FAKE_HS2_RUNNING=true FAKE_NCPREFS_ASKED=true atelier doctor > "$temporary/doctor.log"
@@ -86,6 +102,32 @@ grep -q 'Everything checked out' "$temporary/doctor.log" || { cat "$temporary/do
 grep -q '^ok .*notification permission' "$temporary/doctor.log" || fail 'doctor missed the notification request'
 ! grep -q 'Accessibility' "$temporary/doctor.log" || fail 'doctor reported an Accessibility status it cannot check'
 [[ $(atelier version) == 1.2.3-test ]] || fail 'version'
+
+# Foundation stores home-relative file URLs with a tilde when HS2 saves them.
+jq '.configLocation = "~/.config/atelier/init.js"' "$FAKE_STORE" > "$FAKE_STORE.tmp"
+mv "$FAKE_STORE.tmp" "$FAKE_STORE"
+FAKE_HS2_RUNNING=true atelier doctor > "$temporary/tilde-doctor.log"
+grep -q 'Everything checked out' "$temporary/tilde-doctor.log" || fail 'doctor rejected the equivalent tilde path'
+
+# A refused or delayed quit must leave preferences and user config untouched.
+cp "$FAKE_STORE" "$temporary/before-quit.json"
+cp "$HOME/.config/atelier/init.js" "$temporary/before-quit.js"
+for behavior in FAKE_QUIT_FAIL FAKE_QUIT_STUCK; do
+  : > "$FAKE_LOG"
+  env "$behavior=true" FAKE_HS2_RUNNING=true "$root/cli/atelier" install > "$temporary/quit-failed.log" 2>&1 && fail 'install accepted a failed quit'
+  cmp -s "$FAKE_STORE" "$temporary/before-quit.json" || fail 'failed quit changed preferences'
+  cmp -s "$HOME/.config/atelier/init.js" "$temporary/before-quit.js" || fail 'failed quit changed config'
+  ! grep -q '^open ' "$FAKE_LOG" || fail 'failed quit launched HS2'
+done
+
+# Verify preference writes before starting the app.
+jq '.dockMenuBehaviour = "both"' "$FAKE_STORE" > "$FAKE_STORE.tmp"
+mv "$FAKE_STORE.tmp" "$FAKE_STORE"
+: > "$FAKE_LOG"
+FAKE_HS2_RUNNING=false FAKE_DROP_SETTING=dockMenuBehaviour expect_failure atelier install
+! grep -q '^open ' "$FAKE_LOG" || fail 'install launched with unsaved settings'
+atelier install > /dev/null
+
 
 # Existing compatible configs may use single quotes and whitespace.
 printf "const atelier = require( '%s' );\natelier.start({});\n" "$share" > "$HOME/.config/atelier/init.js"
