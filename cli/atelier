@@ -38,6 +38,12 @@ login_items() { osascript -e 'tell application "System Events" to get the name o
 login_item_present() { login_items | grep -qx "$app_name"; }
 setting() { defaults read "$bundle" "$1" 2>/dev/null || true; }
 
+init_requires_atelier() {
+  local escaped_share
+  escaped_share=$(printf '%s' "$share" | sed 's/[][\\.^$*+?(){}|]/\\&/g')
+  grep -Eq "require[[:space:]]*\([[:space:]]*[\"']${escaped_share}[\"'][[:space:]]*\)" "$init"
+}
+
 install() {
   [[ -d $app ]] || die "$app_name is not installed; run: brew install --cask $tap/$hs2_cask"
   [[ $(sw_vers -productVersion | cut -d. -f1) -ge 27 ]] || die 'Atelier requires macOS 27 or later.'
@@ -50,6 +56,9 @@ install() {
   if [[ ! -e $init ]]; then
     sed "s|/opt/homebrew/share/atelier|$share|" "$share/init.js" > "$init"
     echo "Seeded $init"
+  elif ! init_requires_atelier; then
+    echo "Warning: Kept existing $init, but could not find a require for $share." >&2
+    echo "Add: const atelier = require(\"$share\"); before atelier.start(...), then choose Reload Config in $app_name." >&2
   fi
   if ! login_item_present; then
     osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$app\", hidden:false}" > /dev/null \
@@ -103,10 +112,10 @@ doctor() {
   fi
   if [[ ! -f $init ]]; then
     fail "$init does not exist; run: atelier install"
-  elif grep -Fq "require(\"$share\")" "$init"; then
+  elif init_requires_atelier; then
     ok "$init requires $share"
   else
-    fail "$init does not require \"$share\"; add: const atelier = require(\"$share\");"
+    fail "$init: could not find a require for $share; add: const atelier = require(\"$share\"); before atelier.start(...)"
   fi
   if login_item_present; then
     ok "$app_name is a login item"
@@ -120,8 +129,6 @@ doctor() {
       fail "atelier-providers signature is invalid; run: brew reinstall --cask $tap/$atelier_cask"
     fi
   fi
-  # macOS keeps permission grants in a database only the app itself can query.
-  unknown "Accessibility for $app_name cannot be read from a shell. Atelier notifies 'Grant Accessibility access' when it is missing; enable $app_name in System Settings > Privacy & Security > Accessibility."
   if defaults read com.apple.ncprefs apps 2>/dev/null | grep -q "\"bundle-id\" = \"$bundle\""; then
     ok "$app_name has asked for notification permission; the answer is in System Settings > Notifications"
   else

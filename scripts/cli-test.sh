@@ -84,16 +84,28 @@ FAKE_HS2_RUNNING=true FAKE_NCPREFS_ASKED=true atelier doctor > "$temporary/docto
 grep -q 'Everything checked out' "$temporary/doctor.log" || { cat "$temporary/doctor.log"; fail 'healthy doctor did not pass'; }
 ! grep -q '^FAIL' "$temporary/doctor.log" || fail 'healthy doctor reported failures'
 grep -q '^ok .*notification permission' "$temporary/doctor.log" || fail 'doctor missed the notification request'
-grep -q 'Accessibility.*cannot be read' "$temporary/doctor.log" || fail 'doctor must say Accessibility is not verifiable'
+! grep -q 'Accessibility' "$temporary/doctor.log" || fail 'doctor reported an Accessibility status it cannot check'
 [[ $(atelier version) == 1.2.3-test ]] || fail 'version'
 
+# Existing compatible configs may use single quotes and whitespace.
+printf "const atelier = require( '%s' );\natelier.start({});\n" "$share" > "$HOME/.config/atelier/init.js"
+FAKE_HS2_RUNNING=true atelier install > "$temporary/compatible.log" 2>&1
+! grep -q 'Warning:' "$temporary/compatible.log" || fail 'compatible init triggered a warning'
+FAKE_HS2_RUNNING=true atelier doctor > "$temporary/compatible-doctor.log"
+
+# A legacy config survives install byte-for-byte, with actionable guidance.
 printf 'atelier.start({});\n' > "$HOME/.config/atelier/init.js"
+cp "$HOME/.config/atelier/init.js" "$temporary/legacy.js"
+FAKE_HS2_RUNNING=true atelier install > "$temporary/conflicting.log" 2>&1
+cmp -s "$HOME/.config/atelier/init.js" "$temporary/legacy.js" || fail 'install changed a conflicting init'
+grep -Fq "Warning: Kept existing $HOME/.config/atelier/init.js" "$temporary/conflicting.log" || fail 'install did not warn about the existing init'
+grep -Fq "const atelier = require(\"$share\"); before atelier.start(...)" "$temporary/conflicting.log" || fail 'install did not explain how to load Atelier'
 : > "$FAKE_LOGIN_ITEMS"
 set +e
 FAKE_HS2_BUILD=133 FAKE_HS2_RUNNING=false atelier doctor > "$temporary/broken.log"; status=$?
 set -e
 [[ $status == 1 ]] || fail 'broken doctor must exit 1'
-for pattern in 'build 133 is not the pinned build 133.1' 'is not running' 'does not require' 'is not a login item'; do
+for pattern in 'build 133 is not the pinned build 133.1' 'is not running' 'could not find a require' 'is not a login item'; do
   grep -q "^FAIL .*$pattern" "$temporary/broken.log" || { cat "$temporary/broken.log"; fail "doctor missed: $pattern"; }
 done
 grep -q 'Fix the FAIL lines' "$temporary/broken.log" || fail 'broken doctor did not tell the user what to do'
