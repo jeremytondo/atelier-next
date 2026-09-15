@@ -1,17 +1,29 @@
 # Builds and releases
 
-Atelier publishes to [jeremytondo/homebrew-atelier](https://github.com/jeremytondo/homebrew-atelier), tapped as `brew tap jeremytondo/atelier`. Stable releases update `atelier` and `hammerspoon2`; rolling dev releases update `atelier@dev` and `hammerspoon2@dev`. A release updates only its own channel. Each HS2 cask installs either an official upstream ZIP or an Atelier-built, signed, notarized snapshot.
+Atelier publishes to [jeremytondo/homebrew-atelier](https://github.com/jeremytondo/homebrew-atelier). Stable releases update `atelier` and `hammerspoon2`; rolling dev releases update `atelier@dev` and `hammerspoon2@dev`. A release updates only its own channel. Each HS2 cask installs either an official upstream ZIP or an Atelier-built, signed, notarized snapshot.
 
 Both channels are manual: `mise run release:dev` or `release:patch|minor|major`, or GitHub's **Run workflow** button. Pushes to `main` run checks only. Each Atelier release carries its package, a manifest recording the exact HS2 download, and checksums. Xcode and mise are needed only for development and builds.
 
 ## Install, update, and switch channels
 
-After `brew tap jeremytondo/atelier`, choose one channel:
+Install the selected pair by full name. Homebrew automatically adds the tap and grants trust to those two casks. A separate `brew tap` is unnecessary and can produce repeated "untrusted tap" / "invalid syntax" errors on some Homebrew versions. See [Homebrew's tap-trust documentation](https://docs.brew.sh/Tap-Trust).
 
-| Channel | Install | Update both packages |
-| --- | --- | --- |
-| Stable | `brew install --cask atelier` | `brew upgrade --cask hammerspoon2 atelier` |
-| Rolling dev | `brew install --cask atelier@dev` | `brew upgrade --cask hammerspoon2@dev atelier@dev` |
+Stable:
+
+```sh
+brew install --cask jeremytondo/atelier/hammerspoon2 jeremytondo/atelier/atelier
+```
+
+Rolling dev:
+
+```sh
+brew install --cask jeremytondo/atelier/hammerspoon2@dev jeremytondo/atelier/atelier@dev
+```
+
+| Channel | Update both packages |
+| --- | --- |
+| Stable | `brew upgrade --cask hammerspoon2 atelier` |
+| Rolling dev | `brew upgrade --cask hammerspoon2@dev atelier@dev` |
 
 Quit Hammerspoon 2 before updating its app and run `brew update` before upgrading. An upgrade stays on the selected channel. The Atelier post-install step gracefully restarts Hammerspoon 2 so preference changes are saved before startup; no manual config reload is needed after installation. Run `atelier doctor` afterwards to check the installed build and setup.
 
@@ -19,10 +31,10 @@ The channels install to the same locations and cannot coexist. To switch from st
 
 ```sh
 brew uninstall --cask atelier hammerspoon2
-brew install --cask atelier@dev
+brew install --cask jeremytondo/atelier/hammerspoon2@dev jeremytondo/atelier/atelier@dev
 ```
 
-For dev to stable, uninstall `atelier@dev hammerspoon2@dev` and install `atelier`. Ordinary uninstall preserves `~/.config/atelier/init.js` and the HS2 settings; do not use `--zap` when switching. Changing between upstream-signed and Atelier-signed HS2 may require granting permissions again; verify this on the target Mac.
+For dev to stable, uninstall `atelier@dev hammerspoon2@dev` and use the stable install command above. Ordinary uninstall preserves `~/.config/atelier/init.js` and the HS2 settings; do not use `--zap` when switching. Changing between upstream-signed and Atelier-signed HS2 may require granting permissions again; verify this on the target Mac.
 
 ## Hammerspoon 2 builds
 

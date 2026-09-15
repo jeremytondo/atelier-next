@@ -168,4 +168,25 @@ grep -q 'brew uninstall --cask atelier@dev hammerspoon2@dev' "$temporary/dev-uni
 expect_failure atelier banana
 rm -rf "$ATELIER_HS2_APP"
 expect_failure atelier install
+# Bootstrap must request the selected pair by full name in one install call.
+# A tap-first flow fails on Homebrew versions that evaluate untrusted casks.
+cat > "$temporary/bin/brew" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_LOG"
+case "$*" in
+  'install --cask jeremytondo/atelier/hammerspoon2 jeremytondo/atelier/atelier'|'install --cask jeremytondo/atelier/hammerspoon2@dev jeremytondo/atelier/atelier@dev')
+    [[ ${FAKE_INSTALL_FAIL:-false} == false ]] ;;
+  *) echo "unexpected bootstrap command: $*" >&2; exit 99 ;;
+esac
+FAKE
+for channel in '' '@dev'; do
+  : > "$FAKE_LOG"
+  ATELIER_CASK="atelier$channel" "$root/install/install.sh" > "$temporary/bootstrap.log"
+  [[ $(cat "$FAKE_LOG") == "install --cask jeremytondo/atelier/hammerspoon2$channel jeremytondo/atelier/atelier$channel" ]] || fail 'bootstrap did not explicitly install the channel pair'
+done
+: > "$FAKE_LOG"
+ATELIER_CASK=unexpected expect_failure "$root/install/install.sh"
+[[ ! -s $FAKE_LOG ]] || fail 'invalid channel reached Homebrew'
+FAKE_INSTALL_FAIL=true "$root/install/install.sh" > "$temporary/bootstrap-failed.log" 2>&1 && fail 'bootstrap ignored Homebrew failure'
+! grep -q "Run 'atelier doctor'" "$temporary/bootstrap-failed.log" || fail 'failed bootstrap printed success guidance'
 echo 'CLI behavior tests passed.'
