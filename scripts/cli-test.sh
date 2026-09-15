@@ -180,7 +180,7 @@ atelier repair > "$temporary/repair.log"
 backup=$(sed -n 's/^Backed up .* to //p' "$temporary/repair.log")
 cmp -s "$backup" "$temporary/legacy.js" || fail 'repair did not preserve the original config'
 grep -Fq "require(\"$share\")" "$HOME/.config/atelier/init.js" || fail 'repair did not restore the import'
-grep -q 'Check the Atelier menu' "$temporary/repair.log" || fail 'repair claimed runtime readiness without checking'
+grep -q 'Run atelier doctor' "$temporary/repair.log" || fail 'repair claimed runtime readiness without checking'
 cp "$HOME/.config/atelier/init.js" "$temporary/repaired.js"
 atelier repair > "$temporary/second-repair.log"
 second_backup=$(sed -n 's/^Backed up .* to //p' "$temporary/second-repair.log")

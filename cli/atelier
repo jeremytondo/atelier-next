@@ -121,8 +121,8 @@ install() {
   if [[ $config_warning == true ]]; then
     echo "Setup needs attention: fix the config above or run atelier repair." >&2
   else
-    echo "Check the Atelier menu for startup status. It shows Running when shortcuts are ready."
-    echo "If waiting for Accessibility, use Open Accessibility Settings in that menu; startup resumes after access is granted."
+    echo "Run atelier doctor to check installation. The Hammerspoon 2 Console shows startup status and errors."
+    echo "If asked for Accessibility, choose Open Settings in the setup dialog; startup resumes after access is granted."
   fi
 }
 
@@ -188,7 +188,7 @@ doctor() {
   else
     unknown "$app_name has not asked for notification permission yet; it asks when the defaults first start"
   fi
-  if [[ $failed == 0 ]]; then echo 'Installation checks passed. Check the Atelier menu for runtime status.'; else echo 'Fix the FAIL lines above, then run atelier doctor again.'; fi
+  if [[ $failed == 0 ]]; then echo 'Installation checks passed. The Hammerspoon 2 Console shows runtime status and errors.'; else echo 'Fix the FAIL lines above, then run atelier doctor again.'; fi
   return "$failed"
 }
 

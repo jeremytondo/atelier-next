@@ -156,7 +156,6 @@ test("Accessibility setup opens settings and resumes without reload or notificat
   assert.equal(state.keys.length, 0);
   assert.equal(state.tasks.length, 0);
   assert.equal(state.notificationRequests, 0);
-  assert.match(state.menus[0]!.title, /Waiting for Accessibility/);
   assert.deepEqual(state.dialogs[0]!.labels, ["Open Settings", "Later"]);
   state.dialogs[0]!.click(0);
   assert.equal(state.accessibilityRequests, 1);
@@ -166,7 +165,6 @@ test("Accessibility setup opens settings and resumes without reload or notificat
   await pending;
   assert.equal(app.status().state, "Running");
   assert.equal(state.dialogs[0]!.closed, true);
-  assert.equal(state.menus[0]!.items[0]!.title, "Running");
   assert.ok(state.keys.some((key) => key.enabled));
   app.stop();
 });
@@ -177,6 +175,8 @@ test("permission waiting can be cancelled without a delayed startup", async () =
   const app = session(hs);
   const pending = app.start(options);
   const rejected = assert.rejects(pending, /stopped/);
+  state.dialogs[0]!.click(1);
+  assert.equal(state.openedURLs.length, 0);
   app.stop();
   await rejected;
   assert.equal(app.status().state, "Paused");
@@ -184,7 +184,6 @@ test("permission waiting can be cancelled without a delayed startup", async () =
   assert.equal(state.dialogs[0]!.closed, true);
   state.trusted = true;
   await app.start();
-  assert.equal(state.menus.length, 1);
   app.stop();
 });
 
@@ -207,7 +206,7 @@ test("host permission alone does not start shortcuts before the provider is trus
   app.stop();
 });
 
-test("startup errors stay visible when notifications are denied and can be retried", async () => {
+test("startup errors remain in status when notifications are denied and can be retried", async () => {
   const {hs, state} = fakeHS();
   hs.notify.show = () => {
     throw new Error("denied");
@@ -215,26 +214,22 @@ test("startup errors stay visible when notifications are denied and can be retri
   state.failBinding = "g";
   const app = session(hs);
   await assert.rejects(app.start(options), /Shortcut unavailable/);
-  assert.match(state.menus[0]!.tooltip, /Shortcut unavailable/);
-  assert.equal(state.menus[0]!.items[0]!.title, "Stopped");
+  assert.match(app.status().error ?? "", /Shortcut unavailable/);
+  assert.equal(app.status().state, "Stopped");
   state.failBinding = null;
-  state.menus[0]!.items.find((item) => item.title === "Retry Startup")!.fn!();
   await app.start();
   assert.equal(app.status().state, "Running");
-  assert.equal(state.menus.length, 1);
   app.stop();
 });
 
-test("settings failure provides instructions in Console and Later has no side effects", async () => {
+test("settings failure provides instructions in Console", async () => {
   const {hs, state} = fakeHS();
   state.trusted = false;
   state.openURLResult = false;
   const app = session(hs);
   const pending = app.start(options);
   const rejected = assert.rejects(pending, /stopped/);
-  state.dialogs[0]!.click(1);
-  assert.equal(state.openedURLs.length, 0);
-  state.menus[0]!.items.find((item) => item.title === "Open Accessibility Settings…")!.fn!();
+  state.dialogs[0]!.click(0);
   assert.equal(state.openedURLs.length, 2);
   assert.equal(state.consoleOpened, true);
   app.stop();
