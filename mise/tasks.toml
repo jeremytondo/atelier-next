@@ -29,6 +29,10 @@ run = "scripts/build-providers.sh --test"
 description = "Test release behavior with disposable history and a fake GitHub"
 run = "scripts/release-test.sh"
 
+["test:hs2"]
+description = "Test HS2 snapshot selection, reuse, and reference updates with isolated fixtures"
+run = "scripts/hammerspoon-test.sh"
+
 ["test:build"]
 description = "Test providers build reuse and cache handling with a fake compiler"
 run = "scripts/build-test.sh"
@@ -82,7 +86,7 @@ description = "Dev only: build stock Hammerspoon 2 at the pin and replace /Appli
 run = "scripts/build-hammerspoon.sh --install"
 
 [casks]
-description = "Preview the generated Homebrew casks in dist/casks: [MANIFEST.json]"
+description = "Preview the selected channel casks in dist/casks: MANIFEST.json"
 run = "scripts/casks.sh dist/casks"
 
 [check]
@@ -103,7 +107,7 @@ description = "Fetch missing read-only reference source into repos/ (gitignored)
 run = "scripts/refs.sh fetch"
 
 ["refs:update"]
-description = "Update reference checkouts from upstream main (requires clean checkouts)"
+description = "Align reference checkouts with hammerspoon2.json (requires clean checkouts)"
 run = "scripts/refs.sh update"
 
 ["refs:status"]
@@ -145,4 +149,4 @@ run = "scripts/publish-release.sh"
 
 ["release:check"]
 description = "Lint scripts, workflows, and TypeScript, and test release, build, and CLI behavior"
-depends = ["lint:scripts", "lint:js", "test:release", "test:build", "test:cli"]
+depends = ["lint:scripts", "lint:js", "test:release", "test:build", "test:cli", "test:hs2"]

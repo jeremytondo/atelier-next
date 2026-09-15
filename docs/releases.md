@@ -1,8 +1,39 @@
 # Builds and releases
 
-Atelier ships as Homebrew casks in the public tap `jeremytondo/homebrew-atelier`, tapped as `brew tap jeremytondo/atelier`: `hammerspoon2` installs upstream's signed and notarized release ZIP at the pinned tag, `atelier` installs the newest stable release and depends on `hammerspoon2`, and `atelier@dev` installs the newest dev release. Each release is a GitHub release carrying `atelier-<version>-macos-arm64.tar.gz`, `manifest.json`, and `checksums.txt`; the release workflow generates the three cask files from the pin and the manifest and pushes them to the tap. Both channels are manual: `mise run release:dev` or `release:patch|minor|major`, or GitHub's **Run workflow** button. Pushes to `main` run checks only. Build automation is shell, macOS tools, and mise; Xcode is required only on build machines.
+Atelier publishes to [jeremytondo/homebrew-atelier](https://github.com/jeremytondo/homebrew-atelier), tapped as `brew tap jeremytondo/atelier`. Stable releases update `atelier` and `hammerspoon2`; rolling dev releases update `atelier@dev` and `hammerspoon2@dev`. A release updates only its own channel. Each HS2 cask installs either an official upstream ZIP or an Atelier-built, signed, notarized snapshot.
 
-The tap only ever references upstream release ZIPs. While `hammerspoon2.json` has `"release": null` because the pin is ahead of the newest upstream release, the workflow still creates the GitHub release but skips the tap; the first published casks wait for the upstream release the pin needs. Development meanwhile uses `mise run hs2:install`.
+Both channels are manual: `mise run release:dev` or `release:patch|minor|major`, or GitHub's **Run workflow** button. Pushes to `main` run checks only. Each Atelier release carries its package, a manifest recording the exact HS2 download, and checksums. Xcode and mise are needed only for development and builds.
+
+## Install, update, and switch channels
+
+After `brew tap jeremytondo/atelier`, choose one channel:
+
+| Channel | Install | Update both packages |
+| --- | --- | --- |
+| Stable | `brew install --cask atelier` | `brew upgrade --cask hammerspoon2 atelier` |
+| Rolling dev | `brew install --cask atelier@dev` | `brew upgrade --cask hammerspoon2@dev atelier@dev` |
+
+Quit Hammerspoon 2 before updating its app and run `brew update` before upgrading. An upgrade stays on the selected channel. Run `atelier doctor` afterwards to check the installed build and setup.
+
+The channels install to the same locations and cannot coexist. To switch from stable to dev, quit Hammerspoon 2, then run:
+
+```sh
+brew uninstall --cask atelier hammerspoon2
+brew install --cask atelier@dev
+```
+
+For dev to stable, uninstall `atelier@dev hammerspoon2@dev` and install `atelier`. Ordinary uninstall preserves `~/.config/atelier/init.js` and the HS2 settings; do not use `--zap` when switching. Changing between upstream-signed and Atelier-signed HS2 may require granting permissions again; verify this on the target Mac.
+
+## Hammerspoon 2 builds
+
+`hammerspoon2.json` remains the source of truth for source revision, source checksum, expected app build number, and optional upstream release tag/ZIP checksum.
+
+- **Official release:** packaging verifies the tag resolves to the pinned commit, downloads and checks the ZIP, and verifies its app build and signature. It never compiles HS2 or silently falls back to a snapshot.
+- **Snapshot:** packaging calculates an identifier from HS2's source, build number, arm64 target, Xcode/SDK, XcodeBuildMCP version, relevant build scripts and entitlements, and signing certificate. It reuses a published matching ZIP after checksum, build, and signature verification. Otherwise it builds unpatched source, signs with Developer ID, notarizes, and staples the app before creating the ZIP.
+
+Snapshots are permanent `hs2-<input-hash>` releases in `atelier-next`. They are excluded from Atelier version selection and rolling-dev cleanup, and never overwritten. Both channels can reuse the same snapshot. Changes to Atelier defaults, API, providers, or version do not rebuild HS2. GitHub errors, incomplete snapshot drafts, and mismatched or corrupt published assets stop the release; inspect the failed snapshot before retrying.
+
+To upgrade HS2, update the pin (including the official release's actual commit, source checksum, and build number when selecting one), run `mise run refs:update` and `mise run check`, then perform the README's manual trial and use the build for a day before publishing. Verify a clean Homebrew install, a dependency upgrade, and both channel switches on a Mac without the source checkout. App launch and real Desktop behavior remain manual checks.
 
 ## Everyday commands
 
@@ -14,7 +45,7 @@ Install Xcode and mise, then run `mise install`. Use `mise tasks` or `scripts/bu
 | `mise run build` | Local package under `dist/` |
 | `mise run dev` | Build and copy the package into the Homebrew prefix; reload Hammerspoon 2 yourself |
 | `mise run hs2:build` / `hs2:install` | Dev only: stock Hammerspoon 2 at the pin, optionally replacing the installed app |
-| `mise run casks dist/casks` | Preview the generated cask files; add a manifest to preview `atelier` or `atelier@dev` |
+| `mise run casks dist/release/manifest.json` | Preview the selected channel pair in `dist/casks/` |
 | `mise run release:dev` | Dispatch a dev release of remote `main` and return its link |
 | `mise run release:dev BRANCH` | Dispatch a dev release of the selected remote branch |
 | `mise run release:patch` | Dispatch the next stable patch release and return its link |
@@ -40,7 +71,7 @@ In this repository's **Settings → Environments**, create a `release` environme
 | Variable | `ATELIER_APP_STORE_CONNECT_KEY_ID` | API key ID |
 | Variable | `ATELIER_APP_STORE_CONNECT_ISSUER_ID` | API issuer ID |
 
-Create the public repository `jeremytondo/homebrew-atelier` with a `Casks/` directory, and add a repository secret `ATELIER_TAP_TOKEN` (a fine-grained token with contents write access to that repository only) so the publish job can push cask files. The token is used only after the GitHub release exists and is never needed for checks.
+The public tap `jeremytondo/homebrew-atelier` needs an initialized `main` branch; the publisher creates `Casks/` on the first release of each channel. Add an `atelier-next` repository secret `ATELIER_TAP_TOKEN` (a fine-grained token with contents write access to that repository only) so the publish job can push cask files. The publisher checks that the token is present before creating releases. It is never needed for local checks.
 
 Prepare and upload the signing credentials as follows. Base64 is an encoding, not encryption; treat the copies as credentials and delete them afterwards.
 
@@ -66,9 +97,9 @@ The workflow imports the certificate into a temporary runner keychain, restores 
 
 `.github/workflows/release.yml` has only a manual `workflow_dispatch` trigger with a `bump` choice of `dev`, `patch`, `minor`, or `major`. It plans the selected commit, checks credentials and the Developer ID identity before expensive work, runs the full gate through `release:verify-package`, and packages the providers binary that gate verified. The binary is signed with Developer ID and a secure timestamp, notarized, and verified; a bare executable cannot carry a stapled ticket, so Gatekeeper checks the notarization online. There is no unsigned fallback for either channel.
 
-Dev and stable runs each serialize the entire workflow across all source branches. Dev checks that its commit is still the head of its selected source branch before compilation, before notarization, and immediately before publication; an obsolete build is skipped. Stable dispatches retain their selected commit even if their source branch advances. Publication uses Ubuntu with a separate mise configuration containing only `gh` and `jq`, verifies the package checksums and manifest, creates the release as a draft, publishes it, pushes the casks, and only then deletes the previous dev release.
+Dev and stable runs share one concurrency group, serializing the entire workflow across all source branches so snapshot publication and tap pushes cannot race. Dev checks that its commit is still the head of its selected source branch before compilation, before notarization, and immediately before publication; an obsolete build is skipped. Stable dispatches retain their selected commit even if their source branch advances. Publication uses Ubuntu with a separate mise configuration containing only `gh` and `jq`, verifies both packages and their manifests, publishes any new permanent HS2 snapshot, creates the Atelier release as a draft, publishes it, pushes the selected channel casks, and only then deletes the previous dev release.
 
-For local distribution validation, create a plan with `mise run release:plan dev BRANCH > release-plan.json`, set `ATELIER_NOTARY_PROFILE` to an existing notarytool keychain profile (or the three `ATELIER_APP_STORE_CONNECT_*` key-path/ID/issuer variables), then run `mise run release:package release-plan.json --output-dir dist/release`. This packages without uploading. `mise run casks dist/casks dist/release/manifest.json` previews the cask files that publication would push.
+For local distribution validation, create a plan with `mise run release:plan dev BRANCH > release-plan.json`, set `ATELIER_NOTARY_PROFILE` to an existing notarytool keychain profile (or the three `ATELIER_APP_STORE_CONNECT_*` key-path/ID/issuer variables), then run `mise run release:package release-plan.json --output-dir dist/release`. This packages without uploading. `mise run casks dist/release/manifest.json` previews the cask files that publication would push.
 
 ## Checks
 

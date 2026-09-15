@@ -12,6 +12,14 @@ share="$prefix/share/atelier"
 config_dir="$HOME/.config/atelier"
 init="$config_dir/init.js"
 tap=jeremytondo/atelier
+channel=$(jq -r .channel "$share/version.json" 2>/dev/null || echo unknown)
+if [[ $channel == unknown || $channel == null || $channel == local ]]; then
+  channel=stable
+  if brew list --cask atelier@dev > /dev/null 2>&1; then channel=dev; fi
+fi
+atelier_cask=atelier
+hs2_cask=hammerspoon2
+if [[ $channel == dev ]]; then atelier_cask=atelier@dev; hs2_cask=hammerspoon2@dev; fi
 
 usage() {
   cat <<'USAGE'
@@ -31,9 +39,9 @@ login_item_present() { login_items | grep -qx "$app_name"; }
 setting() { defaults read "$bundle" "$1" 2>/dev/null || true; }
 
 install() {
-  [[ -d $app ]] || die "$app_name is not installed; run: brew install --cask $tap/hammerspoon2"
+  [[ -d $app ]] || die "$app_name is not installed; run: brew install --cask $tap/$hs2_cask"
   [[ $(sw_vers -productVersion | cut -d. -f1) -ge 27 ]] || die 'Atelier requires macOS 27 or later.'
-  [[ -x $share/atelier-providers ]] || die "$share is incomplete; reinstall with: brew reinstall --cask atelier"
+  [[ -x $share/atelier-providers ]] || die "$share is incomplete; reinstall with: brew reinstall --cask $tap/$atelier_cask"
   defaults write "$bundle" configLocation -string "$init"
   defaults write "$bundle" hasCompletedOnboarding -bool true
   defaults write "$bundle" dockMenuBehaviour -string menuBar
@@ -69,7 +77,7 @@ doctor() {
   if [[ -f $share/hammerspoon2.json && -x $share/atelier-providers ]]; then
     ok "Package installed in $share ($(jq -r .version "$share/version.json" 2>/dev/null || echo unknown version))"
   else
-    fail "Package missing or incomplete in $share; run: brew reinstall --cask atelier"
+    fail "Package missing or incomplete in $share; run: brew reinstall --cask $tap/$atelier_cask"
   fi
   if [[ -d $app ]]; then
     expected=$(jq -r .build "$share/hammerspoon2.json" 2>/dev/null || true)
@@ -77,10 +85,10 @@ doctor() {
     if [[ -n $expected && $actual == "$expected" ]]; then
       ok "$app_name build $actual matches the pinned build"
     else
-      fail "$app_name build ${actual:-unknown} is not the pinned build ${expected:-unknown}; run: brew reinstall --cask $tap/hammerspoon2"
+      fail "$app_name build ${actual:-unknown} is not the pinned build ${expected:-unknown}; run: brew reinstall --cask $tap/$hs2_cask"
     fi
   else
-    fail "$app_name is not installed at $app; run: brew install --cask $tap/hammerspoon2"
+    fail "$app_name is not installed at $app; run: brew install --cask $tap/$hs2_cask"
   fi
   if hs2_running; then ok "$app_name is running"; else fail "$app_name is not running; run: open -a '$app'"; fi
   if [[ $(setting configLocation) == "$init" && $(setting hasCompletedOnboarding) == 1 ]]; then
@@ -109,7 +117,7 @@ doctor() {
     if codesign --verify --strict "$share/atelier-providers" 2>/dev/null; then
       ok "atelier-providers signature is valid ($(codesign -dv "$share/atelier-providers" 2>&1 | sed -n 's/^Authority=//p' | head -1 || true))"
     else
-      fail "atelier-providers signature is invalid; run: brew reinstall --cask atelier"
+      fail "atelier-providers signature is invalid; run: brew reinstall --cask $tap/$atelier_cask"
     fi
   fi
   # macOS keeps permission grants in a database only the app itself can query.
@@ -132,7 +140,7 @@ uninstall() {
     defaults delete "$bundle" "$key" 2>/dev/null || true
   done
   echo "Removed the login item and Atelier's $app_name settings. Kept $init."
-  echo 'Remove the packages with: brew uninstall --cask atelier hammerspoon2'
+  echo "Remove the packages with: brew uninstall --cask $atelier_cask $hs2_cask"
 }
 
 case "${1:-}" in

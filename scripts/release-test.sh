@@ -25,7 +25,7 @@ export ATELIER_RELEASE_REPO_ROOT="$repo"
 [[ $(jq -r .tag "$temporary/patch.json") == v0.0.1 ]] || fail 'initial patch release'
 "$root/scripts/release-plan.sh" dev > "$temporary/first-dev.json"
 [[ $(jq -r .marketing_version "$temporary/first-dev.json") == 0.0.1 ]] || fail 'initial dev version'
-for tag in v1.9.0 v1.10.0 v20.0.0-beta.1 v01.20.0 v1.10.1-dev.20260101000000; do git -C "$repo" tag "$tag"; done
+for tag in v1.9.0 v1.10.0 v20.0.0-beta.1 v01.20.0 v1.10.1-dev.20260101000000 hs2-aaaaaaaaaaaaaaaa; do git -C "$repo" tag "$tag"; done
 "$root/scripts/release-plan.sh" stable patch > "$temporary/patch.json"
 [[ $(jq -r .tag "$temporary/patch.json") == v1.10.1 ]] || fail 'numeric SemVer sorting or prerelease filtering'
 "$root/scripts/release-plan.sh" stable major > "$temporary/major.json"
@@ -88,7 +88,16 @@ if [[ $1 == api ]]; then
     *) echo "Unexpected fake API call: $*" >&2; exit 99 ;;
   esac
 elif [[ $1 == release ]]; then
-  case "$2" in create|edit|upload|delete) ;; view) echo https://example.invalid/release ;; *) exit 99 ;; esac
+  case "$2" in
+    download)
+      while [[ $# -gt 0 ]]; do
+        if [[ $1 == --dir ]]; then destination=$2; shift; fi
+        shift
+      done
+      mkdir -p "$destination"
+      cp "$FAKE_HS2_ASSETS"/* "$destination/"
+      ;;
+    create|edit|upload|delete) ;; view) echo https://example.invalid/release ;; *) exit 99 ;; esac
 elif [[ $1 == workflow && $2 == run ]]; then
   :
 else
@@ -114,13 +123,8 @@ expect_failure "$root/scripts/release-dispatch.sh" dev ''
 expect_failure "$root/scripts/release-dispatch.sh" banana
 unset FAKE_ENCODED_BRANCH
 
-# A second checkout whose pin has an upstream release, so casks get pushed to a local tap.
-released="$temporary/released checkout"
-mkdir -p "$released/scripts"
-cp "$root"/scripts/*.sh "$released/scripts/"
-jq '.release = {tag: "0.0.13", sha256: ("a" * 64)}' "$root/hammerspoon2.json" > "$released/hammerspoon2.json"
 tap="$temporary/tap.git"
-git init -q --bare "$tap"
+git init -q --bare --initial-branch=main "$tap"
 git clone -q "$tap" "$temporary/tap-seed" 2> /dev/null
 git -C "$temporary/tap-seed" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m 'Tap'
 git -C "$temporary/tap-seed" push -q origin HEAD
@@ -128,18 +132,34 @@ export ATELIER_TAP_REMOTE="$tap"
 
 asset_dir="$temporary/assets"
 make_assets() {
-  rm -f "$asset_dir"/*
-  local version asset
+  rm -rf "$asset_dir"
+  mkdir -p "$asset_dir/hammerspoon2"
+  local version asset kind=${2:-upstream}
   version=$(jq -r .version "$temporary/$1.json")
   asset="atelier-$version-macos-arm64.tar.gz"
   printf 'packaged files\n' > "$asset_dir/$asset"
-  jq --arg asset "$asset" --arg sha256 "$(shasum -a 256 "$asset_dir/$asset" | awk '{print $1}')" \
-    '. + {architecture: "arm64", minimum_macos: "27.0", signing: "developer-id", notarized: true, asset: $asset, sha256: $sha256}' \
+  printf 'HS2 ZIP fixture\n' > "$asset_dir/hammerspoon2/Hammerspoon.2.zip"
+  jq --arg sha "$(shasum -a 256 "$asset_dir/hammerspoon2/Hammerspoon.2.zip" | awk '{print $1}')" --arg kind "$kind" '
+    if $kind == "upstream" then .release = {tag: "0.0.13", sha256: $sha} else .release = null end
+  ' "$root/hammerspoon2.json" > "$temporary/pin.json"
+  jq -n --slurpfile pin "$temporary/pin.json" --arg kind "$kind" \
+    --arg sha "$(shasum -a 256 "$asset_dir/hammerspoon2/Hammerspoon.2.zip" | awk '{print $1}')" '
+    {schema: 1, kind: $kind, pin: $pin[0], sha256: $sha} +
+    (if $kind == "upstream" then
+      {tag: "0.0.13", version: "0.0.13", url: "https://github.com/cmsj/Hammerspoon2/releases/download/0.0.13/Hammerspoon.2.zip"}
+    else
+      ("a" * 64) as $inputs | {inputs: $inputs, tag: ("hs2-" + $inputs),
+        version: ($pin[0].build + "," + $inputs), architecture: "arm64", notarized: true,
+        url: ("https://github.com/jeremytondo/atelier-next/releases/download/hs2-" + $inputs + "/Hammerspoon.2.zip")}
+    end)' > "$asset_dir/hammerspoon2/manifest.json"
+  jq --slurpfile pin "$temporary/pin.json" --slurpfile hs2 "$asset_dir/hammerspoon2/manifest.json" \
+    --arg asset "$asset" --arg sha256 "$(shasum -a 256 "$asset_dir/$asset" | awk '{print $1}')" \
+    '. + {architecture: "arm64", minimum_macos: "27.0", signing: "developer-id", notarized: true, hammerspoon2: $pin[0], hammerspoon2_artifact: $hs2[0], asset: $asset, sha256: $sha256}' \
     "$temporary/$1.json" > "$asset_dir/manifest.json"
   (cd "$asset_dir" && shasum -a 256 "$asset" manifest.json > checksums.txt)
   : > "$FAKE_GH_LOG"
 }
-publish() { "${PUBLISH_ROOT:-$root}/scripts/publish-release.sh" "$asset_dir" > "$temporary/publish.log" 2>&1; }
+publish() { "$root/scripts/publish-release.sh" "$asset_dir" > "$temporary/publish.log" 2>&1; }
 tap_files() { git -C "$temporary/tap-seed" pull -q --ff-only origin HEAD 2> /dev/null && find "$temporary/tap-seed/Casks" -name '*.rb' -exec basename {} \; 2> /dev/null | sort | paste -sd' ' -; }
 
 make_assets stable
@@ -167,34 +187,38 @@ GITHUB_OUTPUT="$temporary/stale-output" FAKE_REMOTE_COMMIT=000000000000000000000
   "$root/scripts/ci-release.sh" "$temporary/dev.json"
 [[ $(cat "$temporary/stale-output") == packaged=false ]] || fail 'obsolete release was not skipped before credentials/builds'
 
-make_assets dev
+make_assets dev snapshot
 FAKE_RELEASES='[{"id":1,"tag_name":"v1.10.1-dev.20260101000000","prerelease":true,"draft":false},{"id":2,"tag_name":"v1.10.0","prerelease":false,"draft":false},{"id":3,"tag_name":"v1.10.1-dev.20260102000000","prerelease":true,"draft":true}]' publish
 grep -Eq "^release create v$dev_version .*--prerelease --latest=false --draft$" "$FAKE_GH_LOG" || fail 'new dev release must be a versioned prerelease'
 grep -Eq "^release edit v$dev_version --draft=false --prerelease --latest=false$" "$FAKE_GH_LOG" || fail 'dev publication changed latest stable'
 grep -Fxq 'release delete v1.10.1-dev.20260101000000 --yes --cleanup-tag' "$FAKE_GH_LOG" || fail 'previous dev release was not deleted'
 ! grep -Eq '^release delete (v1.10.0|v1.10.1-dev.20260102000000)' "$FAKE_GH_LOG" || fail 'stable or draft releases were deleted'
-grep -q 'Casks not pushed' "$temporary/publish.log" || fail 'a pin without an upstream release must skip the tap'
-[[ -z $(tap_files) ]] || fail 'casks were pushed without an upstream release'
+[[ $(tap_files) == 'atelier@dev.rb hammerspoon2@dev.rb' ]] || fail 'snapshot casks were not published'
+grep -q '^release create hs2-' "$FAKE_GH_LOG" || fail 'HS2 snapshot was not published'
+! grep -q '^release delete hs2-' "$FAKE_GH_LOG" || fail 'HS2 snapshot was deleted'
 make_assets dev
 FAKE_RELEASES="[{\"id\":1,\"tag_name\":\"v$dev_version\",\"prerelease\":true,\"draft\":false}]" expect_failure publish
 ! grep -Eq '^release ' "$FAKE_GH_LOG" || fail 'an existing dev tag was overwritten'
 
 make_assets dev
-PUBLISH_ROOT=$released publish
-[[ $(tap_files) == 'atelier@dev.rb hammerspoon2.rb' ]] || fail "dev casks not pushed: $(tap_files)"
+publish
+[[ $(tap_files) == 'atelier@dev.rb hammerspoon2@dev.rb' ]] || fail "dev casks not pushed: $(tap_files)"
 grep -q "version \"$dev_version\"" "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'dev cask version'
 grep -q "sha256 \"$(jq -r .sha256 "$asset_dir/manifest.json")\"" "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'dev cask checksum'
-grep -q 'version "0.0.13"' "$temporary/tap-seed/Casks/hammerspoon2.rb" || fail 'hammerspoon2 cask version'
-grep -q 'depends_on cask: "jeremytondo/atelier/hammerspoon2"' "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'dev cask must depend on hammerspoon2'
+grep -q 'version "0.0.13"' "$temporary/tap-seed/Casks/hammerspoon2@dev.rb" || fail 'hammerspoon2 cask version'
+grep -q 'depends_on cask: "jeremytondo/atelier/hammerspoon2@dev"' "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'dev cask must depend on hammerspoon2'
+grep -q 'depends_on formula: "jq"' "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'clean installs need jq for the atelier command'
+dev_hs2_checksum=$(shasum -a 256 "$temporary/tap-seed/Casks/hammerspoon2@dev.rb")
 make_assets stable
-PUBLISH_ROOT=$released publish
-[[ $(tap_files) == 'atelier.rb atelier@dev.rb hammerspoon2.rb' ]] || fail "stable cask not pushed: $(tap_files)"
+publish
+[[ $(tap_files) == 'atelier.rb atelier@dev.rb hammerspoon2.rb hammerspoon2@dev.rb' ]] || fail "stable cask not pushed: $(tap_files)"
 grep -q 'version "1.11.0"' "$temporary/tap-seed/Casks/atelier.rb" || fail 'stable cask version'
+[[ $(shasum -a 256 "$temporary/tap-seed/Casks/hammerspoon2@dev.rb") == "$dev_hs2_checksum" ]] || fail 'stable publication changed the dev dependency'
 grep -Eq '^release create v1.11.0 .*--draft$' "$FAKE_GH_LOG" || fail 'stable release was not staged as a draft'
 grep -Eq '^release edit v1.11.0 --draft=false --latest$' "$FAKE_GH_LOG" || fail 'stable release did not become latest'
 ! grep -Eq -- '--clobber|release delete|--prerelease' "$FAKE_GH_LOG" || fail 'stable publication touched other releases'
 make_assets stable
-ATELIER_TAP_REMOTE='' PUBLISH_ROOT=$released expect_failure publish
+ATELIER_TAP_REMOTE='' expect_failure publish
 ! grep -Eq '^release ' "$FAKE_GH_LOG" || fail 'a missing tap token must fail before any release mutation'
 
 export FAKE_ENCODED_BRANCH='feature%2FATE-37%23candidate'
@@ -223,6 +247,20 @@ FAKE_RELEASES='[{"id":1,"tag_name":"v1.11.0"}]' expect_failure publish
 make_assets stable
 FAKE_TAGS='[{"ref":"refs/tags/v1.11.0"}]' expect_failure publish
 ! grep -Eq '^release ' "$FAKE_GH_LOG" || fail 'existing stable tag was reused'
+
+# Reusing a completed snapshot never overwrites its ZIP, and corrupt reuse fails.
+make_assets dev snapshot
+export FAKE_HS2_ASSETS="$temporary/published-hs2"
+cp -R "$asset_dir/hammerspoon2" "$FAKE_HS2_ASSETS"
+hs2_tag=$(jq -r .tag "$FAKE_HS2_ASSETS/manifest.json")
+export FAKE_RELEASES="[{\"id\":4,\"tag_name\":\"$hs2_tag\",\"prerelease\":true,\"draft\":false}]"
+publish
+! grep -Eq '^release (create|edit|delete) hs2-' "$FAKE_GH_LOG" || fail 'existing snapshot was mutated'
+printf 'corruption\n' >> "$FAKE_HS2_ASSETS/Hammerspoon.2.zip"
+: > "$FAKE_GH_LOG"
+expect_failure publish
+! grep -Eq '^release (create|edit|delete)' "$FAKE_GH_LOG" || fail 'corrupt snapshot reached publication'
+export FAKE_RELEASES='[]'
 
 # Even a failing package command must restore keychains and delete imported keys.
 mkdir -p "$temporary/runner with spaces"

@@ -87,21 +87,6 @@ else
     END { exit !found }
   ' "$temporary/identities" || die 'Distribution requires a valid Developer ID Application identity.'
   timestamp=--timestamp
-  # XcodeBuildMCP handles builds/tests. Notarization has no MCP command;
-  # invoke the notary tool from the selected Xcode directly.
-  developer_dir=${DEVELOPER_DIR:-$(/usr/bin/xcode-select -p)}
-  notarytool="$developer_dir/usr/bin/notarytool"
-  [[ -x $notarytool ]] || die 'Select a full Xcode installation for notarization.'
-  notary_args=()
-  if [[ -n ${ATELIER_NOTARY_PROFILE:-} ]]; then
-    notary_args=(--keychain-profile "$ATELIER_NOTARY_PROFILE")
-  else
-    for name in ATELIER_APP_STORE_CONNECT_KEY_PATH ATELIER_APP_STORE_CONNECT_KEY_ID ATELIER_APP_STORE_CONNECT_ISSUER_ID; do
-      [[ -n ${!name:-} ]] || die "missing notarization credential: $name"
-    done
-    [[ -f $ATELIER_APP_STORE_CONNECT_KEY_PATH ]] || die 'App Store Connect API key file does not exist.'
-    notary_args=(--key "$ATELIER_APP_STORE_CONNECT_KEY_PATH" --key-id "$ATELIER_APP_STORE_CONNECT_KEY_ID" --issuer "$ATELIER_APP_STORE_CONNECT_ISSUER_ID")
-  fi
 fi
 
 if [[ $skip_build == false ]]; then
@@ -115,6 +100,12 @@ mkdir "$temporary/native"
   sh "$root" "$temporary"
 providers="$temporary/native/atelier-providers"
 [[ $(lipo -archs "$providers") == arm64 ]] || die 'expected an arm64 providers executable'
+
+if [[ $channel != local ]]; then
+  if [[ ${GITHUB_ACTIONS:-} == true ]]; then "$root/scripts/release-current.sh" "$plan"; fi
+  export ATELIER_SIGN_IDENTITY="$identity"
+  ATELIER_NOTARIZATION_DIR="$output/notarization" "$root/scripts/resolve-hammerspoon.sh" "$output/hammerspoon2"
+fi
 
 stage="$temporary/package"
 share="$stage/share/atelier"
@@ -139,18 +130,7 @@ codesign --verify --strict --verbose=2 "$share/atelier-providers"
 asset="atelier-$version-macos-arm64.tar.gz"
 if [[ $channel != local ]]; then
   if [[ ${GITHUB_ACTIONS:-} == true ]]; then "$root/scripts/release-current.sh" "$plan"; fi
-  ditto -c -k --keepParent "$share/atelier-providers" "$temporary/notarization.zip"
-  mkdir -p "$output/notarization"
-  if ! "$notarytool" submit "$temporary/notarization.zip" "${notary_args[@]}" \
-      --wait --timeout 20m --output-format json > "$output/notarization/submission.json"; then
-    cat "$output/notarization/submission.json" >&2
-    die 'Notarization failed or timed out; no release package was produced.'
-  fi
-  if [[ $(jq -r .status "$output/notarization/submission.json") != Accepted ]]; then
-    submission_id=$(jq -er .id "$output/notarization/submission.json")
-    "$notarytool" log "$submission_id" "${notary_args[@]}" "$output/notarization/log.json"
-    die "Notarization was rejected; see $output/notarization/log.json"
-  fi
+  "$root/scripts/notarize.sh" "$share/atelier-providers" "$output/notarization/providers"
 fi
 # Nothing replaces the last package until signing and notarization have passed.
 COPYFILE_DISABLE=1 tar -czf "$temporary/$asset" -C "$stage" bin share
@@ -159,9 +139,10 @@ ditto "$stage" "$output/package"
 mv "$temporary/$asset" "$output/$asset"
 if [[ $channel != local ]]; then
   sha256=$(shasum -a 256 "$output/$asset" | awk '{print $1}')
-  jq --slurpfile hs2 "$root/hammerspoon2.json" --arg asset "$asset" --arg sha256 "$sha256" \
+  jq --slurpfile hs2 "$root/hammerspoon2.json" --slurpfile artifact "$output/hammerspoon2/manifest.json" \
+    --arg asset "$asset" --arg sha256 "$sha256" \
     '. + {architecture: "arm64", minimum_macos: "27.0", signing: "developer-id", notarized: true,
-    hammerspoon2: $hs2[0], asset: $asset, sha256: $sha256}' "$plan" > "$output/manifest.json"
+    hammerspoon2: $hs2[0], hammerspoon2_artifact: $artifact[0], asset: $asset, sha256: $sha256}' "$plan" > "$output/manifest.json"
   (cd "$output" && shasum -a 256 "$asset" manifest.json > checksums.txt)
 fi
 

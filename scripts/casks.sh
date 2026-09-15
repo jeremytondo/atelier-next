@@ -1,30 +1,48 @@
 #!/usr/bin/env bash
-# Generate the Homebrew casks the tap publishes: hammerspoon2 from the pin's
-# upstream release, and atelier or atelier@dev from a release manifest. The
-# tap only ever references upstream's signed release ZIPs, so hammerspoon2 is
-# skipped while the pin has no release.
+# Generate only the selected channel pair from verified release metadata.
+# Stable and dev may share a ZIP while keeping independent dependency casks.
 # shellcheck disable=SC2154  # manifest fields are defined by load_release_plan
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-[[ $# -ge 1 && $# -le 2 ]] || die 'usage: mise run casks OUTPUT_DIR [MANIFEST.json]'
+[[ $# == 2 ]] || die 'usage: casks.sh OUTPUT_DIR MANIFEST.json'
 output=$1
+manifest=$2
+load_release_plan "$manifest"
 mkdir -p "$output"
-pin="$root/hammerspoon2.json"
-
-if [[ $(jq -r '.release' "$pin") != null ]]; then
-  hs2_tag=$(jq -er .release.tag "$pin")
-  hs2_sha256=$(jq -er .release.sha256 "$pin")
-  cat > "$output/hammerspoon2.rb" <<CASK
-cask "hammerspoon2" do
-  version "$hs2_tag"
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-casks.XXXXXX")
+trap 'rm -rf "$temporary"' EXIT
+jq -e .hammerspoon2 "$manifest" > "$temporary/pin.json"
+jq -e .hammerspoon2_artifact "$manifest" > "$temporary/artifact.json"
+"$root/scripts/validate-hammerspoon.sh" "$temporary/pin.json" "$temporary/artifact.json"
+hs2_version=$(jq -r .version "$temporary/artifact.json")
+hs2_sha256=$(jq -r .sha256 "$temporary/artifact.json")
+hs2_url=$(jq -r .url "$temporary/artifact.json")
+hs2_kind=$(jq -r .kind "$temporary/artifact.json")
+asset=$(jq -er .asset "$manifest")
+sha256=$(jq -er .sha256 "$manifest")
+[[ $asset == "atelier-$version-macos-arm64.tar.gz" && $tag == "v$version" ]] || die 'manifest asset and tag must follow the version'
+if [[ $channel == dev ]]; then
+  token='atelier@dev'; other=atelier
+  hs2_token='hammerspoon2@dev'; hs2_other=hammerspoon2
+  note='This cask follows the newest dev release; each dev release replaces the previous one.'
+else
+  token=atelier; other='atelier@dev'
+  hs2_token=hammerspoon2; hs2_other='hammerspoon2@dev'
+  note='Stable releases keep their versioned downloads.'
+fi
+cat > "$output/$hs2_token.rb" <<CASK
+cask "$hs2_token" do
+  version "$hs2_version"
   sha256 "$hs2_sha256"
 
-  url "https://github.com/cmsj/Hammerspoon2/releases/download/#{version}/Hammerspoon.2.zip"
+  url "$hs2_url"
   name "Hammerspoon 2"
-  desc "Automation with a JavaScript engine, at the release Atelier is tested with"
+  desc "Hammerspoon 2 tested with Atelier ($hs2_kind)"
   homepage "https://github.com/cmsj/Hammerspoon2"
 
+  conflicts_with cask: "jeremytondo/atelier/$hs2_other"
+  depends_on arch: :arm64
   depends_on macos: :tahoe
 
   app "Hammerspoon 2.app"
@@ -34,24 +52,7 @@ cask "hammerspoon2" do
   zap trash: "~/Library/Preferences/net.tenshu.Hammerspoon-2.plist"
 end
 CASK
-  echo "$output/hammerspoon2.rb"
-else
-  echo 'hammerspoon2 cask skipped: the pin has no upstream release yet.' >&2
-fi
-
-[[ $# -eq 2 ]] || exit 0
-manifest=$2
-load_release_plan "$manifest"
-asset=$(jq -er .asset "$manifest")
-sha256=$(jq -er .sha256 "$manifest")
-[[ $asset == "atelier-$version-macos-arm64.tar.gz" && $tag == "v$version" ]] || die 'manifest asset and tag must follow the version'
-if [[ $channel == dev ]]; then
-  token='atelier@dev'; other=atelier
-  note='This cask follows the newest dev release; each dev release replaces the previous one.'
-else
-  token=atelier; other='atelier@dev'
-  note='Stable releases keep their versioned downloads.'
-fi
+echo "$output/$hs2_token.rb"
 cat > "$output/$token.rb" <<CASK
 cask "$token" do
   version "$version"
@@ -63,7 +64,8 @@ cask "$token" do
   homepage "https://github.com/$repository"
 
   conflicts_with cask: "jeremytondo/atelier/$other"
-  depends_on cask: "jeremytondo/atelier/hammerspoon2"
+  depends_on cask: "jeremytondo/atelier/$hs2_token"
+  depends_on formula: "jq"
   depends_on arch: :arm64
   depends_on macos: :golden_gate
 

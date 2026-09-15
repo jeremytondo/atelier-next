@@ -30,6 +30,10 @@ HS2 module it stands in for, and delete it when upstream gains the ability.
 Add native mechanisms only for demonstrated gaps, and preserve user-owned
 configuration across updates.
 
+Homebrew may install an official upstream HS2 release or an unpatched snapshot
+built, Developer ID signed, and notarized by Atelier. Snapshots are permanent
+release assets, shared across channels when their build inputs match.
+
 Long-term maintainability is a core priority. Prefer shared, plainly named
 logic over duplication, and change an existing design when that produces a
 simpler system. Code should be easy to understand, work with, and test.
@@ -64,7 +68,7 @@ files, or research writeups to the checkout.
 
 Reference checkouts under `repos/` are read-only research material. Use
 `mise run refs` to fetch missing checkouts and `mise run refs:update` to
-refresh them from upstream. Never edit their source, import from them, or
+align them with `hammerspoon2.json`. Never edit their source, import from them, or
 copy them wholesale into the product. They must remain gitignored and
 independent of app builds and releases.
 

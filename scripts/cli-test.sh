@@ -105,6 +105,12 @@ atelier uninstall > "$temporary/uninstall.log"
 [[ -f $HOME/.config/atelier/init.js ]] || fail 'uninstall removed the init file'
 grep -q 'brew uninstall --cask atelier hammerspoon2' "$temporary/uninstall.log" || fail 'uninstall did not point at brew'
 atelier uninstall > /dev/null
+printf '{"version":"1.2.4-dev.20260915000000","channel":"dev"}\n' > "$share/version.json"
+FAKE_HS2_BUILD=133 atelier doctor > "$temporary/dev-doctor.log" && fail 'mismatched dev build passed doctor'
+grep -q 'brew reinstall --cask jeremytondo/atelier/hammerspoon2@dev' "$temporary/dev-doctor.log" || fail 'dev doctor recommended stable HS2'
+atelier uninstall > "$temporary/dev-uninstall.log"
+grep -q 'brew uninstall --cask atelier@dev hammerspoon2@dev' "$temporary/dev-uninstall.log" || fail 'dev uninstall recommended stable packages'
+[[ -f $HOME/.config/atelier/init.js ]] || fail 'dev uninstall removed the init file'
 expect_failure atelier banana
 rm -rf "$ATELIER_HS2_APP"
 expect_failure atelier install

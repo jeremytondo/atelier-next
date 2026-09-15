@@ -8,7 +8,7 @@ Atelier is a customizable macOS workspace built on [Hammerspoon 2](https://githu
 curl -fsSL https://raw.githubusercontent.com/jeremytondo/atelier-next/main/install/install.sh | bash
 ```
 
-That taps `jeremytondo/atelier` and installs the `atelier` cask, which pulls the pinned `hammerspoon2` cask and runs `atelier install`. The `atelier` command points Hammerspoon 2 at `~/.config/atelier/init.js`, seeds that file once, adds Hammerspoon 2 to Login Items, and starts it. Grant Accessibility access to Hammerspoon 2 when asked. `atelier doctor` checks an installation and prints what to fix; `atelier uninstall` undoes the settings and login item and leaves the init file. `brew install --cask atelier@dev` follows the newest dev release instead. The casks are published once Hammerspoon 2 ships the release the pin needs; see [releases](docs/releases.md).
+That taps `jeremytondo/atelier` and installs the `atelier` cask, which pulls the pinned `hammerspoon2` cask and runs `atelier install`. The `atelier` command points Hammerspoon 2 at `~/.config/atelier/init.js`, seeds that file once, adds Hammerspoon 2 to Login Items, and starts it. Grant Accessibility access to Hammerspoon 2 when asked. `atelier doctor` checks an installation and prints what to fix; `atelier uninstall` undoes the settings and login item and leaves the init file. `brew install --cask atelier@dev` installs the rolling dev channel with its own `hammerspoon2@dev` dependency. Each channel becomes available with its first published release. See [releases](docs/releases.md) for updates and switching channels.
 
 Your config is ordinary HS2 JavaScript with the full `hs` API. It requires the installed package and calls `atelier.start({...})`; the [configuration reference](docs/configuration.md) covers the options, default shortcuts, Groups, Quick Apps, and the `atelier` API. Hammerspoon 2's own menu bar item provides Reload Config and the Console.
 
@@ -18,7 +18,7 @@ Your config is ordinary HS2 JavaScript with the full `hs` API. It requires the i
 - `defaults/`: the features `atelier.start` gives you, written against `hs.*` and the API.
 - `providers/`: the Swift package for `atelier-providers`, one binary hosting a module per missing HS2 capability.
 - `cli/`: the `atelier` command. `install/`: the one-line installer and the seeded init file. `tests/`: TypeScript tests run by Node.
-- `hammerspoon2.json`: the Hammerspoon 2 pin. Tests, the type fetch, the runtime build check, the dev-only HS2 build, and cask generation read it.
+- `hammerspoon2.json`: the Hammerspoon 2 pin. Tests, the type fetch, the runtime build check, HS2 builds, and release packaging read it.
 
 ## Build and check
 
@@ -26,9 +26,22 @@ Install Xcode and mise, then run `mise install`. `mise tasks` lists the entry po
 
 ## Hammerspoon 2 dependency
 
-`hammerspoon2.json` names the upstream revision and source checksum, the `CFBundleVersion` build number Atelier is tested against, and, once one exists, the upstream release tag and ZIP checksum the `hammerspoon2` cask installs. Only the build number identifies an HS2 release: the 0.0.12 ZIP reports version 1.2 and build 133. While the pin is ahead of the newest upstream release, `release` stays `null`, the casks are not published, and development runs against `mise run hs2:install`, a stock build of the pinned revision stamped with the pinned build number. That interim build number is upstream's last release number plus a suffix, so it can never be mistaken for a real release. Upgrading HS2 means changing the pin, running the checks, using it for a day, and releasing. The defaults warn by notification and Console line when the running build differs from the pin, and keep running.
+Atelier runs on an unpatched Hammerspoon 2 installation. `hammerspoon2.json` selects the exact source commit and records its source checksum and the app build number Atelier expects at startup.
 
-`mise run refs` creates a shallow checkout of Hammerspoon 2 under `repos/hammerspoon2` for research only; it is gitignored and never a build input. `mise run refs:update` fast-forwards it to upstream `main`, refusing local edits; `mise run refs:status` shows its state.
+When `release` names an upstream release, Homebrew downloads that official ZIP. When `release` is `null`, release CI publishes or reuses an Atelier-built snapshot of the selected source. Snapshots are signed and notarized; installing them requires no source checkout, mise, or Xcode.
+
+For local development, quit Hammerspoon 2 and run `mise run hs2:install` to build the selected source and replace the installed app, saving a backup. A different running HS2 build triggers a Console warning and an attempted notification; Atelier continues running.
+
+See [releases](docs/releases.md#hammerspoon-2-builds) for snapshot reuse and dependency upgrades.
+
+## Reference source
+
+`mise run refs` downloads a research checkout into `repos/hammerspoon2` at the selected commit, leaving an existing checkout unchanged. This directory is gitignored and never used by builds.
+
+- `mise run refs:update` aligns it with `hammerspoon2.json`, refusing local edits or commits.
+- `mise run refs:status` shows its revision and whether it matches the pin.
+
+Fetching newer upstream code for research does not change Atelier's dependency.
 
 ## Manual trial
 

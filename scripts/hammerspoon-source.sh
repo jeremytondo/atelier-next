@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The pinned Hammerspoon 2 source archive, downloaded once and verified on every
 # use; prints its path. The type declarations and the dev-only HS2 build read
-# it. Releases never do: they reference upstream's signed release ZIP.
+# it. Snapshot releases build the same unpatched source.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
