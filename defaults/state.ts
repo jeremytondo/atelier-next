@@ -97,12 +97,14 @@ export class StateFile {
 
   read(): ReadResult {
     const fs = this.hs.fs;
+    // The file is the truth from here: an unchanged restore must not rewrite it,
+    // and a missing or broken one must be written on the next save.
+    this.written = null;
     if (!fs.isFile(this.path)) return {status: "missing"};
     const text = fs.read(this.path, 0, 0);
     if (text === null) return {status: "unreadable"};
     const groups = parse(text);
     if (!groups) return {status: "malformed"};
-    // Treat the file as current so an unchanged restore does not rewrite it.
     this.written = this.serialize(groups);
     return {status: "ok", groups};
   }

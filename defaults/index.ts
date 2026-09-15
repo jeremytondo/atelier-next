@@ -155,17 +155,19 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     restored = null;
     const read = file.read();
     if (read.status === "missing") {
+      groups.entries.clear();
       console.log("Atelier: No saved Groups at " + file.path);
     } else if (read.status !== "ok") {
+      groups.entries.clear();
       console.log("Atelier: Ignoring " + read.status + " Groups state at " + file.path);
     } else {
       restored = groups.restore(read.groups, first);
-      syncObservers();
-      redraw();
       console.log(
         "Atelier: Restored " + restored.restored + " Groups, dropped " + restored.dropped,
       );
     }
+    syncObservers();
+    redraw();
     persisting = true;
     persist();
   }

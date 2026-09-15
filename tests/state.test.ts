@@ -283,3 +283,57 @@ test("disabling Groups leaves the state file alone", async () => {
   app.stop();
   assert.equal(state.files[path], text);
 });
+
+test("a restored Group needs one saved window alive before it is trusted", () => {
+  // Display and Space IDs can repeat after a restart; identities must prove the match.
+  const store = new Groups();
+  const result = store.restore(
+    [saved("1", [10, 100], [11, 101]), saved("2", [20, 200])],
+    snapshot("1", [window(300, 30, "1")]),
+  );
+  assert.deepEqual(result, {restored: 1, dropped: 1});
+  assert.equal(store.entries.has("D:1"), false);
+  assert.equal(store.entries.get("D:2")!.unverified, true);
+  store.reconcile(snapshot("2", [window(200, 20, "2"), window(201, 21, "2")]));
+  const group = store.entries.get("D:2")!;
+  assert.equal(group.unverified, false);
+  assert.deepEqual(
+    group.members.map((m) => m.id),
+    [200, 201],
+  );
+  // Once seen alive, a Group behaves as before and survives losing every member.
+  store.reconcile(snapshot("2", []));
+  assert.equal(store.entries.get("D:2")!.members.length, 0);
+  const waiting = new Groups();
+  waiting.restore([saved("2", [20, 200])], snapshot("1", []));
+  waiting.reconcile(snapshot("2", [window(300, 30, "2")]));
+  assert.equal(waiting.entries.has("D:2"), false);
+  assert.equal(
+    new Groups().restore([saved("1")], snapshot("1", [window(300, 30, "1")])).restored,
+    0,
+  );
+});
+
+test("a resumed session takes the file as truth, even when it is missing or broken", async () => {
+  const {hs, state} = fakeHS();
+  fakeApp(hs, state, [1, 2]);
+  state.files[path] = fileText([{...saved("1", [42, 1, "fixture"]), display: "Main"}]);
+  const app = session(hs);
+  await app.start(options);
+  assert.equal(app.status().groups, 1);
+  app.stop();
+  delete state.files[path];
+  await app.start();
+  assert.equal(app.status().groups, 0);
+  app.stop();
+  assert.deepEqual(parse(state.files[path]!), []);
+  await app.start();
+  await app.group();
+  app.stop();
+  assert.equal(parse(state.files[path]!)!.length, 1);
+  state.files[path] = "{";
+  await app.start();
+  assert.equal(app.status().groups, 0);
+  app.stop();
+  assert.deepEqual(parse(state.files[path]!), []);
+});
