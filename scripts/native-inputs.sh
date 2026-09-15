@@ -9,8 +9,8 @@ common=(scripts/tree-digest.sh scripts/build-state.sh scripts/with-lock.sh scrip
 integration=(App/Hammerspoon/upstream.json App/Hammerspoon/*.patch App/Hammerspoon/Shell App/Hammerspoon/ShellCore App/Hammerspoon/IPC App/Hammerspoon/Atelier.xcscheme)
 case "$kind" in
   prepare) paths=("${integration[@]}" scripts/prepare-hammerspoon.sh "${common[@]}") ;;
-  host) paths=("${integration[@]}" .xcodebuildmcp/config.yaml scripts/prepare-hammerspoon.sh scripts/build-hammerspoon.sh scripts/toolchain.sh mise.toml "${common[@]}") ;;
-  helpers) paths=(App/Package.swift App/Sources App/Hammerspoon/ShellCore .xcodebuildmcp/config.yaml scripts/build-helpers.sh scripts/toolchain.sh mise.toml "${common[@]}") ;;
+  host) paths=("${integration[@]}" .xcodebuildmcp/config.yaml scripts/prepare-hammerspoon.sh scripts/build-hammerspoon.sh scripts/toolchain.sh mise.toml mise/tasks.toml "${common[@]}") ;;
+  helpers) paths=(App/Package.swift App/Sources App/Hammerspoon/ShellCore .xcodebuildmcp/config.yaml scripts/build-helpers.sh scripts/toolchain.sh mise.toml mise/tasks.toml "${common[@]}") ;;
   *) exit 2 ;;
 esac
 {

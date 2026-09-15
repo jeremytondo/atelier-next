@@ -2,17 +2,14 @@
 # Exercise release invariants against disposable Git history and a fake GitHub.
 # No network, real signing credentials, app launch, or release mutation occurs.
 set -euo pipefail
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-release-tests.XXXXXX")
 # These fixtures also run inside a real CI release wrapper. Never mark that
 # outer release obsolete while exercising a fake stale branch revision.
 export ATELIER_STALE_DEV_MARKER="$temporary/obsolete-fixture"
 unset GITHUB_REF
 trap 'rm -rf "$temporary"' EXIT
-fail() { echo "FAIL: $*" >&2; exit 1; }
-expect_failure() {
-  if "$@" > "$temporary/failure.log" 2>&1; then fail "unexpected success: $*"; fi
-}
 repo="$temporary/repository"
 git init -q "$repo"
 git -C "$repo" config user.name 'Release Test'

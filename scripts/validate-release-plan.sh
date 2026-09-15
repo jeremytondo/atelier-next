@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 [[ $# -eq 1 ]] || { echo 'usage: scripts/validate-release-plan.sh PLAN.json' >&2; exit 2; }
 jq -e '
   (.channel == "dev" or .channel == "stable") and
@@ -12,5 +14,5 @@ jq -e '
   (if .channel == "stable" then .tag == ("v" + .version) and .version == .marketing_version
    else .tag == "dev" and
      .version == (.marketing_version + "-dev.t" + .build_number[8:] + "+" + .commit[0:8]) end)
-' "$1" > /dev/null || { echo "Invalid release plan: $1" >&2; exit 1; }
-git check-ref-format "$(jq -r .source_ref "$1")" || { echo "Invalid release source ref: $1" >&2; exit 1; }
+' "$1" > /dev/null || die "Invalid release plan: $1"
+git check-ref-format "$(jq -r .source_ref "$1")" || die "Invalid release source ref: $1"

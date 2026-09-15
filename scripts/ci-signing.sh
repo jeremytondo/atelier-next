@@ -2,12 +2,12 @@
 # Scope imported credentials and keychain changes to one hosted CI command.
 set -euo pipefail
 umask 077
-[[ ${GITHUB_ACTIONS:-} == true && -d ${RUNNER_TEMP:-} && $# -gt 0 ]] || {
-  echo 'ci-signing.sh must wrap a command on a GitHub Actions runner' >&2; exit 1;
-}
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+[[ ${GITHUB_ACTIONS:-} == true && -d ${RUNNER_TEMP:-} && $# -gt 0 ]] || die 'ci-signing.sh must wrap a command on a GitHub Actions runner'
 for name in ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64 ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD \
   ATELIER_APP_STORE_CONNECT_KEY_BASE64 ATELIER_APP_STORE_CONNECT_KEY_ID ATELIER_APP_STORE_CONNECT_ISSUER_ID; do
-  [[ -n ${!name:-} ]] || { echo "missing release credential: $name" >&2; exit 1; }
+  [[ -n ${!name:-} ]] || die "missing release credential: $name"
 done
 
 credential_dir=$(mktemp -d "$RUNNER_TEMP/atelier-signing.XXXXXX")
@@ -42,12 +42,10 @@ unset ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64 ATELIER_DEVELOPER_ID_CERTIFICATE_P
 export ATELIER_SIGN_KEYCHAIN="$keychain"
 export ATELIER_APP_STORE_CONNECT_KEY_PATH="$credential_dir/AuthKey.p8"
 security find-identity -v -p codesigning "$keychain" > "$credential_dir/identities"
-identity=$(awk '/"Developer ID Application:/ && !found {print $2; found=1}' "$credential_dir/identities")
-[[ -n $identity ]] || { echo 'No valid Developer ID Application identity is available; refusing to start release checks.' >&2; exit 1; }
+identity=$(signing_identity 'Developer ID Application' "$credential_dir/identities")
+[[ -n $identity ]] || die 'No valid Developer ID Application identity is available; refusing to start release checks.'
 export ATELIER_SIGN_IDENTITY="$identity"
 developer_dir=${DEVELOPER_DIR:-$(/usr/bin/xcode-select -p)}
-[[ -x $developer_dir/usr/bin/notarytool && -x $developer_dir/usr/bin/stapler ]] || {
-  echo 'Select a full Xcode installation for notarization.' >&2; exit 1;
-}
-[[ -s $ATELIER_APP_STORE_CONNECT_KEY_PATH ]] || { echo 'The notarization key is empty.' >&2; exit 1; }
+[[ -x $developer_dir/usr/bin/notarytool && -x $developer_dir/usr/bin/stapler ]] || die 'Select a full Xcode installation for notarization.'
+[[ -s $ATELIER_APP_STORE_CONNECT_KEY_PATH ]] || die 'The notarization key is empty.'
 "$@"

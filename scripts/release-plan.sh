@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # One build identity is created before packaging and carried through publication.
 set -euo pipefail
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-cd "${ATELIER_RELEASE_REPO_ROOT:-$script_dir/..}"
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+cd "${ATELIER_RELEASE_REPO_ROOT:-$root}"
 
 usage() { echo 'usage: mise run release:plan dev [BRANCH] | stable patch|minor|major [BRANCH]' >&2; exit 2; }
 channel=${1:-}
@@ -17,20 +18,18 @@ case "$channel" in
   *) usage ;;
 esac
 if [[ $source_ref != refs/heads/* ]] || ! git check-ref-format "$source_ref"; then
-  echo 'release planning requires a branch ref' >&2; exit 1
+  die 'release planning requires a branch ref'
 fi
-git_command=(git)
-if [[ -d .jj ]] && command -v jj > /dev/null; then git_command+=(--git-dir "$(jj git root)"); fi
-if [[ $channel == stable && $("${git_command[@]}" rev-parse --is-shallow-repository) != false ]]; then
-  echo 'stable release planning requires full history and tags (fetch-depth: 0 in CI)' >&2; exit 1
+if [[ $channel == stable && $(repository_git rev-parse --is-shallow-repository) != false ]]; then
+  die 'stable release planning requires full history and tags (fetch-depth: 0 in CI)'
 fi
-commit=$("$script_dir/source-commit.sh")
+commit=$("$root/scripts/source-commit.sh")
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Keep the local alpha's timestamp convention. Seconds also distinguish rebuilds
 # of the same commit and let a later stable build follow a calendar-versioned dev.
 build_number=${built_at//[-:TZ]/}
 if [[ $channel == stable ]]; then
-  tag=$("$script_dir/next-version.sh" "$2")
+  tag=$("$root/scripts/next-version.sh" "$2")
   version=${tag#v}
   marketing_version=$version
 else
@@ -38,8 +37,6 @@ else
   marketing_version="${built_at:0:4}.$((10#${built_at:5:2})).$((10#${built_at:8:2}))"
   version="$marketing_version-dev.t${build_number:8}+${commit:0:8}"
 fi
-jq -n --arg channel "$channel" --arg tag "$tag" --arg version "$version" \
-  --arg marketing_version "$marketing_version" --arg build_number "$build_number" \
-  --arg commit "$commit" --arg built_at "$built_at" --arg source_ref "$source_ref" \
-  '{channel: $channel, tag: $tag, version: $version, marketing_version: $marketing_version,
-    build_number: $build_number, commit: $commit, built_at: $built_at, source_ref: $source_ref}'
+arguments=()
+for field in "${release_plan_fields[@]}"; do arguments+=(--arg "$field" "${!field}"); done
+jq -n "${arguments[@]}" '$ARGS.named'

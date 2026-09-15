@@ -1,16 +1,11 @@
-# Selected explicitly by CI; omitted native tools cannot be auto-installed.
+# Selected explicitly by CI's Linux job; the omitted native tools have no Linux builds.
 [tools]
 node = "26.4.0"
 gh = "2.95.0"
 jq = "1.8.1"
 shellcheck = "0.11.0"
 actionlint = "1.7.12"
+biome = "2.5.13"
 
-[tasks.check]
-run = [
-  "node --test App/Tests/JavaScript/*.test.js",
-  "shellcheck scripts/*.sh",
-  "actionlint .github/workflows/*.yml",
-  "scripts/release-test.sh",
-  "scripts/build-test.sh",
-]
+[task_config]
+includes = ["mise/tasks.toml"]
