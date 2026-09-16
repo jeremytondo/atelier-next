@@ -60,7 +60,7 @@ cask "$token" do
 
   url "https://github.com/$repository/releases/download/v#{version}/atelier-#{version}-macos-arm64.tar.gz"
   name "Atelier"
-  desc "Customizable workspace on Hammerspoon 2: Desktops, Groups, and Quick Apps"
+  desc "Customizable workspace on Hammerspoon 2: Desktops, windows, and Quick Apps"
   homepage "https://github.com/$repository"
 
   conflicts_with cask: "jeremytondo/atelier/$other"

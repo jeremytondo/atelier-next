@@ -91,10 +91,12 @@ export function fakeHS(): {hs: HS; state: FakeState} {
   const snapshot: Snapshot = {
     trusted: true,
     focused: 0,
+    focusedSpace: "1",
     targetDisplay: "Main",
     missionControl: false,
     displays: [{id: "Main", current: "1", spaces: [{id: "1", fullscreen: false}]}],
     windows: [],
+    complete: true,
   };
   const state: FakeState = {
     tasks: [],
@@ -361,80 +363,130 @@ export function fakeHS(): {hs: HS; state: FakeState} {
   return {hs: hs as unknown as HS, state};
 }
 
+export interface FakeWindow {
+  id: number;
+  pid: number;
+  isMinimized: boolean;
+  /** How often `unminimize` was called. */
+  unminimized: number;
+  application: FakeApplication;
+  frame: {x: number; y: number; w: number; h: number};
+  unminimize(): boolean;
+  axElement(): Record<string, unknown>;
+}
+
+export interface FakeApplication {
+  bundleID: string;
+  isHidden: boolean;
+  /** How often `unhide` was called. */
+  unhidden: number;
+  allWindows: FakeWindow[];
+  unhide(): void;
+  axElement(): Record<string, unknown>;
+}
+
 export interface FakeApp {
-  /** Window IDs whose native Fill was pressed, in order. */
-  fills: number[];
-  /** Whether the Fill menu item exists; false makes every Fill fail. */
-  fillAvailable: boolean;
-  application: Record<string, unknown>;
+  application: FakeApplication;
+  windows: FakeWindow[];
+  /** Whether raising a window moves focus; false makes every focus attempt fail. */
+  focusWorks: boolean;
+  /** Window IDs whose focus attempt should land on a dialog of the app instead. */
+  dialogs: Set<number>;
 }
 
-/** A menu bar whose only item is native Fill, recording each press on `fake`. */
-function fillMenu(hs: HS, state: FakeState, fake: FakeApp) {
-  hs.ax.applicationElement = (() => ({
-    attributeValue: () => ({
-      attributeValue: (name: string) =>
-        name === "AXIdentifier" && fake.fillAvailable ? "_zoomFill:" : null,
-      children: () => [],
-      isEnabled: true,
-      performAction: () => {
-        fake.fills.push(state.snapshot.focused);
-        return true;
-      },
-    }),
-  })) as unknown as typeof hs.ax.applicationElement;
-}
-
-/** Windows of process 42 on Desktop 1 that focus and Fill through the fakes. */
-export function fakeApp(hs: HS, state: FakeState, ids: number[]): FakeApp {
-  const fake: FakeApp = {
-    fills: [],
-    fillAvailable: true,
-    application: {bundleID: "fixture", axElement: () => ({setAttributeValueValue: () => true})},
-  };
-  const windows = ids.map((id) => ({
+/** A census entry for `fakeApp` and `fakeMac` windows: ordinary, on Desktop 1, visible. */
+export function inventoried(
+  id: number,
+  pid: number,
+  extra: Partial<Snapshot["windows"][number]> = {},
+): Snapshot["windows"][number] {
+  return {
     id,
-    pid: 42,
-    application: fake.application,
-    frame: {x: 0, y: 0, w: 400, h: 300},
-    axElement: () => ({
-      setAttributeValueValue: () => true,
-      performAction: () => {
-        state.snapshot.focused = id;
-        return true;
-      },
-    }),
-  }));
-  fake.application.allWindows = windows;
-  hs.application.fromPID = (() => fake.application) as unknown as typeof hs.application.fromPID;
-  hs.window.focusedWindow = (() =>
-    windows.find(
-      (w) => w.id === state.snapshot.focused,
-    )) as unknown as typeof hs.window.focusedWindow;
-  fillMenu(hs, state, fake);
-  state.snapshot.focused = ids[0] ?? 0;
-  state.snapshot.windows = ids.map((id) => ({
-    id,
-    pid: 42,
-    space: "1",
-    frame: {x: 0, y: 0, w: 400, h: 300},
-    title: "",
+    pid,
+    launched: 1,
     app: "fixture",
     bundleID: "fixture",
+    title: "",
+    spaces: ["1"],
+    onScreen: true,
+    ordinary: true,
+    ...extra,
+  };
+}
+
+const element = (ordinary = true) => ({
+  setAttributeValueValue: () => true,
+  role: "AXWindow",
+  isAttributeSettable: () => ordinary,
+});
+
+/** Windows of process 42 on Desktop 1 that reveal and focus through the fakes. */
+export function fakeApp(hs: HS, state: FakeState, ids: number[]): FakeApp {
+  const application: FakeApplication = {
+    bundleID: "fixture",
+    isHidden: false,
+    unhidden: 0,
+    allWindows: [],
+    unhide() {
+      this.isHidden = false;
+      this.unhidden++;
+    },
+    axElement: () => element(),
+  };
+  const fake: FakeApp = {application, windows: [], focusWorks: true, dialogs: new Set()};
+  fake.windows = ids.map((id) => ({
+    id,
+    pid: 42,
+    isMinimized: false,
+    unminimized: 0,
+    application,
+    frame: {x: 0, y: 0, w: 400, h: 300},
+    unminimize() {
+      this.isMinimized = false;
+      this.unminimized++;
+      return true;
+    },
+    axElement: () => ({
+      ...element(),
+      performAction: () => {
+        if (fake.focusWorks) state.snapshot.focused = fake.dialogs.has(id) ? -id : id;
+        return true;
+      },
+    }),
   }));
+  application.allWindows = fake.windows;
+  hs.application.fromPID = (() => application) as unknown as typeof hs.application.fromPID;
+  hs.window.focusedWindow = (() => {
+    const focused = state.snapshot.focused;
+    // A negative ID stands for a dialog of the app that macOS keeps in front.
+    if (focused < 0) return {id: focused, pid: 42, application, axElement: () => element(false)};
+    return fake.windows.find((w) => w.id === focused);
+  }) as unknown as typeof hs.window.focusedWindow;
+  hs.ax.applicationElement = (() => ({})) as unknown as typeof hs.ax.applicationElement;
+  state.snapshot.focused = ids[0] ?? 0;
+  state.snapshot.windows = ids.map((id) => inventoried(id, 42));
   return fake;
 }
 
 /** Bridges `hs.application` and `hs.window` to a fake Mac's processes so the
- *  windows it lists focus and Fill through the fakes. The Spaces inventory
- *  stays the test's to fill. */
-export function fakeMac(hs: HS, state: FakeState, mac: FakeWorkspace): FakeApp {
-  const fake: FakeApp = {fills: [], fillAvailable: true, application: {}};
-  const element = () => ({setAttributeValueValue: () => true});
+ *  windows it lists reveal and focus through the fakes. The census stays the
+ *  test's to fill. */
+export function fakeMac(hs: HS, state: FakeState, mac: FakeWorkspace): void {
   const window = (pid: number, id: number) => ({
     id,
     pid,
-    application: {bundleID: mac.apps.get(pid)?.bundleID, axElement: element},
+    application: {
+      bundleID: mac.apps.get(pid)?.bundleID,
+      get isHidden() {
+        return mac.isHidden(pid);
+      },
+      unhide: () => mac.unhide(pid),
+      axElement: element,
+    },
+    get isMinimized() {
+      return mac.isMinimized(id);
+    },
+    unminimize: () => mac.unminimize(id),
     frame: mac.frame(id) ?? {x: 0, y: 0, w: 400, h: 300},
     axElement: () => ({
       ...element(),
@@ -450,6 +502,10 @@ export function fakeMac(hs: HS, state: FakeState, mac: FakeWorkspace): FakeApp {
     return (
       app && {
         bundleID: app.bundleID,
+        get isHidden() {
+          return app.hidden;
+        },
+        unhide: () => mac.unhide(pid),
         allWindows: app.windows.map((id) => window(pid, id)),
         axElement: element,
       }
@@ -460,6 +516,5 @@ export function fakeMac(hs: HS, state: FakeState, mac: FakeWorkspace): FakeApp {
       if (app.windows.includes(state.snapshot.focused)) return window(pid, state.snapshot.focused);
     return null;
   }) as unknown as typeof hs.window.focusedWindow;
-  fillMenu(hs, state, fake);
-  return fake;
+  hs.ax.applicationElement = (() => ({})) as unknown as typeof hs.ax.applicationElement;
 }

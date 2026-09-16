@@ -25,7 +25,7 @@ const keys: Record<string, string> = {
   enter: "return",
   esc: "escape",
 };
-/** Quick Apps and Group presets each take at most this many entries. */
+/** Quick Apps and presets each take at most this many entries. */
 const listLimit = 50;
 
 export interface Shortcut {
@@ -45,9 +45,9 @@ export interface QuickAppOption {
   size?: QuickAppSize;
 }
 
-export interface GroupPresetOption {
+export interface PresetOption {
   name: string;
-  /** App names, bundle IDs, or absolute `.app` paths; position is the member number. */
+  /** App names, bundle IDs, or absolute `.app` paths; position is the window number. */
   apps: string[];
   shortcut?: string;
 }
@@ -55,12 +55,12 @@ export interface GroupPresetOption {
 /** Everything `atelier.start` accepts. */
 export interface Options {
   spaces?: boolean;
-  groups?: boolean;
+  windows?: boolean;
   overlay?: boolean;
   overlayModifiers?: string;
   bindings?: Record<string, string>;
   quickApps?: QuickAppOption[];
-  groupPresets?: GroupPresetOption[];
+  presets?: PresetOption[];
 }
 
 export interface Binding extends Shortcut {
@@ -75,7 +75,7 @@ export interface QuickAppEntry extends Shortcut {
   size?: QuickAppSize;
 }
 
-export interface GroupPresetEntry {
+export interface PresetEntry {
   name: string;
   apps: string[];
   /** The parsed shortcut with the text it came from. */
@@ -84,14 +84,14 @@ export interface GroupPresetEntry {
 
 export interface Config {
   spaces: boolean;
-  groups: boolean;
+  windows: boolean;
   overlay: boolean;
   overlayModifiers: string;
   overlayFlags: string[];
   bindings: Record<string, string>;
   shortcuts: Binding[];
   quickApps: QuickAppEntry[];
-  groupPresets: GroupPresetEntry[];
+  presets: PresetEntry[];
 }
 
 export function shortcut(text: unknown): Shortcut {
@@ -120,8 +120,7 @@ export function shortcut(text: unknown): Shortcut {
 export function defaultBindings(): Record<string, string> {
   const bindings: Record<string, string> = {
     "reload-config": "ctrl-option-cmd-r",
-    group: "cmd-option-g",
-    "group-presets": "cmd-option-p",
+    presets: "cmd-option-p",
     "cycle-previous": "cmd-option-left-bracket",
     "cycle-next": "cmd-option-right-bracket",
     "move-previous": "cmd-option-shift-left-bracket",
@@ -143,12 +142,12 @@ export function defaultBindings(): Record<string, string> {
 export function defaults(): Required<Options> {
   return {
     spaces: true,
-    groups: true,
+    windows: true,
     overlay: true,
     overlayModifiers: "cmd-option",
     bindings: defaultBindings(),
     quickApps: [{app: "Calculator", shortcut: "cmd-shift-c"}],
-    groupPresets: [],
+    presets: [],
   };
 }
 
@@ -166,11 +165,11 @@ export function normalize(options: unknown = {}): Config {
   const given = options as Record<string, unknown>;
   checkKeys(given, Object.keys(defaults()), "Atelier");
   const merged = {...defaults(), ...(given as Options)};
-  for (const name of ["spaces", "groups", "overlay"] as const) {
+  for (const name of ["spaces", "windows", "overlay"] as const) {
     if (typeof merged[name] !== "boolean") throw new Error(name + " must be true or false");
   }
   const bindings = {...defaultBindings(), ...(merged.bindings as Record<string, string>)};
-  for (const name of ["quickApps", "groupPresets"] as const) {
+  for (const name of ["quickApps", "presets"] as const) {
     if (!Array.isArray(merged[name]) || merged[name].length > listLimit)
       throw new Error(name + " must be an array of at most " + listLimit + " entries");
   }
@@ -189,7 +188,7 @@ export function normalize(options: unknown = {}): Config {
     if (
       text === "none" ||
       (space && !merged.spaces) ||
-      (!space && name !== "reload-config" && !merged.groups)
+      (!space && name !== "reload-config" && !merged.windows)
     )
       continue;
     shortcuts.push({name, space, ...claim(text, name)});
@@ -216,13 +215,13 @@ export function normalize(options: unknown = {}): Config {
   });
   const quickAppNames = new Set(quickApps.map((entry) => entry.app));
   const presetNames = new Set<string>();
-  // Presets are validated even with `groups: false`, like the rest of the options.
-  const groupPresets = merged.groupPresets.map((entry: unknown, index): GroupPresetEntry => {
-    const candidate = entry as Partial<GroupPresetOption> | null;
+  // Presets are validated even with `windows: false`, like the rest of the options.
+  const presets = merged.presets.map((entry: unknown, index): PresetEntry => {
+    const candidate = entry as Partial<PresetOption> | null;
     if (!candidate || !isText(candidate.name))
-      throw new Error("Group preset " + (index + 1) + " needs a name");
+      throw new Error("Preset " + (index + 1) + " needs a name");
     const name = candidate.name.trim(),
-      label = 'Group preset "' + name + '"';
+      label = 'Preset "' + name + '"';
     checkKeys(candidate, ["name", "apps", "shortcut"], label);
     if (presetNames.has(name)) throw new Error(label + " is listed twice");
     presetNames.add(name);
@@ -242,13 +241,13 @@ export function normalize(options: unknown = {}): Config {
   });
   return {
     spaces: merged.spaces,
-    groups: merged.groups,
+    windows: merged.windows,
     overlay: merged.overlay,
     overlayModifiers: merged.overlayModifiers,
     overlayFlags: shortcut(merged.overlayModifiers + "-a").mods,
     bindings,
     shortcuts,
     quickApps,
-    groupPresets,
+    presets,
   };
 }

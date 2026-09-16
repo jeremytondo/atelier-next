@@ -23,6 +23,8 @@ interface App {
   bundleID: string;
   hidden: boolean;
   windows: number[];
+  /** Whether the app's windows are panels rather than ordinary windows. */
+  panel?: boolean;
 }
 
 interface Win {
@@ -76,6 +78,7 @@ export class FakeWorkspace implements Workspace {
       missionControl: false,
       displays: JSON.parse(JSON.stringify(this.topology)),
       windows: [],
+      complete: true,
     };
   }
   running(bundleID: string): number | null {

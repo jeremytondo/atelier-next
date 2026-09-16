@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import type {HS} from "../api/hs.ts";
-import type {Group} from "../defaults/groups.ts";
 import {frameFor, Overlay} from "../defaults/overlay.ts";
+import type {DesktopWindows, ListedWindow} from "../defaults/windows.ts";
 
 interface Element {
   text?: string;
@@ -26,6 +26,16 @@ interface FakeCanvas {
   hide(): void;
   destroy(): void;
 }
+
+const listed = (pid: number, id: number, app: string, title = ""): ListedWindow => ({
+  pid,
+  id,
+  launched: 1,
+  app,
+  bundleID: app,
+  title,
+  visible: true,
+});
 
 // Records canvas lifetime and input events; does not simulate macOS placement.
 function fixture(chord = ["cmd", "alt"]) {
@@ -98,16 +108,15 @@ function fixture(chord = ["cmd", "alt"]) {
       },
     },
   };
-  const state: {snapshot: {missionControl: boolean}; group: Group | null} = {
+  const state: {snapshot: {missionControl: boolean}; desktop: DesktopWindows | null} = {
     snapshot: {missionControl: false},
-    group: {
+    desktop: {
       display: "D",
       space: "2",
-      members: [{pid: 10, id: 1, app: "Fixture", title: "Saved window"}] as Group["members"],
-      waiting: [],
+      slots: [listed(10, 1, "Fixture", "Saved window")],
     },
   };
-  const redraw = () => overlay.update(state.snapshot, state.group);
+  const redraw = () => overlay.update(state.snapshot, state.desktop);
   const overlay = new Overlay(hs as unknown as HS, chord, redraw);
   overlay.start();
   return {
@@ -120,6 +129,11 @@ function fixture(chord = ["cmd", "alt"]) {
   };
 }
 
+const rows = (canvas: FakeCanvas) =>
+  canvas.elements
+    .filter((e) => e.text && !/WINDOWS|Release/.test(e.text))
+    .map((e) => [e.text, e.textColor?.alpha]);
+
 test("overlay positions correctly on a screen above the primary", () => {
   assert.deepEqual(frameFor({x: 0, y: -900, w: 1200, h: 900}, {h: 1000}, 320, 200), {
     x: 860,
@@ -129,7 +143,7 @@ test("overlay positions correctly on a screen above the primary", () => {
   });
 });
 
-test("overlay replaces its native window when the group moves between Spaces or displays", () => {
+test("overlay replaces its native window when the list moves between Spaces or displays", () => {
   const f = fixture();
   f.flags(["cmd", "alt"]);
   const first = f.canvases[0]!;
@@ -142,7 +156,7 @@ test("overlay replaces its native window when the group moves between Spaces or 
     ["Main", "2"],
   ] as const) {
     const previous = f.canvases.at(-1)!;
-    f.state.group = {...f.state.group!, display, space};
+    f.state.desktop = {...f.state.desktop!, display, space};
     f.redraw();
     assert.equal(previous.destroyed, true);
     assert.notEqual(f.canvases.at(-1), previous);
@@ -153,15 +167,15 @@ test("overlay replaces its native window when the group moves between Spaces or 
   assert.equal(f.removed(), true);
 });
 
-test("overlay shows the second group after releasing modifiers on the first Desktop", () => {
+test("overlay shows the second Desktop's list after releasing modifiers on the first", () => {
   const f = fixture();
   f.flags(["cmd", "alt"]);
   f.flags([]);
   assert.equal(f.canvases[0]!.showing, false);
-  f.state.group = {
-    ...f.state.group!,
+  f.state.desktop = {
+    ...f.state.desktop!,
     space: "3",
-    members: [{pid: 20, id: 2, app: "Second app", title: "Second window"}] as Group["members"],
+    slots: [listed(20, 2, "Second app", "Second window")],
   };
   f.flags(["cmd", "alt"]);
   assert.equal(f.canvases[0]!.destroyed, true);
@@ -172,9 +186,9 @@ test("overlay shows the second group after releasing modifiers on the first Desk
   f.overlay.stop();
 });
 
-test("overlay hides during Mission Control and on ungrouped Desktops, then shows again", () => {
+test("overlay hides during Mission Control and on Desktops without a list, then shows again", () => {
   const f = fixture(),
-    group = f.state.group;
+    desktop = f.state.desktop;
   f.flags(["cmd", "alt"]);
   f.state.snapshot.missionControl = true;
   f.redraw();
@@ -182,10 +196,10 @@ test("overlay hides during Mission Control and on ungrouped Desktops, then shows
   f.state.snapshot.missionControl = false;
   f.redraw();
   assert.equal(f.canvases.at(-1)!.showing, true);
-  f.state.group = null;
+  f.state.desktop = null;
   f.redraw();
   assert.equal(f.canvases.at(-1)!.showing, false);
-  f.state.group = group;
+  f.state.desktop = desktop;
   f.redraw();
   assert.equal(f.canvases.at(-1)!.showing, true);
   f.overlay.stop();
@@ -208,24 +222,21 @@ test("overlay chord allows Shift, hides on other extra modifiers, and needs a co
   }
 });
 
-test("overlay stays while Shift comes and goes and redraws a reordered Group at once", () => {
+test("overlay stays while Shift comes and goes and redraws a reordered list at once", () => {
   const f = fixture();
-  f.state.group!.members = [
-    {pid: 10, id: 1, app: "First", title: ""},
-    {pid: 20, id: 2, app: "Second", title: ""},
-  ] as Group["members"];
+  f.state.desktop!.slots = [listed(10, 1, "First"), listed(20, 2, "Second")];
   f.flags(["cmd", "alt"]);
   const canvas = f.canvases[0]!;
   const apps = () =>
     canvas.elements.map((e) => e.text).filter((t) => t === "First" || t === "Second");
-  // The focus highlight is drawn just before the focused member's number and name.
+  // The focus highlight is drawn just before the focused window's number and name.
   const highlighted = () => {
     const index = canvas.elements.findIndex((e) => e.roundedRectRadii?.xRadius === 7);
     return canvas.elements[index + 2]?.text;
   };
   assert.deepEqual([apps(), highlighted()], [["First", "Second"], "First"]);
   f.flags(["cmd", "alt", "shift"]);
-  f.state.group!.members.reverse();
+  f.state.desktop!.slots.reverse();
   f.redraw();
   assert.deepEqual([canvas.showing, canvas.shows], [true, 2]);
   assert.deepEqual([apps(), highlighted()], [["Second", "First"], "First"]);
@@ -236,26 +247,42 @@ test("overlay stays while Shift comes and goes and redraws a reordered Group at 
   f.overlay.stop();
 });
 
-test("overlay keeps a waiting slot's number, dims it, and shows a Group that only waits", () => {
+test("overlay dims hidden and minimized windows and redraws when one is revealed", () => {
   const f = fixture();
-  f.state.group!.members = [{pid: 10, id: 1, app: "First", title: ""}] as Group["members"];
-  f.state.group!.waiting = [{bundleID: "app.second", app: "Second", position: 0}];
+  f.state.desktop!.slots = [listed(10, 1, "First"), {...listed(20, 2, "Second"), visible: false}];
   f.flags(["cmd", "alt"]);
   const canvas = f.canvases[0]!;
-  const rows = () =>
-    canvas.elements
-      .filter((e) => e.text && !/GROUP WINDOWS|Release/.test(e.text))
-      .map((e) => [e.text, e.textColor?.alpha]);
-  assert.deepEqual(rows(), [
+  assert.deepEqual(rows(canvas), [
+    ["1", 1],
+    ["First", 1],
+    ["2", 0.55],
+    ["Second", 0.55],
+  ]);
+  (f.state.desktop!.slots[1] as ListedWindow).visible = true;
+  f.redraw();
+  assert.equal(canvas.shows, 2);
+  assert.deepEqual(rows(canvas).slice(2), [
+    ["2", 1],
+    ["Second", 1],
+  ]);
+  f.overlay.stop();
+});
+
+test("overlay keeps a waiting slot's number, dims it, and shows a list that only waits", () => {
+  const f = fixture();
+  f.state.desktop!.slots = [{bundleID: "app.second", app: "Second"}, listed(10, 1, "First")];
+  f.flags(["cmd", "alt"]);
+  const canvas = f.canvases[0]!;
+  assert.deepEqual(rows(canvas), [
     ["1", 0.45],
     ["Second", 0.45],
     ["2", 1],
     ["First", 1],
   ]);
-  f.state.group!.members = [];
+  f.state.desktop!.slots = [{bundleID: "app.second", app: "Second"}];
   f.redraw();
   assert.deepEqual(
-    [canvas.showing, rows()],
+    [canvas.showing, rows(canvas)],
     [
       true,
       [
@@ -264,7 +291,7 @@ test("overlay keeps a waiting slot's number, dims it, and shows a Group that onl
       ],
     ],
   );
-  f.state.group!.waiting = [];
+  f.state.desktop!.slots = [];
   f.redraw();
   assert.equal(canvas.showing, false);
   f.overlay.stop();

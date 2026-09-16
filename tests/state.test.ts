@@ -3,46 +3,51 @@ import {test} from "node:test";
 import type {HS} from "../api/hs.ts";
 import {createAPI} from "../api/index.ts";
 import type {Snapshot, WindowInfo} from "../api/spaces.ts";
-import {Groups} from "../defaults/groups.ts";
 import {createDefaults} from "../defaults/index.ts";
 import {
   debounceSeconds,
   parse,
-  type SavedGroup,
+  type SavedDesktop,
   StateFile,
   stateVersion,
 } from "../defaults/state.ts";
-import {type FakeState, fakeApp, fakeHS} from "./fakes.ts";
+import {WindowLists, windowsOf} from "../defaults/windows.ts";
+import {type FakeState, fakeApp, fakeHS, inventoried} from "./fakes.ts";
 
-const path = "/Users/fake/Library/Application Support/Atelier/groups.json";
+const path = "/Users/fake/Library/Application Support/Atelier/windows.json";
 const options = {overlay: false, quickApps: []};
-const window = (id: number, pid: number, space: string, bundleID = "app.a"): WindowInfo => ({
-  id,
-  pid,
-  space,
-  frame: {x: 0, y: 0, w: 1, h: 1},
-  title: "",
-  app: bundleID,
-  bundleID,
+const window = (
+  id: number,
+  pid: number,
+  space: string,
+  extra: Partial<WindowInfo> = {},
+): WindowInfo => ({
+  ...inventoried(id, pid, {app: "app.a", bundleID: "app.a", spaces: [space]}),
+  ...extra,
 });
 const snapshot = (current: string, windows: WindowInfo[], spaces = ["1", "2"]): Snapshot => ({
   trusted: true,
   focused: windows[0]?.id ?? 0,
+  focusedSpace: current,
   targetDisplay: "D",
   missionControl: false,
   displays: [{id: "D", current, spaces: spaces.map((id) => ({id, fullscreen: false}))}],
   windows,
+  complete: true,
 });
-const saved = (space: string, ...members: [number, number, string?][]): SavedGroup => ({
+const saved = (space: string, ...windows: [number, number, string?][]): SavedDesktop => ({
   display: "D",
   space,
-  members: members.map(([pid, id, bundleID = "app.a"]) => ({pid, id, app: bundleID, bundleID})),
+  windows: windows.map(([pid, id, bundleID = "app.a"]) => ({
+    pid,
+    id,
+    launched: 1,
+    app: bundleID,
+    bundleID,
+  })),
 });
-const fileText = (groups: SavedGroup[]) => JSON.stringify({version: stateVersion, groups});
-/** Alive when a window with the same process, ID, and app is in the list. */
-const present = (windows: WindowInfo[]) => (m: {pid: number; id: number; bundleID: string}) =>
-  windows.some((w) => w.pid === m.pid && w.id === m.id && w.bundleID === m.bundleID);
-const savedIDs = (state: FakeState) => parse(state.files[path]!)![0]!.members.map((m) => m.id);
+const fileText = (desktops: SavedDesktop[]) => JSON.stringify({version: stateVersion, desktops});
+const savedIDs = (state: FakeState) => parse(state.files[path]!)![0]!.windows.map((w) => w.id);
 const debounce = (state: FakeState) =>
   state.timers.find((t) => !t.stopped && !t.repeats && t.seconds === debounceSeconds);
 function session(hs: HS) {
@@ -61,91 +66,79 @@ function capture(run: () => Promise<void> | void): Promise<string[]> {
     .then(() => lines);
 }
 test("parse accepts the file shape and rejects anything else", () => {
-  const groups = [saved("1", [10, 100], [11, 101])];
-  groups[0]!.members[0]!.filledFrame = {x: 1, y: 2, w: 3, h: 4};
-  assert.deepEqual(parse(fileText(groups)), groups);
+  const desktops = [saved("1", [10, 100], [11, 101])];
+  assert.deepEqual(parse(fileText(desktops)), desktops);
   for (const text of [
     "{",
     "[]",
     "null",
-    JSON.stringify({version: 2, groups: []}),
-    JSON.stringify({version: 1, groups: {}}),
-    JSON.stringify({version: 1, groups: [{display: "D", members: []}]}),
-    JSON.stringify({version: 1, groups: [{display: "D", space: "1", members: [{pid: "x"}]}]}),
+    JSON.stringify({version: 2, desktops: []}),
+    JSON.stringify({version: 1, desktops: {}}),
+    JSON.stringify({version: 1, groups: []}),
+    JSON.stringify({version: 1, desktops: [{display: "D", windows: []}]}),
+    JSON.stringify({version: 1, desktops: [{display: "D", space: "1", windows: [{pid: "x"}]}]}),
+    fileText(desktops).replace('"launched":1', '"launched":"soon"'),
   ])
     assert.equal(parse(text), null, text);
-  const loose = fileText([saved("1", [10, 100])]).replace(
-    '"pid":10',
-    '"pid":10,"filledFrame":{"x":1}',
-  );
-  assert.equal(parse(loose)![0]!.members[0]!.filledFrame, undefined);
 });
 
-test("serialize and restore round-trip identities and Fill frames, not titles or failures", () => {
-  const store = new Groups();
-  const snap = snapshot("1", [window(100, 10, "1"), window(101, 11, "1")]);
-  const group = store.create(snap);
-  group.members[0]!.filledFrame = {x: 1, y: 2, w: 3, h: 4};
-  group.members[1]!.fillFailed = true;
+test("serialize and restore round-trip order and identities, not titles or visibility", () => {
+  const store = new WindowLists();
+  const snap = snapshot("1", [
+    window(100, 10, "1", {title: "One"}),
+    window(101, 11, "1", {onScreen: false}),
+  ]);
+  store.reconcile(snap);
   const text = fileText(store.serialize());
-  const restored = new Groups();
-  assert.deepEqual(restored.restore(parse(text)!, snap, present(snap.windows)), {
-    restored: 1,
-    dropped: 0,
-  });
+  assert.ok(!text.includes("One") && !text.includes("visible"));
+  const restored = new WindowLists();
+  assert.deepEqual(restored.restore(parse(text)!, snap), {restored: 1, dropped: 0});
   assert.deepEqual(restored.serialize(), store.serialize());
-  const members = restored.current(snap)!.members;
-  assert.deepEqual(members[0]!.filledFrame, {x: 1, y: 2, w: 3, h: 4});
-  assert.equal(members[1]!.fillFailed, undefined);
-  assert.equal(members[0]!.title, "");
+  const windows = windowsOf(restored.focused(snap)!);
+  assert.deepEqual(
+    windows.map((w) => [w.id, w.title, w.visible]),
+    [
+      [100, "One", true],
+      [101, "", false],
+    ],
+  );
 });
 
-test("restore drops Groups without a Desktop and members whose window is gone or reused", () => {
-  const store = new Groups();
-  const visible = snapshot("1", [
+test("restore drops lists without a live window and entries whose window is gone or reused", () => {
+  const store = new WindowLists();
+  const live = snapshot("1", [
     window(101, 11, "1"),
-    window(102, 12, "1", "app.other"),
+    window(102, 12, "1", {app: "app.other", bundleID: "app.other", launched: 2}),
     window(100, 10, "1"),
     window(300, 30, "1"),
+    window(200, 20, "2"),
+    // The same process and window IDs as a saved entry, but a later launch.
+    window(103, 13, "1", {launched: 2}),
   ]);
   const result = store.restore(
     [
-      saved("1", [12, 102], [10, 100], [11, 101], [13, 103]),
+      saved("1", [12, 102], [10, 100], [11, 101], [13, 103], [14, 104]),
       saved("9", [10, 100]),
       saved("2", [20, 200]),
+      saved("3", [21, 201]),
     ],
-    visible,
-    present([...visible.windows, window(200, 20, "2")]),
+    live,
   );
-  assert.deepEqual(result, {restored: 2, dropped: 1});
-  // The reused ID 102 lost its saved slot and joins as a new window with live data.
+  assert.deepEqual(result, {restored: 2, dropped: 2});
+  // A window ID reused by a later launch loses its saved slot and joins as a new window.
   assert.deepEqual(
-    store.entries.get("D:1")!.members.map((m) => [m.pid, m.id, m.app]),
+    windowsOf(store.entries.get("D:1")!).map((w) => [w.pid, w.id]),
     [
-      [10, 100, "app.a"],
-      [11, 101, "app.a"],
-      [12, 102, "app.other"],
-      [30, 300, "app.a"],
+      [10, 100],
+      [11, 101],
+      [12, 102],
+      [30, 300],
+      [13, 103],
     ],
   );
   assert.deepEqual(
-    store.entries.get("D:2")!.members.map((m) => [m.pid, m.id]),
-    [[20, 200]],
-  );
-});
-
-test("Groups on inactive Desktops stay as saved until that Desktop is visible", () => {
-  const store = new Groups();
-  store.restore(
-    [saved("2", [20, 200], [21, 201])],
-    snapshot("1", [window(100, 10, "1")]),
-    present([window(200, 20, "2")]),
-  );
-  assert.equal(store.entries.get("D:2")!.members.length, 2);
-  store.reconcile(snapshot("2", [window(201, 21, "2")]));
-  assert.deepEqual(
-    store.entries.get("D:2")!.members.map((m) => m.id),
-    [201],
+    windowsOf(store.entries.get("D:2")!).map((w) => w.id),
+    [200],
   );
 });
 
@@ -167,7 +160,7 @@ test("the state file debounces, skips unchanged writes, flushes on demand, and r
   file.flush();
   assert.deepEqual(parse(state.files[path]!), []);
   assert.ok(state.timers.every((t) => t.stopped));
-  assert.deepEqual(new StateFile(hs).read(), {status: "ok", groups: []});
+  assert.deepEqual(new StateFile(hs).read(), {status: "ok", desktops: []});
   state.files[path] = "{";
   assert.deepEqual(file.read(), {status: "malformed"});
   const errors: string[] = [],
@@ -185,40 +178,39 @@ test("the state file debounces, skips unchanged writes, flushes on demand, and r
   assert.deepEqual(errors, ["Atelier: Could not write " + path]);
 });
 
-test("Groups are written on stop and before reload, and come back on the next start", async () => {
+test("lists are written on stop and before reload, and come back on the next start", async () => {
   const {hs, state} = fakeHS();
   fakeApp(hs, state, [1, 2, 3]);
   const third = state.snapshot.windows.pop()!;
   const first = session(hs);
   const lines = await capture(() => first.start(options));
-  assert.deepEqual(lines, ["Atelier: No saved Groups at " + path, "Atelier: Running"]);
+  assert.deepEqual(lines, ["Atelier: No saved window lists at " + path, "Atelier: Running"]);
   assert.equal(state.files[path], undefined);
-  await first.group();
-  await first.groups.selectMember(2);
-  assert.equal(state.files[path], undefined);
+  await first.windows.select(2);
   first.stop();
   assert.deepEqual(
-    parse(state.files[path]!)![0]!.members.map((m) => [m.pid, m.id, m.bundleID]),
+    parse(state.files[path]!)![0]!.windows.map((w) => [w.pid, w.id, w.launched, w.bundleID]),
     [
-      [42, 1, "fixture"],
-      [42, 2, "fixture"],
+      [42, 1, 1, "fixture"],
+      [42, 2, 1, "fixture"],
     ],
   );
-  assert.ok(first.status().groupsFile.savedAt);
+  assert.ok(first.status().windows.file.savedAt);
   // The same context again, as after Reload Config or a relaunch.
   state.snapshot.windows.push(third);
   const second = session(hs);
   const restoreLines = await capture(() => second.start(options));
-  assert.ok(restoreLines.includes("Atelier: Restored 1 Groups, dropped 0"));
-  assert.equal(second.status().groups, 1);
-  assert.deepEqual(second.status().groupsFile, {path, savedAt: null, restored: 1, dropped: 0});
-  assert.equal(second.status().groupsFile.savedAt, null);
-  assert.deepEqual(await second.groups.selectMember(3), {window: 3});
+  assert.ok(restoreLines.includes("Atelier: Restored 1 window lists, dropped 0"));
+  assert.deepEqual(second.status().windows, {
+    lists: 1,
+    file: {path, savedAt: null, restored: 1, dropped: 0},
+  });
+  assert.deepEqual(await second.windows.select(3), {window: 3});
   debounce(state)!.callback();
   assert.deepEqual(savedIDs(state), [1, 2, 3]);
   const reload = state.keys.find((k) => k.key === "r" && k.enabled)!;
   state.snapshot.windows.pop();
-  await second.groups.cycleMember(1);
+  await second.windows.cycle(1);
   reload.callback();
   for (let i = 0; i < 5; i++) await Promise.resolve();
   assert.equal(state.reloaded, true);
@@ -231,108 +223,141 @@ test("a malformed or off-Desktop file starts clean without being overwritten by 
   state.files[path] = "not json";
   const app = session(hs);
   const lines = await capture(() => app.start(options));
-  assert.ok(lines.includes("Atelier: Ignoring malformed Groups state at " + path));
-  assert.equal(app.status().groups, 0);
-  assert.deepEqual(app.status().groupsFile.restored, null);
+  assert.ok(lines.includes("Atelier: Ignoring malformed window lists at " + path));
+  assert.equal(app.status().windows.lists, 0);
+  assert.deepEqual(app.status().windows.file.restored, null);
   app.stop();
   assert.deepEqual(parse(state.files[path]!), []);
   state.files[path] = fileText([saved("9", [10, 100])]);
   await app.start();
-  assert.equal(app.status().groupsFile.dropped, 1);
+  assert.equal(app.status().windows.file.dropped, 1);
   debounce(state)?.callback();
   assert.deepEqual(parse(state.files[path]!), []);
   app.stop();
 });
 
-test("disabling Groups leaves the state file alone", async () => {
+test("disabling window lists leaves the state file alone", async () => {
   const {hs, state} = fakeHS();
-  const text = fileText([saved("1", [10, 100])]);
+  fakeApp(hs, state, [1]);
+  const text = fileText([saved("1", [42, 1, "fixture"])]);
   state.files[path] = text;
   const app = session(hs);
-  await app.start({...options, groups: false});
-  assert.equal(app.status().groups, 0);
+  await app.start({...options, windows: false});
+  assert.equal(app.status().windows.lists, 0);
   app.stop();
   assert.equal(state.files[path], text);
 });
 
-test("a saved Group comes back only if one of its windows still exists somewhere", () => {
-  // Display and Space IDs can repeat after a restart; identities must prove the match.
-  const store = new Groups();
-  const visible = snapshot("1", [window(300, 30, "1")], ["1", "2", "3"]);
+test("a saved list comes back only if one of its windows still exists with the same launch", () => {
+  // Display, Space, process, and window IDs can all repeat after a restart.
+  const store = new WindowLists();
+  const live = snapshot("1", [window(300, 30, "1"), window(201, 21, "2")], ["1", "2", "3"]);
   const result = store.restore(
     [saved("1", [10, 100], [11, 101]), saved("2", [20, 200], [21, 201]), saved("3")],
-    visible,
-    present([window(201, 21, "2")]),
+    live,
   );
   assert.deepEqual(result, {restored: 1, dropped: 2});
-  assert.equal(store.entries.has("D:1"), false);
+  // Desktop 1 lost its saved list; the live window there starts a fresh one.
   assert.deepEqual(
-    store.entries.get("D:2")!.members.map((m) => m.id),
-    [200, 201],
+    windowsOf(store.entries.get("D:1")!).map((w) => w.id),
+    [300],
   );
-  // A window that exists but belongs to another app now does not count.
-  const reused = new Groups();
-  reused.restore([saved("1", [10, 100])], visible, present([window(100, 10, "1", "app.other")]));
-  assert.equal(reused.entries.size, 0);
+  assert.deepEqual(
+    windowsOf(store.entries.get("D:2")!).map((w) => w.id),
+    [201],
+  );
+  const relaunched = new WindowLists();
+  relaunched.restore([saved("1", [10, 100])], snapshot("1", [window(100, 10, "1", {launched: 9})]));
+  assert.deepEqual(
+    windowsOf(relaunched.entries.get("D:1")!).map((w) => w.launched),
+    [9],
+  );
+  const reused = new WindowLists();
+  reused.restore(
+    [saved("1", [10, 100])],
+    snapshot("1", [window(100, 10, "1", {bundleID: "app.other"})]),
+  );
+  assert.deepEqual(
+    windowsOf(reused.entries.get("D:1")!).map((w) => w.bundleID),
+    ["app.other"],
+  );
 });
 
 test("a resumed session takes the file as truth, even when it is missing or broken", async () => {
   const {hs, state} = fakeHS();
   fakeApp(hs, state, [1, 2]);
-  state.files[path] = fileText([{...saved("1", [42, 1, "fixture"]), display: "Main"}]);
+  state.files[path] = fileText([{...saved("1", [42, 2, "fixture"]), display: "Main"}]);
   const app = session(hs);
   await app.start(options);
-  assert.equal(app.status().groups, 1);
+  assert.deepEqual(app.status().windows, {
+    lists: 1,
+    file: {path, savedAt: null, restored: 1, dropped: 0},
+  });
+  assert.deepEqual(await app.windows.select(1), {window: 2});
   app.stop();
   delete state.files[path];
   await app.start();
-  assert.equal(app.status().groups, 0);
+  assert.equal(app.status().windows.file.restored, null);
   app.stop();
-  assert.deepEqual(parse(state.files[path]!), []);
-  await app.start();
-  await app.group();
-  app.stop();
-  assert.equal(parse(state.files[path]!)!.length, 1);
+  // A fresh list starts with the focused window first.
+  assert.deepEqual(
+    parse(state.files[path]!)![0]!.windows.map((w) => w.id),
+    [2, 1],
+  );
   state.files[path] = "{";
   await app.start();
-  assert.equal(app.status().groups, 0);
+  assert.equal(app.status().windows.file.restored, null);
   app.stop();
-  assert.deepEqual(parse(state.files[path]!), []);
+  assert.deepEqual(
+    parse(state.files[path]!)![0]!.windows.map((w) => w.id),
+    [2, 1],
+  );
 });
 
-test("a reordered Group saves its latest order and restores it; the toggle forgets and recreates", async () => {
+test("a reordered list saves its latest order and restores it for surviving windows", async () => {
   const {hs, state} = fakeHS();
   fakeApp(hs, state, [1, 2, 3]);
   const first = session(hs);
   await first.start(options);
-  await first.group();
-  assert.deepEqual(await first.groups.moveMember(2), {window: 1});
-  assert.deepEqual(await first.groups.moveMember(-1), {window: 1});
+  assert.deepEqual(await first.windows.move(2), {window: 1});
+  assert.deepEqual(await first.windows.move(-1), {window: 1});
   assert.equal(
     state.timers.filter((t) => !t.stopped && !t.repeats && t.seconds === debounceSeconds).length,
     1,
   );
   debounce(state)!.callback();
   assert.deepEqual(savedIDs(state), [2, 1, 3]);
-  assert.deepEqual(await first.groups.moveMember({slot: 2}), {noop: true});
+  assert.deepEqual(await first.windows.move({slot: 2}), {noop: true});
   assert.equal(debounce(state), undefined);
   first.stop();
-  // The next context: window 3 has left the Desktop and window 4 has opened.
+  // The next context: window 3 has closed and window 4 has opened.
   fakeApp(hs, state, [1, 2, 3, 4]);
   state.snapshot.windows.splice(2, 1);
   const second = session(hs);
   await second.start(options);
-  assert.deepEqual(await second.groups.selectMember(1), {window: 2});
+  assert.deepEqual(await second.windows.select(1), {window: 2});
   debounce(state)!.callback();
   assert.deepEqual(savedIDs(state), [2, 1, 4]);
-  // The group shortcut forgets the Group and its order; the next press starts over.
-  assert.deepEqual(await second.group(), {forgotten: true});
-  assert.equal(second.status().groups, 0);
-  debounce(state)!.callback();
-  assert.deepEqual(parse(state.files[path]!), []);
-  assert.deepEqual(await second.groups.selectMember(1), {noop: true});
-  state.snapshot.focused = 4;
-  const recreated = await second.group();
-  assert.deepEqual("members" in recreated && recreated.members.map((m) => m.id), [4, 1, 2]);
   second.stop();
+});
+
+test("a saved list needs a survivor still on that Desktop, and duplicates collapse", () => {
+  const store = new WindowLists();
+  // W moved to Desktop 2 while Atelier was stopped; A and B opened on Desktop 1 with B focused.
+  const live = snapshot("1", [window(1, 10, "1"), window(2, 11, "1"), window(9, 90, "2")]);
+  live.focused = 2;
+  const result = store.restore([saved("1", [90, 9], [90, 9]), saved("2", [90, 9], [90, 9])], live);
+  assert.deepEqual(result, {restored: 1, dropped: 1});
+  assert.deepEqual(
+    windowsOf(store.entries.get("D:1")!).map((w) => w.id),
+    [2, 1],
+  );
+  assert.deepEqual(
+    windowsOf(store.entries.get("D:2")!).map((w) => w.id),
+    [9],
+  );
+  // A survivor whose membership is unknown does not anchor a Desktop by itself.
+  const unknown = new WindowLists();
+  unknown.restore([saved("1", [10, 100])], snapshot("1", [window(100, 10, "", {spaces: []})]));
+  assert.equal(unknown.entries.size, 0);
 });

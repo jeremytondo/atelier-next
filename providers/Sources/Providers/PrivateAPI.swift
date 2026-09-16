@@ -24,6 +24,7 @@ final class PrivateAPI {
   private typealias SetSymbolicHotKeyEnabled = @convention(c) (UInt32, Bool) -> CGError
   private typealias GetWindow =
     @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
+  private typealias GetActiveSpace = @convention(c) (Int32) -> UInt64
   private typealias GetWorkspacesCount =
     @convention(c) (UnsafeMutablePointer<UInt32>, UnsafeMutablePointer<UInt32>) -> Int32
 
@@ -37,6 +38,7 @@ final class PrivateAPI {
   private let isSymbolicHotKeyEnabledFunction: IsSymbolicHotKeyEnabled
   private let setSymbolicHotKeyEnabledFunction: SetSymbolicHotKeyEnabled
   private let getWindow: GetWindow
+  private let getActiveSpace: GetActiveSpace
   private let getWorkspacesCount: GetWorkspacesCount?
 
   init() throws {
@@ -58,6 +60,7 @@ final class PrivateAPI {
     guard let main = symbol("SLSMainConnectionID", or: "CGSMainConnectionID"),
       let managed = symbol("SLSCopyManagedDisplaySpaces", or: "CGSCopyManagedDisplaySpaces"),
       let membership = symbol("SLSCopySpacesForWindows", or: "CGSCopySpacesForWindows"),
+      let active = symbol("SLSGetActiveSpace", or: "CGSGetActiveSpace"),
       let get = symbol("CGSGetSymbolicHotKeyValue"),
       let isEnabled = symbol("CGSIsSymbolicHotKeyEnabled"),
       let setEnabled = symbol("CGSSetSymbolicHotKeyEnabled"),
@@ -77,6 +80,7 @@ final class PrivateAPI {
     isSymbolicHotKeyEnabledFunction = unsafeBitCast(isEnabled, to: IsSymbolicHotKeyEnabled.self)
     setSymbolicHotKeyEnabledFunction = unsafeBitCast(setEnabled, to: SetSymbolicHotKeyEnabled.self)
     getWindow = unsafeBitCast(window, to: GetWindow.self)
+    getActiveSpace = unsafeBitCast(active, to: GetActiveSpace.self)
     processAssignToAllSpaces = symbol("SLSProcessAssignToAllSpaces").map {
       unsafeBitCast($0, to: ProcessAssignToAllSpaces.self)
     }
@@ -95,11 +99,16 @@ final class PrivateAPI {
     copyManagedDisplaySpaces(connection)?.takeRetainedValue() as? [[String: Any]] ?? []
   }
 
-  /// Managed Space IDs a window belongs to; empty for unknown or hidden windows.
+  /// Managed Space IDs a window belongs to; empty when WindowServer reports none.
   func spaces(ofWindow id: UInt32) -> [String] {
     let value = copySpacesForWindows(connection, 0x7, [NSNumber(value: id)] as CFArray)?
       .takeRetainedValue()
     return (value as? [NSNumber] ?? []).map(\.stringValue)
+  }
+
+  /// The Space macOS treats as focused: the one that receives keyboard input.
+  func activeSpace() -> UInt64 {
+    getActiveSpace(connection)
   }
 
   /// The CGWindowID behind an Accessibility window, or 0 when it has none.

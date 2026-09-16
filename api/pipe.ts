@@ -4,7 +4,7 @@
 import type {HS} from "./hs.ts";
 import {Timers} from "./timers.ts";
 
-export const protocolVersion = 3;
+export const protocolVersion = 4;
 /// atelier-providers exits with this status while a previous instance still
 /// holds the single-instance lock, which happens during a Hammerspoon 2 reload.
 export const lockHeldStatus = 75;
