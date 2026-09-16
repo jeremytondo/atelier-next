@@ -7,6 +7,7 @@ import {frameFor, Overlay} from "../defaults/overlay.ts";
 interface Element {
   text?: string;
   roundedRectRadii?: {xRadius: number};
+  textColor?: {alpha: number};
 }
 
 interface FakeCanvas {
@@ -103,6 +104,7 @@ function fixture(chord = ["cmd", "alt"]) {
       display: "D",
       space: "2",
       members: [{pid: 10, id: 1, app: "Fixture", title: "Saved window"}] as Group["members"],
+      waiting: [],
     },
   };
   const redraw = () => overlay.update(state.snapshot, state.group);
@@ -230,6 +232,40 @@ test("overlay stays while Shift comes and goes and redraws a reordered Group at 
   f.flags(["cmd", "alt"]);
   assert.equal(canvas.showing, true);
   f.flags(["cmd"]);
+  assert.equal(canvas.showing, false);
+  f.overlay.stop();
+});
+
+test("overlay keeps a waiting slot's number, dims it, and shows a Group that only waits", () => {
+  const f = fixture();
+  f.state.group!.members = [{pid: 10, id: 1, app: "First", title: ""}] as Group["members"];
+  f.state.group!.waiting = [{bundleID: "app.second", app: "Second", position: 0}];
+  f.flags(["cmd", "alt"]);
+  const canvas = f.canvases[0]!;
+  const rows = () =>
+    canvas.elements
+      .filter((e) => e.text && !/GROUP WINDOWS|Release/.test(e.text))
+      .map((e) => [e.text, e.textColor?.alpha]);
+  assert.deepEqual(rows(), [
+    ["1", 0.45],
+    ["Second", 0.45],
+    ["2", 1],
+    ["First", 1],
+  ]);
+  f.state.group!.members = [];
+  f.redraw();
+  assert.deepEqual(
+    [canvas.showing, rows()],
+    [
+      true,
+      [
+        ["1", 0.45],
+        ["Second", 0.45],
+      ],
+    ],
+  );
+  f.state.group!.waiting = [];
+  f.redraw();
   assert.equal(canvas.showing, false);
   f.overlay.stop();
 });

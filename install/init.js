@@ -12,6 +12,8 @@ atelier
       {app: "Calculator", shortcut: "cmd-shift-c"},
       // {app: "1Password", shortcut: "ctrl-option-p", size: {width: 900, height: 650}},
     ],
+    // Apply a preset to an empty Desktop with its shortcut or the Cmd-Option-P picker:
+    // groupPresets: [{name: "Dev", shortcut: "cmd-option-d", apps: ["Ghostty", "Safari"]}],
   })
   .catch(console.error);
 

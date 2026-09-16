@@ -84,7 +84,7 @@ test("parse accepts the file shape and rejects anything else", () => {
 test("serialize and restore round-trip identities and Fill frames, not titles or failures", () => {
   const store = new Groups();
   const snap = snapshot("1", [window(100, 10, "1"), window(101, 11, "1")]);
-  const group = store.repair(snap);
+  const group = store.create(snap);
   group.members[0]!.filledFrame = {x: 1, y: 2, w: 3, h: 4};
   group.members[1]!.fillFailed = true;
   const text = fileText(store.serialize());
@@ -300,7 +300,7 @@ test("a resumed session takes the file as truth, even when it is missing or brok
   assert.deepEqual(parse(state.files[path]!), []);
 });
 
-test("a reordered Group saves its latest order, restores it, and keeps it through repair", async () => {
+test("a reordered Group saves its latest order and restores it; the toggle forgets and recreates", async () => {
   const {hs, state} = fakeHS();
   fakeApp(hs, state, [1, 2, 3]);
   const first = session(hs);
@@ -322,9 +322,17 @@ test("a reordered Group saves its latest order, restores it, and keeps it throug
   state.snapshot.windows.splice(2, 1);
   const second = session(hs);
   await second.start(options);
-  await second.group();
+  assert.deepEqual(await second.groups.selectMember(1), {window: 2});
   debounce(state)!.callback();
   assert.deepEqual(savedIDs(state), [2, 1, 4]);
-  assert.deepEqual(await second.groups.selectMember(1), {window: 2});
+  // The group shortcut forgets the Group and its order; the next press starts over.
+  assert.deepEqual(await second.group(), {forgotten: true});
+  assert.equal(second.status().groups, 0);
+  debounce(state)!.callback();
+  assert.deepEqual(parse(state.files[path]!), []);
+  assert.deepEqual(await second.groups.selectMember(1), {noop: true});
+  state.snapshot.focused = 4;
+  const recreated = await second.group();
+  assert.deepEqual("members" in recreated && recreated.members.map((m) => m.id), [4, 1, 2]);
   second.stop();
 });

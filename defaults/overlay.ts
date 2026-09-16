@@ -3,7 +3,7 @@
 // native window.
 import type {HS} from "../api/hs.ts";
 import type {Frame} from "../api/spaces.ts";
-import type {Group} from "./groups.ts";
+import {type Group, isMember, slots} from "./groups.ts";
 
 const white = (alpha: number) => ({red: 1, green: 1, blue: 1, alpha});
 
@@ -73,7 +73,8 @@ export class Overlay {
   }
 
   update(snapshot: {missionControl: boolean}, group: Group | null | undefined): void {
-    if (!this.active || !group?.members.length || snapshot.missionControl) {
+    const list = group ? slots(group) : [];
+    if (!this.active || !group || !list.length || snapshot.missionControl) {
       this.hide();
       return;
     }
@@ -98,15 +99,15 @@ export class Overlay {
     const focus = this.hs.window.focusedWindow(),
       usable = screen.frame;
     const rows = Math.max(1, Math.floor((usable.h - 120) / 42));
-    const columns = Math.ceil(group.members.length / rows),
+    const columns = Math.ceil(list.length / rows),
       width = Math.min(320 * columns, usable.w - 40);
-    const height = 68 + Math.min(rows, group.members.length) * 42,
+    const height = 68 + Math.min(rows, list.length) * 42,
       column = width / columns;
     const frame = frameFor(usable, primary.fullFrame, width, height);
     const signature = JSON.stringify([
       frame,
       focus && [focus.pid, focus.id],
-      group.members.map((m) => [m.pid, m.id, m.title]),
+      list.map((slot) => (isMember(slot) ? [slot.pid, slot.id, slot.title] : [slot.bundleID])),
     ]);
     if (signature === this.signature) return;
     const text = (
@@ -136,10 +137,17 @@ export class Overlay {
     ];
     const counts = new Map<string, number>();
     for (const member of group.members) counts.set(member.app, (counts.get(member.app) || 0) + 1);
-    group.members.forEach((member, index) => {
+    list.forEach((slot, index) => {
       const x = Math.floor(index / rows) * column,
         y = 36 + (index % rows) * 42;
-      if (focus && focus.pid === member.pid && focus.id === member.id)
+      const number = index === 9 ? 0 : index + 1;
+      if (!isMember(slot)) {
+        // A preset app that has not shown a window yet keeps its number, dimmed.
+        elements.push(text(number, x + 18, y + 5, 28, 14, 0.45));
+        elements.push(text(slot.app, x + 52, y + 5, column - 66, 14, 0.45));
+        return;
+      }
+      if (focus && focus.pid === slot.pid && focus.id === slot.id)
         elements.push({
           type: "rectangle",
           action: "fill",
@@ -147,13 +155,11 @@ export class Overlay {
           roundedRectRadii: {xRadius: 7, yRadius: 7},
           fillColor: {red: 0.2, green: 0.4, blue: 0.8, alpha: 0.5},
         });
-      const duplicate = (counts.get(member.app) ?? 0) > 1;
-      elements.push(
-        text(index === 9 ? 0 : index + 1, x + 18, y + 5, 28, 14, index < 10 ? 1 : 0.45),
-      );
-      elements.push(text(member.app, x + 52, y + (duplicate ? 0 : 5), column - 66, 14));
+      const duplicate = (counts.get(slot.app) ?? 0) > 1;
+      elements.push(text(number, x + 18, y + 5, 28, 14, index < 10 ? 1 : 0.45));
+      elements.push(text(slot.app, x + 52, y + (duplicate ? 0 : 5), column - 66, 14));
       if (duplicate)
-        elements.push(text(member.title || "Untitled", x + 52, y + 18, column - 66, 10, 0.6));
+        elements.push(text(slot.title || "Untitled", x + 52, y + 18, column - 66, 10, 0.6));
     });
     elements.push(text("Release modifiers to hide", 18, height - 24, width - 36, 11, 0.5));
     if (!this.canvas)

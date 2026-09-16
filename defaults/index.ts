@@ -9,22 +9,25 @@ import type {Snapshot} from "../api/spaces.ts";
 import {Timers} from "../api/timers.ts";
 import {setAXAttribute} from "./accessibility.ts";
 import {
-  type Binding,
   type Config,
   defaults as defaultOptions,
+  type GroupPresetEntry,
   normalize,
   type Options,
   type QuickAppEntry,
+  type Shortcut,
   shortcut,
 } from "./configuration.ts";
 import {
   type Group,
   Groups,
   identity,
+  isMember,
   type Member,
   type MoveTarget,
   moveTarget,
   sameFrame,
+  slots,
 } from "./groups.ts";
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
@@ -43,10 +46,16 @@ export type State = "Paused" | "Starting" | "Waiting for Accessibility" | "Runni
 export type SpaceAction = "switch" | "create" | "reorder" | "delete";
 export type Busy = {busy: true};
 export type Noop = {noop: true};
+export type Forgotten = {forgotten: true};
 export type MemberResult = {window: number} | Noop | Busy;
 
-/** Operations on the current Desktop's Group members; a Group itself is created
- *  or repaired by `group()`. */
+/** The Group a preset produced, plus the apps whose slot was left empty. */
+export interface AppliedPreset {
+  group: Group;
+  skipped: string[];
+}
+
+/** Operations on the current Desktop's Group; `group()` creates or forgets one. */
 export interface GroupMembers {
   /** Focuses the member at the one-based slot, with lazy Fill. */
   selectMember(slot: number): Promise<MemberResult>;
@@ -54,6 +63,8 @@ export interface GroupMembers {
   cycleMember(offset: number): Promise<MemberResult>;
   /** Moves the focused member by an offset or to a final slot, without touching focus or geometry. */
   moveMember(target: MoveTarget): Promise<MemberResult>;
+  /** Launches a preset's apps on an empty Desktop and numbers them in the declared order. */
+  applyPreset(name: string): Promise<AppliedPreset | Busy>;
 }
 
 export interface Status {
@@ -62,6 +73,8 @@ export interface Status {
   version: string;
   hammerspoon2: {build: string; expectedBuild: string};
   quickApps: {app: string; bundleID: string; shortcut: string}[];
+  /** Each preset with the apps that resolved at start-up. */
+  groupPresets: {name: string; apps: string[]; shortcut: string | null}[];
   groups: number;
   /** The Groups state file, its last write in this context, and the start-up restore result. */
   groupsFile: {
@@ -81,7 +94,8 @@ export interface Defaults {
   status(): Status;
   /** A fresh copy of the shipped options. */
   defaults(): Required<Options>;
-  group(): Promise<Group | Busy>;
+  /** Creates a Group on the current Desktop, or forgets the one it has. */
+  group(): Promise<Group | Forgotten | Busy>;
   groups: GroupMembers;
   space(
     command: SpaceAction,
@@ -91,6 +105,12 @@ export interface Defaults {
 }
 
 type QuickApp = QuickAppEntry & ResolvedApplication;
+interface GroupPreset extends GroupPresetEntry {
+  resolved: ResolvedApplication[];
+}
+
+/** How long a preset's slot waits for its app to show a window on the Desktop. */
+export const waitingSeconds = 30;
 
 const events = [
   "AXFocusedWindowChanged",
@@ -123,8 +143,11 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     lastError: string | null = null,
     poll: HSTimer | null = null,
     overlay: Overlay | null = null,
+    workspace: Workspace | null = null,
     quick: QuickApps | null = null,
     quickApps: QuickApp[] = [],
+    presets: GroupPreset[] = [],
+    chooser: HSChooser | null = null,
     startOptions: Options | undefined,
     observedFocus: string | null = null,
     unwatchFailures: (() => void) | null = null,
@@ -213,9 +236,10 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     redraw();
     return next;
   }
+  // Watches the processes on screen while any Group exists; nothing otherwise.
   function syncObservers() {
-    if (!config.groups || !groups.entries.size || !snapshot) return;
-    const pids = new Set(snapshot.windows.map((w) => w.pid));
+    const wanted = config.groups && groups.entries.size && snapshot ? snapshot.windows : [];
+    const pids = new Set(wanted.map((w) => w.pid));
     for (const [pid, entry] of observers) {
       if (pids.has(pid)) continue;
       hs.ax.removeWatcher(entry.element, events, entry.callback);
@@ -385,9 +409,18 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       });
   }
   const group = () =>
-    run("group", async (epoch) => {
+    run("group", async (epoch): Promise<Group | Forgotten> => {
       const next = await refresh(epoch),
-        entry = groups.repair(next);
+        existing = groups.current(next);
+      if (existing) {
+        groups.forget(existing);
+        persist();
+        syncObservers();
+        redraw();
+        console.log("Atelier: Forgot the Group on this Desktop");
+        return {forgotten: true};
+      }
+      const entry = groups.create(next);
       syncObservers();
       const member = entry.members.find((w) => w.id === next.focused) || entry.members[0];
       if (member) await activate(entry, member, epoch);
@@ -397,8 +430,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     run("selectMember", async (epoch): Promise<{window: number} | Noop> => {
       const next = await refresh(epoch),
         entry = groups.current(next),
-        member = entry?.members[slot - 1];
-      if (!entry || !member) return {noop: true};
+        member = entry && slots(entry)[slot - 1];
+      if (!entry || !member || !isMember(member)) return {noop: true};
       await activate(entry, member, epoch);
       return {window: member.id};
     });
@@ -424,6 +457,77 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       persist();
       redraw();
       return {window: member.id};
+    });
+  // Gives up a preset's waiting slots; a Group forgotten or replaced meanwhile is left alone.
+  function expire(entry: Group) {
+    if (groups.entries.get(groups.key(entry.display, entry.space)) !== entry) return;
+    const names = groups.expire(entry);
+    if (names.length) console.log("Atelier: Gave up waiting for " + names.join(", "));
+    persist();
+    redraw();
+  }
+  // The windows that may belong to `space`: membership says so or is unknown,
+  // which a hidden window's may be. Windows known to be elsewhere are left out.
+  async function onDesktop(ws: Workspace, windows: number[], space: string, epoch: number) {
+    const here: number[] = [];
+    for (const window of windows) {
+      const spaces = await ws.spaces(window);
+      assertValid(epoch);
+      if (!spaces.length || spaces.includes(space)) here.push(window);
+    }
+    return here;
+  }
+  const applyPreset = (name: string) =>
+    run("applyPreset", async (epoch): Promise<AppliedPreset> => {
+      const preset = presets.find((p) => p.name === name),
+        ws = workspace;
+      if (!preset || !ws) throw new Error("Group preset is not configured: " + name);
+      if (!preset.resolved.length)
+        throw new Error("No app in Group preset " + name + " is installed");
+      const next = await refresh(epoch),
+        entry = groups.expect(next),
+        skipped: string[] = [],
+        revealed = new Set<string>();
+      try {
+        for (const app of preset.resolved) {
+          const pid = ws.running(app.bundleID),
+            windows = pid === null ? [] : ws.windows(pid);
+          if (pid !== null && windows.length) {
+            const here = await onDesktop(ws, windows, entry.space, epoch);
+            if (!here.length) {
+              skipped.push(app.name);
+              console.log("Atelier: " + app.name + " is open on another Desktop; slot left empty");
+              continue;
+            }
+            // Reveal without activating; the window then arrives through the inventory.
+            if (ws.isHidden(pid)) ws.unhide(pid);
+            for (const window of here) if (ws.isMinimized(window)) ws.unminimize(window);
+            revealed.add(app.bundleID);
+          } else {
+            try {
+              await ws.launch(app);
+              assertValid(epoch);
+            } catch (error) {
+              assertValid(epoch);
+              skipped.push(app.name);
+              console.log("Atelier: Could not launch " + app.name + ": " + String(error));
+              continue;
+            }
+          }
+          groups.wait(entry, {bundleID: app.bundleID, app: app.name});
+        }
+        // Windows that were only hidden or minimized are on the Desktop already.
+        await refresh(epoch);
+      } finally {
+        // Whatever happened, slots still waiting must not wait forever.
+        if (!valid(epoch)) groups.forget(entry);
+        else if (entry.waiting.length) timers.after(waitingSeconds, () => expire(entry));
+      }
+      // Only a window that was already here takes focus; a launched one never does.
+      const first = slots(entry)[0];
+      if (first && isMember(first) && revealed.has(first.bundleID))
+        await activate(entry, first, epoch);
+      return {group: entry, skipped};
     });
   const space = (command: SpaceAction, args: {number?: number; offset?: -1 | 1} = {}) =>
     run(command, async (epoch): Promise<Snapshot | Noop> => {
@@ -474,6 +578,11 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     version: info.version,
     hammerspoon2: {build: hs.appinfo.build, expectedBuild: info.expectedBuild},
     quickApps: quickApps.map((a) => ({app: a.app, bundleID: a.bundleID, shortcut: a.shortcut})),
+    groupPresets: presets.map((p) => ({
+      name: p.name,
+      apps: p.resolved.map((a) => a.name),
+      shortcut: p.shortcut?.text ?? null,
+    })),
     groups: groups.entries.size,
     groupsFile: {
       path: file.path,
@@ -483,7 +592,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     },
     metrics,
   });
-  function bind(binding: Binding | QuickApp, action: () => Promise<unknown>) {
+  function bind(binding: Shortcut, action: () => Promise<unknown>, space = false) {
     const occupied = hs.hotkey.getHotkeys().some((key) => {
       try {
         return shortcut(key.mods.join("-") + "-" + key.key).identity === binding.identity;
@@ -504,10 +613,15 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       if (key) key.destroy();
       throw new Error("Shortcut unavailable: " + binding.identity);
     }
-    bindings.push({key, space: "space" in binding && binding.space});
+    bindings.push({key, space});
   }
   const actions: Record<string, () => Promise<unknown>> = {
     group,
+    "group-presets": async () => {
+      if (!chooser) return;
+      chooser.query = "";
+      chooser.show();
+    },
     "cycle-previous": () => cycleMember(-1),
     "cycle-next": () => cycleMember(1),
     "move-previous": () => moveMember(-1),
@@ -589,7 +703,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
         const hello = await api.providers.start();
         assertValid(epoch);
         if (!hello.trusted) await waitForAccessibility(epoch, true);
-        quick = new QuickApps((info.workspace ?? ((t) => liveWorkspace(hs, api, t)))(timers));
+        workspace = (info.workspace ?? ((t) => liveWorkspace(hs, api, t)))(timers);
+        quick = new QuickApps(workspace);
         quickApps = [];
         const seen = new Set<string>();
         for (const entry of config.quickApps) {
@@ -604,14 +719,57 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
             report(error);
           }
         }
+        presets = [];
+        for (const entry of config.groupPresets) {
+          // A missing app costs its slot, not the preset; an app listed twice under
+          // different names, or shared with a Quick App, is a configuration error.
+          const resolved: ResolvedApplication[] = [],
+            label = 'Group preset "' + entry.name + '"';
+          for (const app of entry.apps) {
+            let target: ResolvedApplication;
+            try {
+              target = await api.application.resolve(app);
+            } catch (error) {
+              assertValid(epoch);
+              const message = error instanceof Error ? error.message : String(error);
+              report(new Error(label + ": " + message));
+              continue;
+            }
+            assertValid(epoch);
+            if (resolved.some((r) => r.bundleID === target.bundleID))
+              throw new Error(label + " lists " + app + " twice");
+            if (seen.has(target.bundleID)) throw new Error(label + " lists the Quick App " + app);
+            resolved.push(target);
+          }
+          presets.push({...entry, resolved});
+        }
         const first = await refresh(epoch);
         if (config.groups) restore(first);
+        else groups.entries.clear();
         for (const binding of config.shortcuts) {
           const action = actions[binding.name];
           if (!action) throw new Error("Unknown binding: " + binding.name);
-          bind(binding, action);
+          if (binding.name === "group-presets" && !presets.length) continue;
+          bind(binding, action, binding.space);
         }
         for (const entry of quickApps) bind(entry, () => quickApp(entry.bundleID));
+        if (config.groups) {
+          for (const preset of presets)
+            if (preset.shortcut) bind(preset.shortcut, () => applyPreset(preset.name));
+          if (presets.length) {
+            chooser = hs.chooser.create();
+            chooser.placeholder = "Group preset";
+            chooser.setChoices(
+              presets.map((p) => ({
+                text: p.name,
+                subText: p.resolved.map((a) => a.name).join(", "),
+              })),
+            );
+            chooser.onSelect = (item) => {
+              if (item && typeof item.text === "string") fire(applyPreset(item.text));
+            };
+          }
+        }
         if (config.groups && config.overlay) {
           overlay = new Overlay(hs, config.overlayFlags, () => {
             redraw();
@@ -646,7 +804,13 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       poll = null;
       if (overlay) overlay.stop();
       overlay = null;
+      if (chooser) {
+        chooser.onSelect = null;
+        if (chooser.isVisible) chooser.hide();
+      }
+      chooser = null;
       quick = null;
+      workspace = null;
       for (const {key} of bindings) key.destroy();
       bindings.length = 0;
       for (const {element, callback} of observers.values())
@@ -663,7 +827,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     status,
     defaults: defaultOptions,
     group,
-    groups: {selectMember, cycleMember, moveMember},
+    groups: {selectMember, cycleMember, moveMember, applyPreset},
     space,
     quickApp,
   };

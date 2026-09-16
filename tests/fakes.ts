@@ -3,6 +3,7 @@
 import type {HS} from "../api/hs.ts";
 import {protocolVersion} from "../api/pipe.ts";
 import type {Snapshot} from "../api/spaces.ts";
+import type {FakeWorkspace} from "./fake-workspace.ts";
 
 export interface FakeTask {
   path: string;
@@ -68,6 +69,22 @@ export interface FakeState {
   /** Path to contents, the fake disk. */
   files: Record<string, string>;
   writable: boolean;
+  choosers: FakeChooser[];
+  /** App references the fake providers cannot resolve. */
+  missingApps: string[];
+  /** App references that resolve to another reference's app, like a bundle ID. */
+  aliases: Record<string, string>;
+}
+
+export interface FakeChooser {
+  choices: {text: string; subText?: string}[];
+  placeholder: string;
+  query: string;
+  isVisible: boolean;
+  onSelect: ((item: {text: string} | null) => void) | null;
+  setChoices(choices: {text: string; subText?: string}[]): FakeChooser;
+  show(): FakeChooser;
+  hide(): FakeChooser;
 }
 
 export function fakeHS(): {hs: HS; state: FakeState} {
@@ -101,6 +118,9 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     notificationRequests: 0,
     files: {},
     writable: true,
+    choosers: [],
+    missingApps: [],
+    aliases: {},
   };
   const timer = (seconds: number, repeats: boolean, callback: () => void): FakeTimer => {
     const value: FakeTimer = {
@@ -232,8 +252,15 @@ export function fakeHS(): {hs: HS; state: FakeState} {
                 result = {protocolVersion, trusted: state.trusted};
                 break;
               case "application.resolve":
+                if (state.missingApps.includes(String(request.app))) {
+                  const error = "No application named " + request.app;
+                  queueMicrotask(() =>
+                    output("stdout", JSON.stringify({id: request.id, ok: false, error}) + "\n"),
+                  );
+                  return;
+                }
                 result = {
-                  bundleID: "app." + request.app,
+                  bundleID: "app." + (state.aliases[String(request.app)] ?? request.app),
                   name: request.app,
                   path: "/Applications/" + request.app + ".app",
                 };
@@ -305,6 +332,31 @@ export function fakeHS(): {hs: HS; state: FakeState} {
         state.notifications.push(body);
       },
     },
+    chooser: {
+      create: () => {
+        const chooser: FakeChooser = {
+          choices: [],
+          placeholder: "Search...",
+          query: "",
+          isVisible: false,
+          onSelect: null,
+          setChoices(choices) {
+            this.choices = choices;
+            return this;
+          },
+          show() {
+            this.isVisible = true;
+            return this;
+          },
+          hide() {
+            this.isVisible = false;
+            return this;
+          },
+        };
+        state.choosers.push(chooser);
+        return chooser;
+      },
+    },
   };
   return {hs: hs as unknown as HS, state};
 }
@@ -315,6 +367,22 @@ export interface FakeApp {
   /** Whether the Fill menu item exists; false makes every Fill fail. */
   fillAvailable: boolean;
   application: Record<string, unknown>;
+}
+
+/** A menu bar whose only item is native Fill, recording each press on `fake`. */
+function fillMenu(hs: HS, state: FakeState, fake: FakeApp) {
+  hs.ax.applicationElement = (() => ({
+    attributeValue: () => ({
+      attributeValue: (name: string) =>
+        name === "AXIdentifier" && fake.fillAvailable ? "_zoomFill:" : null,
+      children: () => [],
+      isEnabled: true,
+      performAction: () => {
+        fake.fills.push(state.snapshot.focused);
+        return true;
+      },
+    }),
+  })) as unknown as typeof hs.ax.applicationElement;
 }
 
 /** Windows of process 42 on Desktop 1 that focus and Fill through the fakes. */
@@ -343,18 +411,7 @@ export function fakeApp(hs: HS, state: FakeState, ids: number[]): FakeApp {
     windows.find(
       (w) => w.id === state.snapshot.focused,
     )) as unknown as typeof hs.window.focusedWindow;
-  hs.ax.applicationElement = (() => ({
-    attributeValue: () => ({
-      attributeValue: (name: string) =>
-        name === "AXIdentifier" && fake.fillAvailable ? "_zoomFill:" : null,
-      children: () => [],
-      isEnabled: true,
-      performAction: () => {
-        fake.fills.push(state.snapshot.focused);
-        return true;
-      },
-    }),
-  })) as unknown as typeof hs.ax.applicationElement;
+  fillMenu(hs, state, fake);
   state.snapshot.focused = ids[0] ?? 0;
   state.snapshot.windows = ids.map((id) => ({
     id,
@@ -365,5 +422,44 @@ export function fakeApp(hs: HS, state: FakeState, ids: number[]): FakeApp {
     app: "fixture",
     bundleID: "fixture",
   }));
+  return fake;
+}
+
+/** Bridges `hs.application` and `hs.window` to a fake Mac's processes so the
+ *  windows it lists focus and Fill through the fakes. The Spaces inventory
+ *  stays the test's to fill. */
+export function fakeMac(hs: HS, state: FakeState, mac: FakeWorkspace): FakeApp {
+  const fake: FakeApp = {fills: [], fillAvailable: true, application: {}};
+  const element = () => ({setAttributeValueValue: () => true});
+  const window = (pid: number, id: number) => ({
+    id,
+    pid,
+    application: {bundleID: mac.apps.get(pid)?.bundleID, axElement: element},
+    frame: mac.frame(id) ?? {x: 0, y: 0, w: 400, h: 300},
+    axElement: () => ({
+      ...element(),
+      performAction: () => {
+        state.snapshot.focused = id;
+        mac.focus(pid, id);
+        return true;
+      },
+    }),
+  });
+  hs.application.fromPID = ((pid: number) => {
+    const app = mac.apps.get(pid);
+    return (
+      app && {
+        bundleID: app.bundleID,
+        allWindows: app.windows.map((id) => window(pid, id)),
+        axElement: element,
+      }
+    );
+  }) as unknown as typeof hs.application.fromPID;
+  hs.window.focusedWindow = (() => {
+    for (const [pid, app] of mac.apps)
+      if (app.windows.includes(state.snapshot.focused)) return window(pid, state.snapshot.focused);
+    return null;
+  }) as unknown as typeof hs.window.focusedWindow;
+  fillMenu(hs, state, fake);
   return fake;
 }

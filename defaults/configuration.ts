@@ -25,6 +25,8 @@ const keys: Record<string, string> = {
   enter: "return",
   esc: "escape",
 };
+/** Quick Apps and Group presets each take at most this many entries. */
+const listLimit = 50;
 
 export interface Shortcut {
   mods: string[];
@@ -43,6 +45,13 @@ export interface QuickAppOption {
   size?: QuickAppSize;
 }
 
+export interface GroupPresetOption {
+  name: string;
+  /** App names, bundle IDs, or absolute `.app` paths; position is the member number. */
+  apps: string[];
+  shortcut?: string;
+}
+
 /** Everything `atelier.start` accepts. */
 export interface Options {
   spaces?: boolean;
@@ -51,6 +60,7 @@ export interface Options {
   overlayModifiers?: string;
   bindings?: Record<string, string>;
   quickApps?: QuickAppOption[];
+  groupPresets?: GroupPresetOption[];
 }
 
 export interface Binding extends Shortcut {
@@ -65,6 +75,13 @@ export interface QuickAppEntry extends Shortcut {
   size?: QuickAppSize;
 }
 
+export interface GroupPresetEntry {
+  name: string;
+  apps: string[];
+  /** The parsed shortcut with the text it came from. */
+  shortcut?: Shortcut & {text: string};
+}
+
 export interface Config {
   spaces: boolean;
   groups: boolean;
@@ -74,6 +91,7 @@ export interface Config {
   bindings: Record<string, string>;
   shortcuts: Binding[];
   quickApps: QuickAppEntry[];
+  groupPresets: GroupPresetEntry[];
 }
 
 export function shortcut(text: unknown): Shortcut {
@@ -103,6 +121,7 @@ export function defaultBindings(): Record<string, string> {
   const bindings: Record<string, string> = {
     "reload-config": "ctrl-option-cmd-r",
     group: "cmd-option-g",
+    "group-presets": "cmd-option-p",
     "cycle-previous": "cmd-option-left-bracket",
     "cycle-next": "cmd-option-right-bracket",
     "move-previous": "cmd-option-shift-left-bracket",
@@ -129,23 +148,32 @@ export function defaults(): Required<Options> {
     overlayModifiers: "cmd-option",
     bindings: defaultBindings(),
     quickApps: [{app: "Calculator", shortcut: "cmd-shift-c"}],
+    groupPresets: [],
   };
+}
+
+const isText = (value: unknown): value is string => typeof value === "string" && !!value.trim();
+
+function checkKeys(candidate: object, allowed: string[], what: string) {
+  for (const name of Object.keys(candidate)) {
+    if (!allowed.includes(name)) throw new Error("Unknown " + what + " option: " + name);
+  }
 }
 
 export function normalize(options: unknown = {}): Config {
   if (!options || typeof options !== "object" || Array.isArray(options))
     throw new Error("Options must be an object");
   const given = options as Record<string, unknown>;
-  for (const name of Object.keys(given)) {
-    if (!Object.hasOwn(defaults(), name)) throw new Error("Unknown Atelier option: " + name);
-  }
+  checkKeys(given, Object.keys(defaults()), "Atelier");
   const merged = {...defaults(), ...(given as Options)};
   for (const name of ["spaces", "groups", "overlay"] as const) {
     if (typeof merged[name] !== "boolean") throw new Error(name + " must be true or false");
   }
   const bindings = {...defaultBindings(), ...(merged.bindings as Record<string, string>)};
-  if (!Array.isArray(merged.quickApps) || merged.quickApps.length > 50)
-    throw new Error("quickApps must be an array of at most 50 entries");
+  for (const name of ["quickApps", "groupPresets"] as const) {
+    if (!Array.isArray(merged[name]) || merged[name].length > listLimit)
+      throw new Error(name + " must be an array of at most " + listLimit + " entries");
+  }
   const used = new Map<string, string>();
   const claim = (text: unknown, name: string) => {
     const parsed = shortcut(text);
@@ -168,12 +196,9 @@ export function normalize(options: unknown = {}): Config {
   }
   const quickApps = merged.quickApps.map((entry: unknown, index): QuickAppEntry => {
     const candidate = entry as Partial<QuickAppOption> | null;
-    if (!candidate || typeof candidate.app !== "string" || !candidate.app.trim())
+    if (!candidate || !isText(candidate.app))
       throw new Error("Quick App " + (index + 1) + " needs an app");
-    for (const name of Object.keys(candidate)) {
-      if (["app", "shortcut", "size"].includes(name)) continue;
-      throw new Error("Unknown Quick App option: " + name);
-    }
+    checkKeys(candidate, ["app", "shortcut", "size"], "Quick App");
     const size = candidate.size;
     if (
       size &&
@@ -189,6 +214,32 @@ export function normalize(options: unknown = {}): Config {
       ...claim(candidate.shortcut, app),
     };
   });
+  const quickAppNames = new Set(quickApps.map((entry) => entry.app));
+  const presetNames = new Set<string>();
+  // Presets are validated even with `groups: false`, like the rest of the options.
+  const groupPresets = merged.groupPresets.map((entry: unknown, index): GroupPresetEntry => {
+    const candidate = entry as Partial<GroupPresetOption> | null;
+    if (!candidate || !isText(candidate.name))
+      throw new Error("Group preset " + (index + 1) + " needs a name");
+    const name = candidate.name.trim(),
+      label = 'Group preset "' + name + '"';
+    checkKeys(candidate, ["name", "apps", "shortcut"], label);
+    if (presetNames.has(name)) throw new Error(label + " is listed twice");
+    presetNames.add(name);
+    if (!Array.isArray(candidate.apps) || !candidate.apps.length || !candidate.apps.every(isText))
+      throw new Error(label + " needs a list of app names");
+    const apps = candidate.apps.map((app) => app.trim());
+    for (const [position, app] of apps.entries()) {
+      if (apps.indexOf(app) !== position) throw new Error(label + " lists " + app + " twice");
+      if (quickAppNames.has(app)) throw new Error(label + " lists the Quick App " + app);
+    }
+    if (candidate.shortcut === undefined) return {name, apps};
+    return {
+      name,
+      apps,
+      shortcut: {text: String(candidate.shortcut), ...claim(candidate.shortcut, label)},
+    };
+  });
   return {
     spaces: merged.spaces,
     groups: merged.groups,
@@ -198,5 +249,6 @@ export function normalize(options: unknown = {}): Config {
     bindings,
     shortcuts,
     quickApps,
+    groupPresets,
   };
 }
