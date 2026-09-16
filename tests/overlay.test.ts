@@ -1,31 +1,9 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import type {HS} from "../api/hs.ts";
-import {frameFor, Overlay} from "../defaults/overlay.ts";
+import {frameFor} from "../defaults/hud.ts";
+import {Overlay} from "../defaults/overlay.ts";
 import type {DesktopWindows, ListedWindow} from "../defaults/windows.ts";
-
-interface Element {
-  text?: string;
-  roundedRectRadii?: {xRadius: number};
-  textColor?: {alpha: number};
-}
-
-interface FakeCanvas {
-  frame: unknown;
-  showing: boolean;
-  destroyed: boolean;
-  shows: number;
-  elements: Element[];
-  level(): FakeCanvas;
-  behaviorList(): FakeCanvas;
-  clickActivating(): FakeCanvas;
-  ignoreMouseEvents(): FakeCanvas;
-  setFrame(value: unknown): FakeCanvas;
-  replaceElements(value: Element[]): FakeCanvas;
-  show(): FakeCanvas;
-  hide(): void;
-  destroy(): void;
-}
+import {type FakeCanvas, fakeHS} from "./fakes.ts";
 
 const listed = (pid: number, id: number, app: string, title = ""): ListedWindow => ({
   pid,
@@ -39,76 +17,9 @@ const listed = (pid: number, id: number, app: string, title = ""): ListedWindow 
 
 // Records canvas lifetime and input events; does not simulate macOS placement.
 function fixture(chord = ["cmd", "alt"]) {
-  const canvases: FakeCanvas[] = [],
-    screen = {
-      uuid: "D",
-      frame: {x: 0, y: 0, w: 1200, h: 800},
-      fullFrame: {x: 0, y: 0, w: 1200, h: 800},
-    };
-  let callback: (event: {flags: string[]}) => unknown,
-    removed = false;
-  const hs = {
-    screen: {primary: () => screen, all: () => [screen]},
-    window: {focusedWindow: () => ({pid: 10, id: 1})},
-    eventtap: {
-      eventTypes: {flagsChanged: 1, keyDown: 2, keyUp: 3, leftMouseDown: 4},
-      emit: {},
-      addWatcher: (_: unknown, handler: typeof callback) => {
-        callback = handler;
-        return {start() {}};
-      },
-      removeWatcher: () => {
-        removed = true;
-      },
-    },
-    canvas: {
-      create: (frame: unknown) => {
-        const canvas: FakeCanvas = {
-          frame,
-          showing: false,
-          destroyed: false,
-          shows: 0,
-          elements: [],
-          level() {
-            return this;
-          },
-          behaviorList() {
-            return this;
-          },
-          clickActivating() {
-            return this;
-          },
-          ignoreMouseEvents() {
-            return this;
-          },
-          setFrame(value) {
-            this.frame = value;
-            return this;
-          },
-          replaceElements(value) {
-            this.elements = value;
-            return this;
-          },
-          show() {
-            assert.equal(this.destroyed, false);
-            this.showing = true;
-            this.shows++;
-            return this;
-          },
-          hide() {
-            this.showing = false;
-          },
-          destroy() {
-            this.destroyed = true;
-            this.showing = false;
-          },
-        };
-        canvases.push(canvas);
-        return canvas;
-      },
-    },
-  };
-  const state: {snapshot: {missionControl: boolean}; desktop: DesktopWindows | null} = {
+  const {hs, state} = fakeHS();
+  hs.window.focusedWindow = (() => ({pid: 10, id: 1})) as unknown as typeof hs.window.focusedWindow;
+  const store: {snapshot: {missionControl: boolean}; desktop: DesktopWindows | null} = {
     snapshot: {missionControl: false},
     desktop: {
       display: "D",
@@ -116,16 +27,19 @@ function fixture(chord = ["cmd", "alt"]) {
       slots: [listed(10, 1, "Fixture", "Saved window")],
     },
   };
-  const redraw = () => overlay.update(state.snapshot, state.desktop);
-  const overlay = new Overlay(hs as unknown as HS, chord, redraw);
+  const redraw = () => overlay.update(store.snapshot, store.desktop);
+  const overlay = new Overlay(hs, chord, redraw);
   overlay.start();
+  const tap = state.taps[0]!;
+  assert.equal(tap.listenOnly, true);
   return {
-    state,
-    canvases,
+    state: store,
+    canvases: state.canvases,
     overlay,
     redraw,
-    removed: () => removed,
-    flags: (flags: string[]) => assert.equal(callback({flags}), hs.eventtap.emit),
+    removed: () => tap.removed,
+    flags: (flags: string[]) =>
+      assert.equal(tap.callback({type: 12, keyCode: 0, flags}), hs.eventtap.emit),
   };
 }
 
@@ -134,11 +48,17 @@ const rows = (canvas: FakeCanvas) =>
     .filter((e) => e.text && !/WINDOWS|Release/.test(e.text))
     .map((e) => [e.text, e.textColor?.alpha]);
 
-test("overlay positions correctly on a screen above the primary", () => {
+test("the panel sits at the bottom of a screen above the primary", () => {
   assert.deepEqual(frameFor({x: 0, y: -900, w: 1200, h: 900}, {h: 1000}, 320, 200), {
     x: 860,
     y: 1020,
     w: 320,
+    h: 200,
+  });
+  assert.deepEqual(frameFor({x: 0, y: 0, w: 1200, h: 800}, {h: 800}, 360, 200, "bottomCenter"), {
+    x: 420,
+    y: 20,
+    w: 360,
     h: 200,
   });
 });
@@ -255,8 +175,8 @@ test("overlay dims hidden and minimized windows and redraws when one is revealed
   assert.deepEqual(rows(canvas), [
     ["1", 1],
     ["First", 1],
-    ["2", 0.55],
-    ["Second", 0.55],
+    ["2", 0.45],
+    ["Second", 0.45],
   ]);
   (f.state.desktop!.slots[1] as ListedWindow).visible = true;
   f.redraw();
@@ -294,5 +214,14 @@ test("overlay keeps a waiting slot's number, dims it, and shows a list that only
   f.state.desktop!.slots = [];
   f.redraw();
   assert.equal(canvas.showing, false);
+  f.overlay.stop();
+});
+
+test("duplicate app names get their window titles as a second line", () => {
+  const f = fixture();
+  f.state.desktop!.slots = [listed(10, 1, "Editor", "Notes"), listed(10, 2, "Editor", "Plans")];
+  f.flags(["cmd", "alt"]);
+  const texts = f.canvases[0]!.elements.map((e) => e.text);
+  assert.ok(texts.includes("Notes") && texts.includes("Plans"));
   f.overlay.stop();
 });

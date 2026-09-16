@@ -7,13 +7,21 @@ atelier
     spaces: true,
     windows: true,
     overlay: true,
-    // bindings: {"desktop-create": "ctrl-option-n", "select-1": "none"},
+    // leader: "option-space", // press and release, then type a sequence such as `w f`
+    // hud: {delay: 0, timeout: 10},
     quickApps: [
       {app: "Calculator", shortcut: "cmd-shift-c"},
       // {app: "1Password", shortcut: "ctrl-option-p", size: {width: 900, height: 650}},
     ],
     // Apply a preset to an empty Desktop with its shortcut or the Cmd-Option-P picker:
     // presets: [{name: "Dev", shortcut: "cmd-option-d", apps: ["Ghostty", "Safari"]}],
+    // keymap: {
+    //   global: {"ctrl-option-n": "desktop-create", "cmd-option-1": false},
+    //   leader: {"a c": "quick-app:Calculator", "s p d": "preset:Dev"},
+    // },
+    // commands: {
+    //   terminal: {label: "Terminal", action: () => hs.application.launchOrFocus("com.apple.Terminal")},
+    // },
   })
   .catch(console.error);
 

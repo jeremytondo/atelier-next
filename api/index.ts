@@ -6,6 +6,7 @@ import {type ApplicationAPI, createApplication} from "./application.ts";
 import type {HS} from "./hs.ts";
 import {type Hello, Pipe} from "./pipe.ts";
 import {createSpaces, type SpacesAPI} from "./spaces.ts";
+import {createWindow, type WindowAPI} from "./window.ts";
 
 export interface ProvidersAPI {
   start(): Promise<Hello>;
@@ -18,6 +19,8 @@ export interface ProvidersAPI {
 export interface AtelierAPI {
   spaces: SpacesAPI;
   application: ApplicationAPI;
+  /** Native window actions of the frontmost app, read and pressed through `hs.ax`. */
+  window: WindowAPI;
   providers: ProvidersAPI;
 }
 
@@ -53,6 +56,7 @@ export function createAPI(hs: HS, options: APIOptions): AtelierAPI {
   return {
     spaces: createSpaces(request),
     application: createApplication(request),
+    window: createWindow(hs),
     providers: {
       start,
       stop: () => pipe.stop(),

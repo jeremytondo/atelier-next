@@ -3,7 +3,7 @@ import {test} from "node:test";
 import type {HS} from "../api/hs.ts";
 import {createAPI} from "../api/index.ts";
 import type {Snapshot, WindowInfo} from "../api/spaces.ts";
-import {normalize, type PresetOption, shortcut} from "../defaults/configuration.ts";
+import {normalize, type PresetOption} from "../defaults/configuration.ts";
 import {createDefaults, type DefaultsInfo, waitingSeconds} from "../defaults/index.ts";
 import {parse} from "../defaults/state.ts";
 import {
@@ -71,43 +71,62 @@ async function pumped<T>(state: FakeState, pending: Promise<T>): Promise<T> {
   return pending;
 }
 
-test("custom bindings replace defaults, support disabling, and detect aliases", () => {
+test("user chords replace defaults, false disables, and only user entries can conflict", () => {
   const config = normalize({
     ...options,
-    bindings: {"desktop-create": "ctrl-option-n", "select-1": "none"},
+    keymap: {global: {"ctrl-option-n": "desktop-create", "cmd-option-1": false}},
   });
-  assert.equal(config.shortcuts.find((b) => b.name === "desktop-create")!.key, "n");
-  assert.ok(!config.shortcuts.some((b) => b.name === "select-1"));
-  const move = (name: string, c = config) => c.shortcuts.find((b) => b.name === name);
-  assert.deepEqual([move("move-1")!.mods, move("move-1")!.key], [["cmd", "alt", "shift"], "1"]);
+  const at = (text: string, c = config) => c.global.find((g) => g.text === text);
   assert.deepEqual(
-    [move("move-10")!.key, move("move-previous")!.key, move("move-next")!.key],
+    [at("ctrl-option-n")!.target, at("ctrl-option-n")!.user],
+    ["desktop-create", true],
+  );
+  assert.equal(at("cmd-option-1")!.target, false);
+  // The default for that command stays alongside: adding a key never removes another.
+  assert.equal(at("option-grave")!.target, "desktop-create");
+  const move = (id: string, c = config) => c.global.find((g) => g.target === id)!;
+  assert.deepEqual(
+    [move("move-1").chord.mods, move("move-1").chord.key],
+    [["alt", "shift", "cmd"], "1"],
+  );
+  assert.deepEqual(
+    [move("move-10").chord.key, move("move-previous").chord.key, move("move-next").chord.key],
     ["0", "[", "]"],
   );
-  const custom = normalize({bindings: {"select-1": "cmd-1", "move-next": "none"}});
-  assert.equal(move("move-1", custom)!.identity, move("move-1")!.identity);
-  assert.equal(move("move-next", custom), undefined);
-  assert.equal(
-    normalize({windows: false}).shortcuts.some((b) => b.name.startsWith("move-")),
-    false,
+  // A user chord at a default's key replaces it; the same chord written twice by the user does not.
+  const custom = normalize({keymap: {global: {"cmd-option-1": "move-1"}}});
+  assert.equal(custom.global.filter((g) => g.chord.identity === "alt+cmd:1").length, 1);
+  assert.equal(at("cmd-option-1", custom)!.target, "move-1");
+  assert.throws(
+    () => normalize({keymap: {global: {"cmd-option-1": "move-1", "command-alt-1": "move-2"}}}),
+    /command-alt-1 conflicts with cmd-option-1/,
   );
   assert.throws(
-    () => normalize({bindings: {"move-1": "cmd-option-1"}}),
-    /move-1 conflicts with select-1/,
-  );
-  assert.equal(shortcut("command-option-minus").identity, shortcut("alt-cmd--").identity);
-  assert.throws(() => normalize({bindings: {"desktop-create": "alt-1"}}), /conflicts/);
-  assert.throws(
-    () => normalize({quickApps: [{app: "Calculator", shortcut: "cmd-alt-p"}]}),
-    /conflicts with presets/,
+    () =>
+      normalize({
+        quickApps: [
+          {app: "Calculator", shortcut: "cmd-shift-c"},
+          {app: "Notes", shortcut: "shift-cmd-c"},
+        ],
+      }),
+    /Notes conflicts with Calculator/,
   );
   assert.throws(
     () => normalize({quickApps: [{app: "A", shortcut: "cmd-a", size: {width: -1, height: 20}}]}),
     /size/,
   );
   assert.throws(() => normalize({launchAtLogin: true}), /Unknown Atelier option/);
-  assert.throws(() => normalize({groups: true}), /Unknown Atelier option: groups/);
-  assert.throws(() => normalize({bindings: {group: "cmd-option-g"}}), /Unknown binding: group/);
+  assert.throws(
+    () => normalize({bindings: {"desktop-create": "ctrl-option-n"}}),
+    /Unknown Atelier option: bindings/,
+  );
+  assert.throws(() => normalize({keymap: {extra: {}}}), /Unknown keymap option: extra/);
+  const leader = normalize({keymap: {leader: {"w f": false, x: {menu: "Extras"}}}}).leaderMap;
+  assert.equal(leader.find((m) => m.text === "w f")!.target, false);
+  assert.deepEqual(leader.find((m) => m.text === "x")!.target, {menu: "Extras"});
+  assert.equal(leader.filter((m) => m.chords[0]!.key === "w").length, 23);
+  assert.deepEqual(normalize({leader: false}).leader, null);
+  assert.deepEqual(normalize({hud: {timeout: false, delay: 2}}).hud, {delay: 2, timeout: null});
 });
 
 test("a Desktop's first list puts the focused window first, then visible ones, then the rest", () => {
@@ -337,7 +356,7 @@ test("startup failure cleans partially installed bindings", async () => {
 test("stop and start preserve configuration and release all owned resources", async () => {
   const {hs, state} = fakeHS();
   const app = session(hs);
-  await app.start({...options, bindings: {"desktop-create": "ctrl-option-n"}});
+  await app.start({...options, keymap: {global: {"ctrl-option-n": "desktop-create"}}});
   assert.equal(app.status().state, "Running");
   app.stop();
   assert.ok(state.keys.every((k) => k.destroyed));
@@ -756,13 +775,18 @@ test("presets are validated before anything starts", () => {
     [{presets: [preset({apps: ["Ghostty", " Ghostty"]})]}, /"Dev" lists Ghostty twice/],
     [{presets: [preset({apps: ["Calculator"]})]}, /"Dev" lists the Quick App Calculator/],
     [{presets: [preset({size: 1})]}, /Unknown Preset "Dev" option: size/],
-    [{presets: [preset({shortcut: "cmd-option-1"})]}, /"Dev" conflicts with select-1/],
     [{presets: [preset({shortcut: "cmd-shift-c"})]}, /"Dev" conflicts with Calculator/],
+    [
+      {
+        keymap: {global: {"cmd-option-1": "select-2"}},
+        presets: [preset({shortcut: "cmd-option-1"})],
+      },
+      /"Dev" conflicts with cmd-option-1/,
+    ],
     [
       {presets: [preset({shortcut: "cmd-option-d"}), preset({name: "Two", shortcut: "cmd-alt-d"})]},
       /"Two" conflicts with Preset "Dev"/,
     ],
-    [{presets: [preset({shortcut: "cmd-option-p"})]}, /conflicts with presets/],
     [{presets: [preset({shortcut: "nope"})]}, /Invalid shortcut/],
     [{windows: false, presets: [preset({name: ""})]}, /needs a name/],
     [{groupPresets: [preset()]}, /Unknown Atelier option: groupPresets/],
@@ -775,13 +799,16 @@ test("presets are validated before anything starts", () => {
   assert.deepEqual(config.presets[0], {
     name: "Dev",
     apps: ["Ghostty", "Linear"],
-    shortcut: {text: "cmd-option-d", mods: ["cmd", "alt"], key: "d", identity: "alt+cmd:d"},
+    shortcut: "cmd-option-d",
   });
   assert.deepEqual(config.presets[1], {name: "Writing", apps: ["Ghostty", "Linear"]});
-  const picker = config.shortcuts.find((b) => b.name === "presets")!;
-  assert.deepEqual([picker.mods, picker.key], [["cmd", "alt"], "p"]);
+  const shortcut = config.global.find((g) => g.target === "preset:Dev")!;
+  assert.deepEqual([shortcut.chord.mods, shortcut.chord.key], [["alt", "cmd"], "d"]);
+  const picker = config.global.find((g) => g.target === "presets")!;
+  assert.deepEqual([picker.chord.mods, picker.chord.key], [["alt", "cmd"], "p"]);
   assert.equal(
-    normalize({bindings: {presets: "none"}}).shortcuts.some((b) => b.name === "presets"),
+    normalize({keymap: {global: {"cmd-option-p": false}}}).global.find((g) => g.chord.key === "p")!
+      .target,
     false,
   );
   assert.deepEqual(normalize({windows: false}).presets, []);
@@ -960,8 +987,8 @@ test("presets fill the picker and their shortcuts, skip missing apps, and stay o
     {text: "Writing", subText: "Obsidian, Safari"},
   ]);
   const key = (name: string) => state.keys.find((k) => k.key === name && k.enabled);
-  assert.deepEqual(key("p")!.mods, ["cmd", "alt"]);
-  assert.deepEqual(key("d")!.mods, ["cmd", "alt"]);
+  assert.deepEqual(key("p")!.mods, ["alt", "cmd"]);
+  assert.deepEqual(key("d")!.mods, ["alt", "cmd"]);
   key("p")!.callback();
   for (let i = 0; i < 5; i++) await Promise.resolve();
   assert.equal(chooser.isVisible, true);
@@ -980,7 +1007,16 @@ test("presets fill the picker and their shortcuts, skip missing apps, and stay o
       presets: "windows" in extra ? [{name: "Dev", shortcut: "cmd-option-d", apps: ["Fresh"]}] : [],
     });
     assert.equal(otherState.choosers.length, 0, JSON.stringify(extra));
-    assert.ok(!otherState.keys.some((k) => ["p", "d"].includes(k.key)), JSON.stringify(extra));
+    if ("windows" in extra) {
+      // Preset keys stay registered so they are consumed, and they report why they cannot run.
+      otherState.keys.find((k) => k.key === "d")!.callback();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      assert.ok(otherState.notifications.some((n) => /windows: true/.test(n)));
+      assert.equal(
+        bare.status().metrics.some((m) => m.name === "preset"),
+        false,
+      );
+    } else assert.ok(!otherState.keys.some((k) => ["p", "d"].includes(k.key)));
     bare.stop();
   }
 });
