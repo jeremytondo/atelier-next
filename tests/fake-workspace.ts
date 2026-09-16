@@ -44,8 +44,12 @@ export class FakeWorkspace implements Workspace {
   focused = 100;
   visible: Frame = {x: 0, y: 25, w: 1440, h: 875};
   launches: string[] = [];
+  /** Bundle IDs whose launch fails outright. */
+  launchFailures = new Set<string>();
   /** The launched app's first window, or null for an app that shows none. */
   launchedWindowFrame: Frame | null = {x: 0, y: 0, w: 2000, h: 1200};
+  /** Launches take process 20, 21, … with window 200, 201, … */
+  private launched = 0;
   changeDesktopAfterLaunch = false;
   pins: {pid: number; window: number; required: string[]}[] = [];
   pinSpreads = true;
@@ -105,19 +109,23 @@ export class FakeWorkspace implements Workspace {
     if (app) app.hidden = false;
   }
   async launch(target: ResolvedApplication): Promise<number> {
+    if (this.launchFailures.has(target.bundleID)) throw new Error("Could not open " + target.path);
     this.launches.push(target.bundleID);
+    const pid = 20 + this.launched,
+      window = 200 + this.launched;
+    this.launched++;
     const app: App = {bundleID: target.bundleID, hidden: false, windows: []};
     if (this.launchedWindowFrame) {
-      app.windows = [200];
-      this.wins.set(200, {
+      app.windows = [window];
+      this.wins.set(window, {
         frame: {...this.launchedWindowFrame},
         minimized: false,
         spaces: [this.current],
       });
     }
-    this.apps.set(20, app);
+    this.apps.set(pid, app);
     if (this.changeDesktopAfterLaunch) this.topology = [display([desktop("1"), desktop("2")], "2")];
-    return 20;
+    return pid;
   }
   windows(pid: number): number[] {
     return this.apps.get(pid)?.windows ?? [];
