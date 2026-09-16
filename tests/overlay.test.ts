@@ -211,13 +211,16 @@ test("overlay keeps a waiting slot's number, dims it, and shows a list that only
   f.overlay.stop();
 });
 
-test("a list taller than the screen spills into a second column", () => {
+test("a list taller than the screen stays one column and leaves the rest out", () => {
   const f = fixture();
   f.state.desktop!.slots = Array.from({length: 40}, (_, i) => listed(10, i + 1, "App " + (i + 1)));
   f.flags(["cmd", "alt"]);
-  const frame = f.canvases[0]!.frame as {w: number; h: number};
-  assert.equal(frame.w, 640);
+  const canvas = f.canvases[0]!,
+    frame = canvas.frame as {w: number; h: number};
+  assert.equal(frame.w, 320);
   assert.ok(frame.h <= 800 - 40);
+  assert.ok(canvas.elements.some((e) => e.text === "App 1"));
+  assert.ok(!canvas.elements.some((e) => e.text === "App 40"));
   f.overlay.stop();
 });
 

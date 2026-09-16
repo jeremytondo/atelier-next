@@ -1,8 +1,8 @@
 // One nonactivating panel drawn with `hs.canvas`, shared by the leader menu
 // and the window list: a title, rows of key, label, and hint, and a footer
 // whose height never changes so feedback cannot move the list. It sits in the
-// bottom-right corner of its screen and grows with its rows, adding a column
-// only when the screen runs out of height. The canvas ignores mouse events
+// bottom-right corner of its screen in one column and grows with its rows;
+// rows the screen cannot hold are left out. The canvas ignores mouse events
 // and never takes focus. HS2 canvas positions use AppKit's y-up coordinates;
 // screen frames use y-down coordinates. A canvas belongs to one
 // display/Space, so a new placement key recreates it.
@@ -36,7 +36,7 @@ export interface Placement {
 const titleHeight = 36,
   footerHeight = 34,
   margin = 20,
-  columnWidth = 320;
+  panelWidth = 320;
 const white = (alpha: number) => ({red: 1, green: 1, blue: 1, alpha});
 
 export function frameFor(
@@ -80,11 +80,9 @@ export class Panel {
         1,
         Math.floor((placement.screen.h - 2 * margin - titleHeight - footerHeight) / rowHeight),
       ),
-      columns = Math.max(1, Math.ceil(content.rows.length / fit)),
-      perColumn = Math.ceil(content.rows.length / columns);
-    const width = Math.min(columnWidth * columns, placement.screen.w - 2 * margin),
-      column = width / columns,
-      height = titleHeight + Math.max(1, perColumn) * rowHeight + footerHeight;
+      rows = content.rows.slice(0, fit);
+    const width = Math.min(panelWidth, placement.screen.w - 2 * margin),
+      height = titleHeight + Math.max(1, rows.length) * rowHeight + footerHeight;
     const frame = frameFor(placement.screen, primary.fullFrame, width, height);
     const signature = JSON.stringify([frame, content]);
     if (signature === this.signature) return;
@@ -115,27 +113,27 @@ export class Panel {
       },
       text(content.title.toUpperCase(), 18, 12, width - 36, 11, 0.6, {textWeight: "semibold"}),
     ];
-    content.rows.forEach((row, index) => {
-      const x = Math.floor(index / perColumn) * column,
-        y = titleHeight + (index % perColumn) * rowHeight,
+    rows.forEach((row, index) => {
+      const x = 0,
+        y = titleHeight + index * rowHeight,
         alpha = row.dim ? 0.45 : 1;
       if (row.highlight)
         elements.push({
           type: "rectangle",
           action: "fill",
-          frame: {x: x + 8, y: y - 2, w: column - 16, h: rowHeight - 4},
+          frame: {x: x + 8, y: y - 2, w: width - 16, h: rowHeight - 4},
           roundedRectRadii: {xRadius: 7, yRadius: 7},
           fillColor: {red: 0.2, green: 0.4, blue: 0.8, alpha: 0.5},
         });
-      const hintWidth = row.hint ? Math.min(120, column / 3) : 0;
+      const hintWidth = row.hint ? Math.min(120, width / 3) : 0;
       elements.push(text(row.key, x + 18, y + 5, 44, 14, alpha, {textWeight: "semibold"}));
       elements.push(
-        text(row.label, x + 62, y + (row.detail ? 0 : 5), column - 76 - hintWidth, 14, alpha),
+        text(row.label, x + 62, y + (row.detail ? 0 : 5), width - 76 - hintWidth, 14, alpha),
       );
-      if (row.detail) elements.push(text(row.detail, x + 62, y + 18, column - 76, 10, 0.6));
+      if (row.detail) elements.push(text(row.detail, x + 62, y + 18, width - 76, 10, 0.6));
       if (row.hint)
         elements.push(
-          text(row.hint, x + column - 18 - hintWidth, y + 6, hintWidth, 12, 0.55, {
+          text(row.hint, x + width - 18 - hintWidth, y + 6, hintWidth, 12, 0.55, {
             textAlignment: "right",
           }),
         );
