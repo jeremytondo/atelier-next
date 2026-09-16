@@ -15,7 +15,7 @@ struct ProviderError: LocalizedError {
 }
 
 public enum PipeProtocol {
-  public static let version = 3
+  public static let version = 4
   /// Longer request lines are refused before parsing.
   static let maximumRequestBytes = 65536
 
@@ -130,29 +130,19 @@ struct HelloResponse: Encodable {
   let trusted: Bool
 }
 
-struct Frame: Codable, Equatable {
-  let x: Double
-  let y: Double
-  let w: Double
-  let h: Double
-
-  init(_ rect: CGRect) {
-    x = rect.origin.x
-    y = rect.origin.y
-    w = rect.width
-    h = rect.height
-  }
-}
-
-/// Topology, focus, and the on-screen window inventory the JavaScript side groups.
+/// Topology, focus, and the window census the JavaScript side lists per Desktop.
 /// Space mutations answer with a fresh snapshot plus their own fields.
 struct Snapshot: Encodable {
   var trusted: Bool
   var focused: UInt32
+  /// The Space that receives keyboard input; window commands act on its Desktop.
+  var focusedSpace: String
   var targetDisplay: String
   var missionControl: Bool
   var displays: [Display]
   var windows: [Window]
+  /// Whether `displays` and `windows` are complete; false leaves the JavaScript side's lists as they were.
+  var complete: Bool
   /// Set by `spaces.create`: the new Desktop's ID.
   var created: String? = nil
   /// Set by `spaces.delete`: where each window of the deleted Desktop ended up.
@@ -172,11 +162,17 @@ struct Snapshot: Encodable {
   struct Window: Encodable, Equatable {
     let id: UInt32
     let pid: Int32
-    let space: String
-    let frame: Frame
-    let title: String
+    /// The process launch time in seconds since 1970; with the PID, a process identity that a
+    /// restart cannot recycle. 0 when unknown.
+    let launched: Double
     let app: String
     let bundleID: String
+    let title: String
+    /// Desktop membership; empty when WindowServer reports none.
+    let spaces: [String]
+    let onScreen: Bool
+    /// Whether Accessibility calls this an ordinary window; absent when it did not list the window.
+    let ordinary: Bool?
   }
 
   struct WindowSpaces: Encodable {

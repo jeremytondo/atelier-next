@@ -1,7 +1,7 @@
-// The Atelier defaults: Groups, Desktop shortcuts, Quick Apps, and the overlay,
-// as policy over `hs.*` and the API. One session owns every binding, observer,
-// timer, and the providers process; stopping releases all of them and leaves
-// independent HS2 scripts untouched.
+// The Atelier defaults: per-Desktop window lists, Desktop shortcuts, Quick
+// Apps, and the overlay, as policy over `hs.*` and the API. One session owns
+// every binding, observer, timer, and the providers process; stopping releases
+// all of them and leaves independent HS2 scripts untouched.
 import type {ResolvedApplication} from "../api/application.ts";
 import type {HS} from "../api/hs.ts";
 import type {AtelierAPI} from "../api/index.ts";
@@ -11,28 +11,28 @@ import {setAXAttribute} from "./accessibility.ts";
 import {
   type Config,
   defaults as defaultOptions,
-  type GroupPresetEntry,
   normalize,
   type Options,
+  type PresetEntry,
   type QuickAppEntry,
   type Shortcut,
   shortcut,
 } from "./configuration.ts";
-import {
-  type Group,
-  Groups,
-  identity,
-  isMember,
-  type Member,
-  type MoveTarget,
-  moveTarget,
-  sameFrame,
-  slots,
-} from "./groups.ts";
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
 import {Startup} from "./startup.ts";
-import {type SavedMember, StateFile} from "./state.ts";
+import {StateFile} from "./state.ts";
+import {
+  type DesktopWindows,
+  identity,
+  isWindow,
+  type ListedWindow,
+  type MoveTarget,
+  moveTarget,
+  type WaitingSlot,
+  WindowLists,
+  windowsOf,
+} from "./windows.ts";
 
 export interface DefaultsInfo {
   /** The Hammerspoon 2 build number Atelier was tested against. */
@@ -46,25 +46,21 @@ export type State = "Paused" | "Starting" | "Waiting for Accessibility" | "Runni
 export type SpaceAction = "switch" | "create" | "reorder" | "delete";
 export type Busy = {busy: true};
 export type Noop = {noop: true};
-export type Forgotten = {forgotten: true};
-export type MemberResult = {window: number} | Noop | Busy;
+export type WindowResult = {window: number} | Noop | Busy;
 
-/** The Group a preset produced, plus the apps whose slot was left empty. */
+/** The apps whose preset slot was left empty. */
 export interface AppliedPreset {
-  group: Group;
   skipped: string[];
 }
 
-/** Operations on the current Desktop's Group; `group()` creates or forgets one. */
-export interface GroupMembers {
-  /** Focuses the member at the one-based slot, with lazy Fill. */
-  selectMember(slot: number): Promise<MemberResult>;
-  /** Focuses the member `offset` places from the focused one, wrapping at either end. */
-  cycleMember(offset: number): Promise<MemberResult>;
-  /** Moves the focused member by an offset or to a final slot, without touching focus or geometry. */
-  moveMember(target: MoveTarget): Promise<MemberResult>;
-  /** Launches a preset's apps on an empty Desktop and numbers them in the declared order. */
-  applyPreset(name: string): Promise<AppliedPreset | Busy>;
+/** Operations on the focused Desktop's window list. */
+export interface WindowCommands {
+  /** Reveals and focuses the window at the one-based slot. */
+  select(slot: number): Promise<WindowResult>;
+  /** Focuses the window `offset` places from the focused one, wrapping at either end. */
+  cycle(offset: number): Promise<WindowResult>;
+  /** Moves the focused window by an offset or to a final slot, without touching focus or geometry. */
+  move(target: MoveTarget): Promise<WindowResult>;
 }
 
 export interface Status {
@@ -74,14 +70,11 @@ export interface Status {
   hammerspoon2: {build: string; expectedBuild: string};
   quickApps: {app: string; bundleID: string; shortcut: string}[];
   /** Each preset with the apps that resolved at start-up. */
-  groupPresets: {name: string; apps: string[]; shortcut: string | null}[];
-  groups: number;
-  /** The Groups state file, its last write in this context, and the start-up restore result. */
-  groupsFile: {
-    path: string;
-    savedAt: string | null;
-    restored: number | null;
-    dropped: number | null;
+  presets: {name: string; apps: string[]; shortcut: string | null}[];
+  /** Desktops with a list, and the state file with its last write and start-up restore result. */
+  windows: {
+    lists: number;
+    file: {path: string; savedAt: string | null; restored: number | null; dropped: number | null};
   };
   metrics: {name: string; milliseconds: number}[];
 }
@@ -94,9 +87,9 @@ export interface Defaults {
   status(): Status;
   /** A fresh copy of the shipped options. */
   defaults(): Required<Options>;
-  /** Creates a Group on the current Desktop, or forgets the one it has. */
-  group(): Promise<Group | Forgotten | Busy>;
-  groups: GroupMembers;
+  windows: WindowCommands;
+  /** Launches a preset's apps on an empty Desktop and numbers them in the declared order. */
+  preset(name: string): Promise<AppliedPreset | Busy>;
   space(
     command: SpaceAction,
     args?: {number?: number; offset?: -1 | 1},
@@ -105,12 +98,16 @@ export interface Defaults {
 }
 
 type QuickApp = QuickAppEntry & ResolvedApplication;
-interface GroupPreset extends GroupPresetEntry {
+interface Preset extends PresetEntry {
   resolved: ResolvedApplication[];
 }
 
 /** How long a preset's slot waits for its app to show a window on the Desktop. */
 export const waitingSeconds = 30;
+/** Focus is verified this many times, 5 ms apart, before a selection is reported failed. */
+const focusAttempts = 300;
+/** How often the lists follow the census between commands and window events. */
+const pollSeconds = 2;
 
 const events = [
   "AXFocusedWindowChanged",
@@ -118,20 +115,24 @@ const events = [
   "AXUIElementDestroyed",
   "AXWindowMiniaturized",
   "AXWindowDeminiaturized",
-  "AXWindowResized",
-  "AXWindowMoved",
+  "AXApplicationHidden",
+  "AXApplicationShown",
 ];
 const spaceActions: SpaceAction[] = ["switch", "create", "reorder", "delete"];
 
+/** Whether Accessibility calls this an ordinary window rather than a dialog,
+ *  panel, or sheet; the same test the providers apply to the census. */
+function ordinary(element: HSAXElement | null | undefined): boolean {
+  return !!element && element.role === "AXWindow" && element.isAttributeSettable("AXMinimized");
+}
+
 export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Defaults {
-  const groups = new Groups(),
+  const lists = new WindowLists(),
     file = new StateFile(hs),
     timers = new Timers(hs),
     startup = new Startup(hs);
   const bindings: {key: HSHotkey; space: boolean}[] = [],
     observers = new Map<number, {element: HSAXElement; callback: () => void}>(),
-    settling = new Set<string>(),
-    geometry = new Map<number, number>(),
     metrics: Status["metrics"] = [];
   let notificationsRequested = false;
   let config: Config = normalize(),
@@ -146,10 +147,9 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     workspace: Workspace | null = null,
     quick: QuickApps | null = null,
     quickApps: QuickApp[] = [],
-    presets: GroupPreset[] = [],
+    presets: Preset[] = [],
     chooser: HSChooser | null = null,
     startOptions: Options | undefined,
-    observedFocus: string | null = null,
     unwatchFailures: (() => void) | null = null,
     // Saving starts after restore so start-up cannot overwrite the file with nothing.
     persisting = false,
@@ -179,47 +179,39 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   function fire(promise: Promise<unknown>) {
     promise.catch(() => {});
   }
-  function focused(member: Member) {
-    const window = hs.window.focusedWindow();
-    return !!window && window.id === member.id && window.pid === member.pid;
+  // The window has focus, or, once it was asked forward, macOS keeps focus on
+  // a dialog or sheet of its app; that modal behavior is respected, not bypassed.
+  function focusedOn(window: ListedWindow, raised: boolean) {
+    const focused = hs.window.focusedWindow();
+    if (!focused || focused.pid !== window.pid) return false;
+    return focused.id === window.id || (raised && !ordinary(focused.axElement()));
   }
-  function find(member: Member) {
-    const app = hs.application.fromPID(member.pid);
-    return app?.allWindows.find((w) => w.id === member.id && w.pid === member.pid);
+  function find(window: ListedWindow) {
+    const app = hs.application.fromPID(window.pid);
+    return app?.allWindows.find((w) => w.id === window.id && w.pid === window.pid);
   }
   function redraw() {
-    if (overlay && snapshot) overlay.update(snapshot, groups.current(snapshot));
+    if (overlay && snapshot) overlay.update(snapshot, lists.focused(snapshot));
   }
   function persist() {
-    if (persisting) file.save(groups.serialize());
+    if (persisting) file.save(lists.serialize());
   }
-  // Whether a saved window still exists on any Desktop; false for every window
-  // after a logout or restart, so nothing from before it comes back.
-  function alive(member: SavedMember) {
-    const app = hs.application.fromPID(member.pid);
-    return (
-      !!app && app.bundleID === member.bundleID && app.allWindows.some((w) => w.id === member.id)
-    );
-  }
+  // Runs once per session, on the first complete census: an incomplete one
+  // could not tell a closed window from an unseen one.
   function restore(first: Snapshot) {
-    restored = null;
     const read = file.read();
-    if (read.status === "missing") {
-      groups.entries.clear();
-      console.log("Atelier: No saved Groups at " + file.path);
-    } else if (read.status !== "ok") {
-      groups.entries.clear();
-      console.log("Atelier: Ignoring " + read.status + " Groups state at " + file.path);
-    } else {
-      restored = groups.restore(read.groups, first, alive);
+    if (read.status === "ok") {
+      restored = lists.restore(read.desktops, first);
       console.log(
-        "Atelier: Restored " + restored.restored + " Groups, dropped " + restored.dropped,
+        "Atelier: Restored " + restored.restored + " window lists, dropped " + restored.dropped,
       );
+    } else {
+      lists.entries.clear();
+      lists.reconcile(first);
+      if (read.status === "missing") console.log("Atelier: No saved window lists at " + file.path);
+      else console.log("Atelier: Ignoring " + read.status + " window lists at " + file.path);
     }
-    syncObservers();
-    redraw();
     persisting = true;
-    persist();
   }
   async function refresh(epoch: number) {
     const next = await api.spaces.snapshot();
@@ -230,16 +222,20 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       (w) => w.bundleID !== hs.appinfo.bundleIdentifier && !excluded.has(w.bundleID),
     );
     snapshot = next;
-    groups.reconcile(next);
+    // An incomplete census proves nothing; the lists wait for the next one.
+    if (config.windows && next.complete) {
+      if (persisting) lists.reconcile(next);
+      else restore(next);
+    }
     persist();
     syncObservers();
     redraw();
     return next;
   }
-  // Watches the processes on screen while any Group exists; nothing otherwise.
+  // Watches the processes with a listed window; nothing otherwise.
   function syncObservers() {
-    const wanted = config.groups && groups.entries.size && snapshot ? snapshot.windows : [];
-    const pids = new Set(wanted.map((w) => w.pid));
+    const pids = new Set<number>();
+    for (const list of lists.entries.values()) for (const w of windowsOf(list)) pids.add(w.pid);
     for (const [pid, entry] of observers) {
       if (pids.has(pid)) continue;
       hs.ax.removeWatcher(entry.element, events, entry.callback);
@@ -254,7 +250,6 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       const element = hs.ax.applicationElement(app);
       if (!element) continue;
       const callback = () => {
-        geometry.set(pid, Date.now());
         redraw();
         observe();
       };
@@ -282,125 +277,29 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       record(name, began);
     }
   }
-  async function focus(member: Member, epoch: number): Promise<HSWindow> {
-    const window = find(member);
-    if (!window) throw new Error("The selected window closed");
-    if (!focused(member)) {
-      setAXAttribute(window.application?.axElement(), "AXFrontmost", true);
-      setAXAttribute(window.axElement(), "AXMain", true);
-      window.axElement().performAction("AXRaise");
-      const began = Date.now();
-      while (!focused(member) && Date.now() - began < 500) {
-        await timers.sleep(0.005);
-        assertValid(epoch);
-      }
-      if (!focused(member)) throw new Error("Could not focus the exact window in " + member.app);
+  /** Reveals the window if hidden or minimized, brings it forward, and verifies focus. */
+  async function focus(window: ListedWindow, epoch: number): Promise<void> {
+    const target = find(window);
+    if (!target) throw new Error("The selected window closed");
+    if (focusedOn(window, false)) return;
+    const application = target.application;
+    if (application?.isHidden) application.unhide();
+    if (target.isMinimized) target.unminimize();
+    setAXAttribute(application?.axElement(), "AXFrontmost", true);
+    setAXAttribute(target.axElement(), "AXMain", true);
+    target.axElement().performAction("AXRaise");
+    for (let attempt = 0; attempt < focusAttempts && !focusedOn(window, true); attempt++) {
+      await timers.sleep(0.005);
+      assertValid(epoch);
     }
-    return window;
-  }
-  function pressFill(window: HSWindow, member: Member) {
-    const application = window.application;
-    const root = application && hs.ax.applicationElement(application),
-      menu = root?.attributeValue("AXMenuBar") as HSAXElement | null | undefined;
-    if (!menu || typeof menu.children !== "function")
-      throw new Error("Native Fill menu is unavailable in " + member.app);
-    const queue: {element: HSAXElement; depth: number}[] = [{element: menu, depth: 0}];
-    for (let i = 0; i < queue.length && i < 2000; i++) {
-      const item = queue[i];
-      if (!item) break;
-      const {element, depth} = item;
-      if (element.attributeValue("AXIdentifier") === "_zoomFill:") {
-        if (!focused(member)) throw new Error("Fill target lost focus");
-        if (!element.isEnabled || !element.performAction("AXPress"))
-          throw new Error("Native Fill is unavailable in " + member.app);
-        return;
-      }
-      if (depth < 7)
-        for (const child of element.children()) queue.push({element: child, depth: depth + 1});
-    }
-    throw new Error("Native Fill is not supported by " + member.app);
-  }
-  function fill(member: Member, window: HSWindow | undefined, epoch: number) {
-    const key = identity(member);
-    if (
-      !window ||
-      !focused(member) ||
-      member.fillFailed ||
-      settling.has(key) ||
-      sameFrame(member.filledFrame, window.frame)
-    )
-      return;
-    try {
-      pressFill(window, member);
-    } catch (error) {
-      member.fillFailed = true;
-      throw error;
-    }
-    settling.add(key);
-    const began = Date.now();
-    (async () => {
-      let previous = window.frame,
-        changed = false,
-        lastChange = began;
-      while (Date.now() - began < 3000) {
-        await timers.sleep(0.02);
-        assertValid(epoch);
-        const current = window.frame,
-          now = Date.now(),
-          event = geometry.get(member.pid) || 0;
-        const moved = !sameFrame(previous, current, 0);
-        if (moved || event > lastChange) {
-          changed = true;
-          lastChange = Math.max(lastChange, event, moved ? now : 0);
-          previous = current;
-        }
-        if (current && (changed ? now - lastChange >= 100 : now - began >= 300)) {
-          member.filledFrame = {x: current.x, y: current.y, w: current.w, h: current.h};
-          persist();
-          return;
-        }
-      }
-      throw new Error("Native Fill did not settle in " + member.app);
-    })()
-      .catch((error) => {
-        if (valid(epoch)) {
-          member.fillFailed = true;
-          report(error);
-        }
-      })
-      .finally(() => {
-        if (generation === epoch) settling.delete(key);
-      });
-  }
-  async function activate(group: Group, member: Member, epoch: number) {
-    const window = await focus(member, epoch);
-    assertValid(epoch);
+    if (!focusedOn(window, true)) throw new Error("Could not focus the window in " + window.app);
     redraw();
-    // Revalidate topology after asynchronous focus before changing window geometry.
-    const latest = await refresh(epoch),
-      current = groups.current(latest);
-    if (
-      !current ||
-      current.display !== group.display ||
-      current.space !== group.space ||
-      !current.members.some((w) => identity(w) === identity(member))
-    )
-      throw new Error("The window or Desktop changed during selection");
-    fill(member, window, epoch);
   }
   function observe() {
-    if (state !== "Running" || busy || observing || !groups.entries.size) return;
+    if (state !== "Running" || busy || observing) return;
     observing = true;
     const epoch = generation;
     refresh(epoch)
-      .then((next) => {
-        if (busy) return;
-        const group = groups.current(next),
-          member = group?.members.find((w) => w.id === next.focused);
-        const key = member && identity(member);
-        if (member && focused(member) && key !== observedFocus) fill(member, find(member), epoch);
-        observedFocus = key ?? null;
-      })
       .catch((error) => {
         if (valid(epoch)) report(error);
       })
@@ -408,98 +307,84 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
         if (generation === epoch) observing = false;
       });
   }
-  const group = () =>
-    run("group", async (epoch): Promise<Group | Forgotten> => {
+  const select = (slot: number) =>
+    run("select", async (epoch): Promise<{window: number} | Noop> => {
       const next = await refresh(epoch),
-        existing = groups.current(next);
-      if (existing) {
-        groups.forget(existing);
-        persist();
-        syncObservers();
-        redraw();
-        console.log("Atelier: Forgot the Group on this Desktop");
-        return {forgotten: true};
-      }
-      const entry = groups.create(next);
-      syncObservers();
-      const member = entry.members.find((w) => w.id === next.focused) || entry.members[0];
-      if (member) await activate(entry, member, epoch);
-      return entry;
+        window = lists.focused(next)?.slots[slot - 1];
+      if (!window || !isWindow(window)) return {noop: true};
+      await focus(window, epoch);
+      return {window: window.id};
     });
-  const selectMember = (slot: number) =>
-    run("selectMember", async (epoch): Promise<{window: number} | Noop> => {
+  const cycle = (offset: number) =>
+    run("cycle", async (epoch): Promise<{window: number} | Noop> => {
       const next = await refresh(epoch),
-        entry = groups.current(next),
-        member = entry && slots(entry)[slot - 1];
-      if (!entry || !member || !isMember(member)) return {noop: true};
-      await activate(entry, member, epoch);
-      return {window: member.id};
+        list = lists.focused(next),
+        windows = list ? windowsOf(list) : [],
+        count = windows.length;
+      if (!count) return {noop: true};
+      // With nothing listed focused, next starts at the first window and previous at the last.
+      const current = windows.findIndex((w) => w.id === next.focused),
+        from = current >= 0 ? current : offset > 0 ? -1 : count;
+      const window = windows[(((from + offset) % count) + count) % count];
+      if (!window) return {noop: true};
+      await focus(window, epoch);
+      return {window: window.id};
     });
-  const cycleMember = (offset: number) =>
-    run("cycleMember", async (epoch): Promise<{window: number} | Noop> => {
-      const next = await refresh(epoch),
-        entry = groups.current(next);
-      if (!entry?.members.length) return {noop: true};
-      const current = entry.members.findIndex((w) => w.id === next.focused);
-      const member =
-        entry.members[(current + offset + entry.members.length) % entry.members.length];
-      if (!member) return {noop: true};
-      await activate(entry, member, epoch);
-      return {window: member.id};
-    });
-  const moveMember = (target: MoveTarget) =>
-    run("moveMember", async (epoch): Promise<{window: number} | Noop> => {
+  const move = (target: MoveTarget) =>
+    run("move", async (epoch): Promise<{window: number} | Noop> => {
       const request = moveTarget(target);
       const next = await refresh(epoch),
-        entry = groups.current(next),
-        member = entry?.members.find((w) => w.id === next.focused);
-      if (!entry || !member || !groups.move(entry, member, request)) return {noop: true};
+        list = lists.focused(next),
+        window = list && windowsOf(list).find((w) => w.id === next.focused);
+      if (!list || !window || !lists.move(list, window, request)) return {noop: true};
       persist();
       redraw();
-      return {window: member.id};
+      return {window: window.id};
     });
-  // Gives up a preset's waiting slots; a Group forgotten or replaced meanwhile is left alone.
-  function expire(entry: Group) {
-    if (groups.entries.get(groups.key(entry.display, entry.space)) !== entry) return;
-    const names = groups.expire(entry);
+  // Gives up a preset's waiting slots; a list replaced meanwhile is left alone.
+  function expire(list: DesktopWindows) {
+    if (lists.entries.get(lists.key(list.display, list.space)) !== list) return;
+    const names = lists.expire(list);
     if (names.length) console.log("Atelier: Gave up waiting for " + names.join(", "));
     persist();
     redraw();
   }
-  // The windows that may belong to `space`: membership says so or is unknown,
-  // which a hidden window's may be. Windows known to be elsewhere are left out.
-  async function onDesktop(ws: Workspace, windows: number[], space: string, epoch: number) {
-    const here: number[] = [];
-    for (const window of windows) {
-      const spaces = await ws.spaces(window);
-      assertValid(epoch);
-      if (!spaces.length || spaces.includes(space)) here.push(window);
-    }
-    return here;
-  }
-  const applyPreset = (name: string) =>
-    run("applyPreset", async (epoch): Promise<AppliedPreset> => {
-      const preset = presets.find((p) => p.name === name),
+  const preset = (name: string) =>
+    run("preset", async (epoch): Promise<AppliedPreset> => {
+      const entry = presets.find((p) => p.name === name),
         ws = workspace;
-      if (!preset || !ws) throw new Error("Group preset is not configured: " + name);
-      if (!preset.resolved.length)
-        throw new Error("No app in Group preset " + name + " is installed");
-      const next = await refresh(epoch),
-        entry = groups.expect(next),
+      if (!entry || !ws) throw new Error("Preset is not configured: " + name);
+      if (!config.windows) throw new Error("Presets need window lists; set windows: true");
+      if (!entry.resolved.length) throw new Error("No app in preset " + name + " is installed");
+      const next = await refresh(epoch);
+      if (!next.complete) throw new Error("Could not read the windows; try again");
+      const list = lists.prepare(next),
+        named: WaitingSlot[] = [],
         skipped: string[] = [],
         revealed = new Set<string>();
+      // The census decides which windows count and where they are; the workspace
+      // only reveals them. Unknown membership is not membership here.
+      const listedAnywhere = new Set<string>();
+      for (const each of lists.entries.values())
+        for (const w of windowsOf(each)) listedAnywhere.add(identity(w));
+      const ordinaryWindows = (pid: number) =>
+        next.windows.filter(
+          (w) => w.pid === pid && (w.ordinary === true || listedAnywhere.has(identity(w))),
+        );
       try {
-        for (const app of preset.resolved) {
+        for (const app of entry.resolved) {
           const pid = ws.running(app.bundleID),
-            windows = pid === null ? [] : ws.windows(pid);
+            windows = pid === null ? [] : ordinaryWindows(pid);
           if (pid !== null && windows.length) {
-            const here = await onDesktop(ws, windows, entry.space, epoch);
+            const here = ws
+              .windows(pid)
+              .filter((id) => windows.some((w) => w.id === id && w.spaces.includes(list.space)));
             if (!here.length) {
               skipped.push(app.name);
               console.log("Atelier: " + app.name + " is open on another Desktop; slot left empty");
               continue;
             }
-            // Reveal without activating; the window then arrives through the inventory.
+            // Reveal without activating; the window then arrives through the census.
             if (ws.isHidden(pid)) ws.unhide(pid);
             for (const window of here) if (ws.isMinimized(window)) ws.unminimize(window);
             revealed.add(app.bundleID);
@@ -514,20 +399,22 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
               continue;
             }
           }
-          groups.wait(entry, {bundleID: app.bundleID, app: app.name});
+          named.push({bundleID: app.bundleID, app: app.name});
         }
-        // Windows that were only hidden or minimized are on the Desktop already.
-        await refresh(epoch);
       } finally {
-        // Whatever happened, slots still waiting must not wait forever.
-        if (!valid(epoch)) groups.forget(entry);
-        else if (entry.waiting.length) timers.after(waitingSeconds, () => expire(entry));
+        if (valid(epoch)) {
+          lists.seed(list, named);
+          // Whatever happened, slots still waiting must not wait forever.
+          if (list.slots.some((slot) => !isWindow(slot)))
+            timers.after(waitingSeconds, () => expire(list));
+        }
       }
+      // Windows that were only hidden or minimized are on the Desktop already.
+      await refresh(epoch);
       // Only a window that was already here takes focus; a launched one never does.
-      const first = slots(entry)[0];
-      if (first && isMember(first) && revealed.has(first.bundleID))
-        await activate(entry, first, epoch);
-      return {group: entry, skipped};
+      const first = list.slots[0];
+      if (first && isWindow(first) && revealed.has(first.bundleID)) await focus(first, epoch);
+      return {skipped};
     });
   const space = (command: SpaceAction, args: {number?: number; offset?: -1 | 1} = {}) =>
     run(command, async (epoch): Promise<Snapshot | Noop> => {
@@ -578,17 +465,19 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     version: info.version,
     hammerspoon2: {build: hs.appinfo.build, expectedBuild: info.expectedBuild},
     quickApps: quickApps.map((a) => ({app: a.app, bundleID: a.bundleID, shortcut: a.shortcut})),
-    groupPresets: presets.map((p) => ({
+    presets: presets.map((p) => ({
       name: p.name,
       apps: p.resolved.map((a) => a.name),
       shortcut: p.shortcut?.text ?? null,
     })),
-    groups: groups.entries.size,
-    groupsFile: {
-      path: file.path,
-      savedAt: file.savedAt,
-      restored: restored?.restored ?? null,
-      dropped: restored?.dropped ?? null,
+    windows: {
+      lists: lists.entries.size,
+      file: {
+        path: file.path,
+        savedAt: file.savedAt,
+        restored: restored?.restored ?? null,
+        dropped: restored?.dropped ?? null,
+      },
     },
     metrics,
   });
@@ -616,17 +505,16 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     bindings.push({key, space});
   }
   const actions: Record<string, () => Promise<unknown>> = {
-    group,
-    "group-presets": async () => {
+    presets: async () => {
       if (!chooser) return;
       chooser.query = "";
       chooser.show();
     },
-    "cycle-previous": () => cycleMember(-1),
-    "cycle-next": () => cycleMember(1),
-    "move-previous": () => moveMember(-1),
-    "move-next": () => moveMember(1),
-    // Stop first so pending Groups state reaches disk before the context goes.
+    "cycle-previous": () => cycle(-1),
+    "cycle-next": () => cycle(1),
+    "move-previous": () => move(-1),
+    "move-next": () => move(1),
+    // Stop first so pending list state reaches disk before the context goes.
     "reload-config": async () => {
       session.stop();
       hs.reload();
@@ -638,8 +526,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
   };
   for (let n = 1; n <= 10; n++) {
     actions["desktop-" + n] = () => space("switch", {number: n});
-    actions["select-" + n] = () => selectMember(n);
-    actions["move-" + n] = () => moveMember({slot: n});
+    actions["select-" + n] = () => select(n);
+    actions["move-" + n] = () => move({slot: n});
   }
   function checkBuild() {
     const build = hs.appinfo.build;
@@ -720,11 +608,11 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
           }
         }
         presets = [];
-        for (const entry of config.groupPresets) {
+        for (const entry of config.presets) {
           // A missing app costs its slot, not the preset; an app listed twice under
           // different names, or shared with a Quick App, is a configuration error.
           const resolved: ResolvedApplication[] = [],
-            label = 'Group preset "' + entry.name + '"';
+            label = 'Preset "' + entry.name + '"';
           for (const app of entry.apps) {
             let target: ResolvedApplication;
             try {
@@ -743,22 +631,20 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
           }
           presets.push({...entry, resolved});
         }
-        const first = await refresh(epoch);
-        if (config.groups) restore(first);
-        else groups.entries.clear();
+        await refresh(epoch);
         for (const binding of config.shortcuts) {
           const action = actions[binding.name];
           if (!action) throw new Error("Unknown binding: " + binding.name);
-          if (binding.name === "group-presets" && !presets.length) continue;
+          if (binding.name === "presets" && !presets.length) continue;
           bind(binding, action, binding.space);
         }
         for (const entry of quickApps) bind(entry, () => quickApp(entry.bundleID));
-        if (config.groups) {
-          for (const preset of presets)
-            if (preset.shortcut) bind(preset.shortcut, () => applyPreset(preset.name));
+        if (config.windows) {
+          for (const entry of presets)
+            if (entry.shortcut) bind(entry.shortcut, () => preset(entry.name));
           if (presets.length) {
             chooser = hs.chooser.create();
-            chooser.placeholder = "Group preset";
+            chooser.placeholder = "Preset";
             chooser.setChoices(
               presets.map((p) => ({
                 text: p.name,
@@ -766,11 +652,11 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
               })),
             );
             chooser.onSelect = (item) => {
-              if (item && typeof item.text === "string") fire(applyPreset(item.text));
+              if (item && typeof item.text === "string") fire(preset(item.text));
             };
           }
         }
-        if (config.groups && config.overlay) {
+        if (config.windows && config.overlay) {
           overlay = new Overlay(hs, config.overlayFlags, () => {
             redraw();
             observe();
@@ -780,7 +666,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
         state = "Running";
         console.log("Atelier: Running");
         requestNotifications();
-        poll = hs.timer.doEvery(1, observe);
+        if (config.windows) poll = hs.timer.doEvery(pollSeconds, observe);
         return session;
       })().catch((error) => {
         if (generation === epoch) {
@@ -798,8 +684,10 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       persist();
       file.flush();
       persisting = false;
+      // The file is the truth for the next start; nothing in memory outlives it.
+      lists.entries.clear();
+      restored = null;
       busy = observing = false;
-      observedFocus = null;
       if (poll) poll.stop();
       poll = null;
       if (overlay) overlay.stop();
@@ -816,8 +704,6 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       for (const {element, callback} of observers.values())
         hs.ax.removeWatcher(element, events, callback);
       observers.clear();
-      geometry.clear();
-      settling.clear();
       timers.stop();
       if (unwatchFailures) unwatchFailures();
       unwatchFailures = null;
@@ -826,8 +712,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     },
     status,
     defaults: defaultOptions,
-    group,
-    groups: {selectMember, cycleMember, moveMember, applyPreset},
+    windows: {select, cycle, move},
+    preset,
     space,
     quickApp,
   };

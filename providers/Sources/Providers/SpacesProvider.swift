@@ -53,8 +53,10 @@ final class SpacesProvider {
   private func snapshot() -> Snapshot {
     let topology = runtime.snapshot()
     let trusted = AXIsProcessTrusted()
+    let census = trusted ? windows.allWindows() : nil
     return Snapshot(
       trusted: trusted, focused: windows.focusedWindowID(),
+      focusedSpace: String(api.activeSpace()),
       targetDisplay: resolver.resolve(in: topology)?.topologyIdentifier ?? "",
       missionControl: missionControl.isVisible(),
       displays: topology.map { display in
@@ -64,7 +66,8 @@ final class SpacesProvider {
             Snapshot.Space(id: String($0.id), fullscreen: $0.isFullscreen)
           })
       },
-      windows: trusted ? windows.onScreenWindows() : [])
+      // An empty topology is a refused query, not a Mac without displays.
+      windows: census ?? [], complete: census != nil && !topology.isEmpty)
   }
 
   /// The display and Desktop a Space operation acts on, refusing when either
@@ -160,7 +163,8 @@ final class SpacesProvider {
       throw ProviderError("The final Desktop cannot be deleted")
     }
     let deleted = String(display.currentSpaceID)
-    let departing = windows.onScreenWindows().filter { $0.space == deleted }.map(\.id)
+    let departing = (windows.allWindows() ?? []).filter { $0.onScreen && $0.spaces == [deleted] }
+      .map(\.id)
     defer { cleanup() }
     try missionControl.open(on: target, topology: topology)
     try missionControl.deleteActiveDesktop(on: target, topology: runtime.snapshot())

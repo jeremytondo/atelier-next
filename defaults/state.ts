@@ -1,84 +1,82 @@
-// The Groups state file: where it lives, a tolerant read, and a debounced,
-// deduplicated write. This is the only module that touches `hs.fs`. The file
-// is human readable and safe to delete; every identity in it is checked
-// against the live snapshot before use, so a stale file only loses members.
+// The window lists' state file: where it lives, a tolerant read, and a
+// debounced, deduplicated write. This is the only module that touches `hs.fs`.
+// The file is human readable and safe to delete; every identity in it is
+// checked against the live census before use, so a stale file only loses entries.
 import type {HS} from "../api/hs.ts";
-import type {Frame} from "../api/spaces.ts";
 
-export interface SavedMember {
+export interface SavedWindow {
   pid: number;
   id: number;
+  /** The process launch time, positive; with the PID, an identity a restart cannot recycle. */
+  launched: number;
   app: string;
   bundleID: string;
-  filledFrame?: Frame;
 }
 
-export interface SavedGroup {
+export interface SavedDesktop {
   display: string;
   space: string;
-  members: SavedMember[];
+  windows: SavedWindow[];
 }
 
 export const stateVersion = 1;
 export const debounceSeconds = 1;
 
 export function statePath(hs: HS): string {
-  return hs.fs.homeDirectory() + "/Library/Application Support/Atelier/groups.json";
+  return hs.fs.homeDirectory() + "/Library/Application Support/Atelier/windows.json";
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
-const isFrame = (value: unknown): value is Frame =>
-  isRecord(value) && (["x", "y", "w", "h"] as const).every((k) => Number.isFinite(value[k]));
 
-function member(value: unknown): SavedMember | null {
+function window(value: unknown): SavedWindow | null {
   if (
     !isRecord(value) ||
     !Number.isInteger(value.pid) ||
     !Number.isInteger(value.id) ||
+    !(Number.isFinite(value.launched) && (value.launched as number) > 0) ||
     typeof value.app !== "string" ||
     typeof value.bundleID !== "string"
   )
     return null;
-  const saved: SavedMember = {
+  return {
     pid: value.pid as number,
     id: value.id as number,
+    launched: value.launched as number,
     app: value.app,
     bundleID: value.bundleID,
   };
-  if (isFrame(value.filledFrame)) saved.filledFrame = value.filledFrame;
-  return saved;
 }
 
-/** The Groups in a file's text, or null when the text is not a Groups file. */
-export function parse(text: string): SavedGroup[] | null {
+/** The lists in a file's text, or null when the text is not a window lists file. */
+export function parse(text: string): SavedDesktop[] | null {
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch (_) {
     return null;
   }
-  if (!isRecord(value) || value.version !== stateVersion || !Array.isArray(value.groups))
+  if (!isRecord(value) || value.version !== stateVersion || !Array.isArray(value.desktops))
     return null;
-  const groups: SavedGroup[] = [];
-  for (const entry of value.groups) {
+  const desktops: SavedDesktop[] = [];
+  for (const entry of value.desktops) {
     if (
       !isRecord(entry) ||
       typeof entry.display !== "string" ||
       typeof entry.space !== "string" ||
-      !Array.isArray(entry.members)
+      !Array.isArray(entry.windows)
     )
       return null;
-    const members = entry.members.map(member);
-    if (members.some((m) => m === null)) return null;
-    groups.push({display: entry.display, space: entry.space, members: members as SavedMember[]});
+    const windows = entry.windows.map(window);
+    if (windows.some((w) => w === null)) return null;
+    desktops.push({display: entry.display, space: entry.space, windows: windows as SavedWindow[]});
   }
-  return groups;
+  return desktops;
 }
 
 export type ReadResult =
   | {status: "missing" | "unreadable" | "malformed"}
-  | {status: "ok"; groups: SavedGroup[]};
+  | {status: "ok"; desktops: SavedDesktop[]};
 
 export class StateFile {
   readonly path: string;
@@ -103,15 +101,15 @@ export class StateFile {
     if (!fs.isFile(this.path)) return {status: "missing"};
     const text = fs.read(this.path, 0, 0);
     if (text === null) return {status: "unreadable"};
-    const groups = parse(text);
-    if (!groups) return {status: "malformed"};
-    this.written = this.serialize(groups);
-    return {status: "ok", groups};
+    const desktops = parse(text);
+    if (!desktops) return {status: "malformed"};
+    this.written = this.serialize(desktops);
+    return {status: "ok", desktops};
   }
 
-  /** Schedules a write unless the file already holds these Groups. */
-  save(groups: SavedGroup[]): void {
-    const text = this.serialize(groups);
+  /** Schedules a write unless the file already holds these lists. */
+  save(desktops: SavedDesktop[]): void {
+    const text = this.serialize(desktops);
     if (text === this.written) {
       this.pending = null;
       return;
@@ -139,7 +137,7 @@ export class StateFile {
     this.failed = true;
   }
 
-  private serialize(groups: SavedGroup[]): string {
-    return JSON.stringify({version: stateVersion, groups}, null, 2) + "\n";
+  private serialize(desktops: SavedDesktop[]): string {
+    return JSON.stringify({version: stateVersion, desktops}, null, 2) + "\n";
   }
 }

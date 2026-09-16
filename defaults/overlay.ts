@@ -3,7 +3,7 @@
 // native window.
 import type {HS} from "../api/hs.ts";
 import type {Frame} from "../api/spaces.ts";
-import {type Group, isMember, slots} from "./groups.ts";
+import {type DesktopWindows, isWindow, windowsOf} from "./windows.ts";
 
 const white = (alpha: number) => ({red: 1, green: 1, blue: 1, alpha});
 
@@ -29,7 +29,7 @@ export class Overlay {
   private tap: HSEventTap | null = null;
   private canvas: HSCanvas | null = null;
   private signature: string | null = null;
-  private canvasGroup: string | null = null;
+  private canvasDesktop: string | null = null;
 
   constructor(hs: HS, flags: string[], refresh: () => void) {
     this.hs = hs;
@@ -72,29 +72,29 @@ export class Overlay {
     this.signature = null;
   }
 
-  update(snapshot: {missionControl: boolean}, group: Group | null | undefined): void {
-    const list = group ? slots(group) : [];
-    if (!this.active || !group || !list.length || snapshot.missionControl) {
+  update(snapshot: {missionControl: boolean}, desktop: DesktopWindows | null | undefined): void {
+    const list = desktop?.slots ?? [];
+    if (!this.active || !desktop || !list.length || snapshot.missionControl) {
       this.hide();
       return;
     }
     const primary = this.hs.screen.primary();
     const screen =
-      group.display === "Main"
+      desktop.display === "Main"
         ? primary
-        : this.hs.screen.all().find((s) => s.uuid.toUpperCase() === group.display.toUpperCase());
+        : this.hs.screen.all().find((s) => s.uuid.toUpperCase() === desktop.display.toUpperCase());
     if (!screen || !primary) {
       this.hide();
       return;
     }
-    const canvasGroup = JSON.stringify([group.display, group.space]);
-    if (canvasGroup !== this.canvasGroup) {
+    const canvasDesktop = JSON.stringify([desktop.display, desktop.space]);
+    if (canvasDesktop !== this.canvasDesktop) {
       // Recreate on the target Desktop instead of relying on a hidden window's
       // all-Spaces behavior to carry its previous placement across Desktops.
       if (this.canvas) this.canvas.destroy();
       this.canvas = null;
       this.signature = null;
-      this.canvasGroup = canvasGroup;
+      this.canvasDesktop = canvasDesktop;
     }
     const focus = this.hs.window.focusedWindow(),
       usable = screen.frame;
@@ -107,7 +107,9 @@ export class Overlay {
     const signature = JSON.stringify([
       frame,
       focus && [focus.pid, focus.id],
-      list.map((slot) => (isMember(slot) ? [slot.pid, slot.id, slot.title] : [slot.bundleID])),
+      list.map((slot) =>
+        isWindow(slot) ? [slot.pid, slot.id, slot.title, slot.visible] : [slot.bundleID],
+      ),
     ]);
     if (signature === this.signature) return;
     const text = (
@@ -133,15 +135,16 @@ export class Overlay {
         roundedRectRadii: {xRadius: 14, yRadius: 14},
         fillColor: {red: 0.08, green: 0.09, blue: 0.12, alpha: 0.96},
       },
-      text("GROUP WINDOWS", 18, 12, width - 36, 11, 0.6),
+      text("WINDOWS", 18, 12, width - 36, 11, 0.6),
     ];
     const counts = new Map<string, number>();
-    for (const member of group.members) counts.set(member.app, (counts.get(member.app) || 0) + 1);
+    for (const window of windowsOf(desktop))
+      counts.set(window.app, (counts.get(window.app) || 0) + 1);
     list.forEach((slot, index) => {
       const x = Math.floor(index / rows) * column,
         y = 36 + (index % rows) * 42;
       const number = index === 9 ? 0 : index + 1;
-      if (!isMember(slot)) {
+      if (!isWindow(slot)) {
         // A preset app that has not shown a window yet keeps its number, dimmed.
         elements.push(text(number, x + 18, y + 5, 28, 14, 0.45));
         elements.push(text(slot.app, x + 52, y + 5, column - 66, 14, 0.45));
@@ -155,9 +158,11 @@ export class Overlay {
           roundedRectRadii: {xRadius: 7, yRadius: 7},
           fillColor: {red: 0.2, green: 0.4, blue: 0.8, alpha: 0.5},
         });
-      const duplicate = (counts.get(slot.app) ?? 0) > 1;
-      elements.push(text(number, x + 18, y + 5, 28, 14, index < 10 ? 1 : 0.45));
-      elements.push(text(slot.app, x + 52, y + (duplicate ? 0 : 5), column - 66, 14));
+      // Hidden and minimized windows keep their numbers, shown dimmed.
+      const duplicate = (counts.get(slot.app) ?? 0) > 1,
+        alpha = slot.visible ? 1 : 0.55;
+      elements.push(text(number, x + 18, y + 5, 28, 14, index < 10 ? alpha : 0.45));
+      elements.push(text(slot.app, x + 52, y + (duplicate ? 0 : 5), column - 66, 14, alpha));
       if (duplicate)
         elements.push(text(slot.title || "Untitled", x + 52, y + 18, column - 66, 10, 0.6));
     });
@@ -178,6 +183,6 @@ export class Overlay {
     if (this.canvas) this.canvas.destroy();
     this.tap = this.canvas = null;
     this.active = false;
-    this.signature = this.canvasGroup = null;
+    this.signature = this.canvasDesktop = null;
   }
 }
