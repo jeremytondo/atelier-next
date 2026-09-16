@@ -84,6 +84,10 @@ test("the leader shows the root menu at once, descends into Windows, and runs Fi
   assert.equal(f.tap().running, true);
   assert.deepEqual(f.app.status().leader, {shortcut: "⌥Space", active: true, path: []});
   assert.equal(f.title(), "ATELIER");
+  // Bottom-right of the screen with keyboard focus, like the window list, and as tall as its rows.
+  const frame = f.canvas()!.frame as {x: number; y: number; w: number; h: number};
+  assert.deepEqual([frame.x + frame.w, frame.y, frame.w], [1180, 20, 320]);
+  assert.equal(frame.h, 36 + 3 * 30 + 34);
   // Quick Apps has nothing configured under it, so it is not offered.
   assert.deepEqual(
     f.texts().filter((t) => /Spaces|Windows|Quick Apps|Configuration/.test(t)),

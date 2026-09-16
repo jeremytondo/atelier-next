@@ -29,7 +29,6 @@ export interface LeaderHooks {
 /** How long footer feedback replaces the hints. */
 export const feedbackSeconds = 1.5;
 const tapMessage = "Could not start the leader event tap; check Accessibility permission";
-const columnWidth = 360;
 
 export class Leader {
   private readonly hs: HS;
@@ -268,15 +267,11 @@ export class Leader {
         : this.root.label,
       rows,
       footer: this.feedback ?? hints,
-      columns: rows.length > 12 ? 2 : 1,
-      columnWidth,
     };
+    // The same corner as the window list: both are one HUD showing what the
+    // keyboard can do right now.
     const screen = this.hs.screen.main() ?? this.hs.screen.primary();
     if (!screen) return;
-    this.panel.show(content, {
-      screen: screen.frame,
-      anchor: "bottomCenter",
-      key: "leader:" + screen.uuid,
-    });
+    this.panel.show(content, {screen: screen.frame, key: "leader:" + screen.uuid});
   }
 }

@@ -1,9 +1,11 @@
 // One nonactivating panel drawn with `hs.canvas`, shared by the leader menu
 // and the window list: a title, rows of key, label, and hint, and a footer
-// whose height never changes so feedback cannot move the list. The canvas
-// ignores mouse events and never takes focus. HS2 canvas positions use
-// AppKit's y-up coordinates; screen frames use y-down coordinates. A canvas
-// belongs to one display/Space, so a new placement key recreates it.
+// whose height never changes so feedback cannot move the list. It sits in the
+// bottom-right corner of its screen and grows with its rows, adding a column
+// only when the screen runs out of height. The canvas ignores mouse events
+// and never takes focus. HS2 canvas positions use AppKit's y-up coordinates;
+// screen frames use y-down coordinates. A canvas belongs to one
+// display/Space, so a new placement key recreates it.
 import type {HS} from "../api/hs.ts";
 import type {Frame} from "../api/spaces.ts";
 
@@ -23,21 +25,18 @@ export interface PanelContent {
   title: string;
   rows: PanelRow[];
   footer: string;
-  /** Rows fill each column top to bottom before the next column starts. */
-  columns: number;
-  columnWidth: number;
 }
 
 export interface Placement {
   screen: Frame;
-  anchor: "bottomRight" | "bottomCenter";
   /** Changing keys recreate the native window, for example on another Desktop. */
   key: string;
 }
 
 const titleHeight = 36,
   footerHeight = 34,
-  margin = 20;
+  margin = 20,
+  columnWidth = 320;
 const white = (alpha: number) => ({red: 1, green: 1, blue: 1, alpha});
 
 export function frameFor(
@@ -45,13 +44,9 @@ export function frameFor(
   primary: {h: number},
   width: number,
   height: number,
-  anchor: Placement["anchor"] = "bottomRight",
 ): Frame {
   return {
-    x:
-      anchor === "bottomCenter"
-        ? screen.x + Math.round((screen.w - width) / 2)
-        : screen.x + screen.w - width - margin,
+    x: screen.x + screen.w - width - margin,
     y: primary.h - screen.y - screen.h + margin,
     w: width,
     h: height,
@@ -81,12 +76,16 @@ export class Panel {
       this.placementKey = placement.key;
     }
     const rowHeight = content.rows.some((row) => row.detail) ? 42 : 30,
-      perColumn = Math.max(1, Math.ceil(content.rows.length / content.columns)),
-      columns = Math.max(1, Math.min(content.columns, content.rows.length));
-    const width = Math.min(content.columnWidth * columns, placement.screen.w - 2 * margin),
+      fit = Math.max(
+        1,
+        Math.floor((placement.screen.h - 2 * margin - titleHeight - footerHeight) / rowHeight),
+      ),
+      columns = Math.max(1, Math.ceil(content.rows.length / fit)),
+      perColumn = Math.ceil(content.rows.length / columns);
+    const width = Math.min(columnWidth * columns, placement.screen.w - 2 * margin),
       column = width / columns,
-      height = titleHeight + perColumn * rowHeight + footerHeight;
-    const frame = frameFor(placement.screen, primary.fullFrame, width, height, placement.anchor);
+      height = titleHeight + Math.max(1, perColumn) * rowHeight + footerHeight;
+    const frame = frameFor(placement.screen, primary.fullFrame, width, height);
     const signature = JSON.stringify([frame, content]);
     if (signature === this.signature) return;
     const text = (

@@ -55,12 +55,6 @@ test("the panel sits at the bottom of a screen above the primary", () => {
     w: 320,
     h: 200,
   });
-  assert.deepEqual(frameFor({x: 0, y: 0, w: 1200, h: 800}, {h: 800}, 360, 200, "bottomCenter"), {
-    x: 420,
-    y: 20,
-    w: 360,
-    h: 200,
-  });
 });
 
 test("overlay replaces its native window when the list moves between Spaces or displays", () => {
@@ -214,6 +208,16 @@ test("overlay keeps a waiting slot's number, dims it, and shows a list that only
   f.state.desktop!.slots = [];
   f.redraw();
   assert.equal(canvas.showing, false);
+  f.overlay.stop();
+});
+
+test("a list taller than the screen spills into a second column", () => {
+  const f = fixture();
+  f.state.desktop!.slots = Array.from({length: 40}, (_, i) => listed(10, i + 1, "App " + (i + 1)));
+  f.flags(["cmd", "alt"]);
+  const frame = f.canvases[0]!.frame as {w: number; h: number};
+  assert.equal(frame.w, 640);
+  assert.ok(frame.h <= 800 - 40);
   f.overlay.stop();
 });
 

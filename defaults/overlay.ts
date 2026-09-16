@@ -86,20 +86,9 @@ export class Overlay {
         highlight: !!focus && focus.pid === slot.pid && focus.id === slot.id,
       };
     });
-    const perColumn = Math.max(1, Math.floor((usable.h - 120) / 42));
     this.panel.show(
-      {
-        title: "Windows",
-        rows,
-        footer: "Release modifiers to hide",
-        columns: Math.ceil(rows.length / perColumn),
-        columnWidth: 320,
-      },
-      {
-        screen: usable,
-        anchor: "bottomRight",
-        key: JSON.stringify([desktop.display, desktop.space]),
-      },
+      {title: "Windows", rows, footer: "Release modifiers to hide"},
+      {screen: usable, key: JSON.stringify([desktop.display, desktop.space])},
     );
   }
 
