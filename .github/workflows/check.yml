@@ -1,7 +1,7 @@
 name: Check
 on:
   push:
-    branches: [main]
+    branches: [main, native]
   pull_request:
   workflow_dispatch:
 
@@ -51,7 +51,7 @@ jobs:
           key: atelier-native-v1-${{ steps.inputs.outputs.native }}
       - name: Unpack native output
         run: scripts/native-cache.sh unpack
-      - name: Native checks and package assembly
+      - name: Native checks
         run: mise run check:native
       # GitHub scopes PR caches to the PR merge ref; main cannot restore them.
       # Release compiles its own output and never restores executable caches.

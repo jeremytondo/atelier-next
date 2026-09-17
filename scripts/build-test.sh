@@ -16,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 fixture="$temporary/project with spaces"
-mkdir -p "$fixture/scripts" "$fixture/mise" "$fixture/providers/Sources" "$fixture/companion/Sources" "$fixture/companion/App/Sources" "$fixture/companion/App/Atelier.xcodeproj/xcshareddata" "$fixture/api" "$fixture/.xcodebuildmcp" "$temporary/bin"
+mkdir -p "$fixture/scripts" "$fixture/mise" "$fixture/providers/Sources" "$fixture/companion/Sources" "$fixture/companion/App/Sources" "$fixture/companion/App/Atelier.xcodeproj/xcshareddata" "$fixture/.xcodebuildmcp" "$temporary/bin"
 cp "$root"/scripts/*.sh "$fixture/scripts/"
 cp "$root/mise.toml" "$fixture/"
 cp "$root/mise/tasks.toml" "$fixture/mise/"
@@ -67,9 +67,9 @@ grep -q ' --architectures arm64' "$FAKE_BUILD_LOG" || fail 'providers compilatio
 grep -q 'macos build .* --arch arm64' "$FAKE_BUILD_LOG" || fail 'companion compilation did not restrict architectures'
 [[ $(compilations) -eq 1 ]] || fail 'verified output recompiled'
 [[ -x $app/Contents/MacOS/atelier-providers && -x $app/Contents/MacOS/Atelier ]] || fail 'the bundle does not carry both executables'
-printf 'TypeScript edit\n' > "$fixture/api/index.ts"
+printf 'unrelated edit\n' > "$fixture/README.md"
 native
-[[ $(compilations) -eq 1 ]] || fail 'TypeScript edit invalidated native compilation'
+[[ $(compilations) -eq 1 ]] || fail 'an unrelated edit invalidated native compilation'
 "$fixture/scripts/native-cache.sh" pack > "$temporary/cache.log"
 rm -rf "$fixture/.build/native/app" "$fixture/.build/native/app.json"
 "$fixture/scripts/native-cache.sh" unpack >> "$temporary/cache.log"

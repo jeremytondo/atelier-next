@@ -21,21 +21,28 @@ do not follow it blindly or deviate from it silently.
 
 ## Maintainability
 
-Atelier runs on stock Hammerspoon 2 installed by Homebrew; it owns no app
-shell and carries no upstream patches. The stack is config, defaults, API,
-then `hs.*` or a provider: the defaults call only `hs.*` and the `atelier`
-API, and each API function uses `hs.*` where Hammerspoon 2 can do the job and
-the out-of-process providers binary where it cannot. Name a provider after the
-HS2 module it stands in for, and delete it when upstream gains the ability.
-The companion, `Atelier.app`, holds only what macOS grants an app, such as
-Spotlight actions, and forwards each request to the runtime through
-`dispatch`; a feature that needs logic or state belongs in the runtime, never
-in the companion. Add native mechanisms only for demonstrated gaps, and
-preserve user-owned configuration across updates.
+Atelier is one native Mac app and a command-line tool; it has no helper
+programs. Each layer knows only the one below it: `App`, then `UI`, then
+`AtelierKit`, then `MacOS`. `AtelierKit` is everything Atelier knows and does,
+with nothing visible, and never learns that `UI` exists. It is organised by
+subject, and each subject offers commands, queries, and events under grouped
+names such as `desktops.new`. `UI` and the `atelier` command are two users of
+the same `AtelierKit`; shortcuts, the leader menu, Spotlight, and the CLI all
+run the same commands. If someone using only the CLI would want it, it belongs
+in `AtelierKit`; if it is about what appears on screen, it belongs in `UI`.
 
-Homebrew may install an official upstream HS2 release or an unpatched snapshot
-built, Developer ID signed, and notarized by Atelier. Snapshots are permanent
-release assets, shared across channels when their build inputs match.
+Only `MacOS` touches Accessibility or private macOS calls, and workarounds for
+macOS stay inside it. Requests to other apps run in the background with a short
+time limit, so a frozen app holds up nothing else. The key-listening used by
+the leader runs only while the leader is open and does almost no work itself.
+Each piece of `UI` stands alone: pieces share only `Design` and get their
+information from `AtelierKit`'s queries and events, never from a timer. Keys
+are defined only in the config file, and a reload applies the whole file or
+none of it. Preserve user-owned configuration across updates.
+
+`providers/` and `companion/` are carried over from the Hammerspoon 2 version
+as raw material. Rework their code into the layers above; do not extend the
+pipe protocol, the providers host, or the `Companion` library.
 
 Long-term maintainability is a core priority. Prefer shared, plainly named
 logic over duplication, and change an existing design when that produces a
@@ -69,11 +76,9 @@ Research findings and experiment evidence live in Linear tickets and pull
 requests, not in the repository. Do not add prototype trees, dated evidence
 files, or research writeups to the checkout.
 
-Reference checkouts under `repos/` are read-only research material. Use
-`mise run refs` to fetch missing checkouts and `mise run refs:update` to
-align them with `hammerspoon2.json`. Never edit their source, import from them, or
-copy them wholesale into the product. They must remain gitignored and
-independent of app builds and releases.
+The `hammerspoon-final` tag is the last Hammerspoon 2 version. Its `api/`,
+`defaults/`, `tests/`, and README manual trial describe the behaviour the
+native app must match; read them there, and do not copy them into this tree.
 
 ## Safety
 
@@ -81,6 +86,9 @@ independent of app builds and releases.
   the developer's real configuration or run competing app instances.
 - Test window and Space mutations only on disposable Desktops and saved
   test windows. Unit tests do not establish that macOS changed focus or Spaces.
+- Before deleting or moving a Desktop, confirm exactly which Desktop is about
+  to be acted on, immediately beforehand, and stop when that cannot be
+  established. Never infer the target from its position.
 - Never kill processes by name or pattern. Kill only a PID captured when
   starting a process for the current task.
 - Preserve unrelated working-copy changes.
@@ -101,14 +109,13 @@ other commands.
 
 ## Project Tools
 
-Use mise tasks as the entry points for development, checks, and releases.
+Use mise tasks as the entry points for development and checks.
 Use shell and native tools for repository automation; do not introduce Python.
 
 Use the XcodeBuildMCP CLI skill for native Apple-platform build, test, run,
 and debugging work.
 
-Both dev and stable releases are manual. Use `mise run release:dev`,
-`release:patch`, `release:minor`, or `release:major` when publication is
-requested. Pushes to `main` run checks only; do not add automatic publication.
+Releases are manual. Pushes run checks only; do not add automatic
+publication. Release tooling returns with the native app's first release.
 
 When delegating work, select a cost-appropriate model and review its output.

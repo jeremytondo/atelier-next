@@ -1,68 +1,29 @@
-# Every mise task. The three mise config files include this file and differ
-# only in the tools their environment can install.
-
-[build]
-description = "Build the package in dist/: compiled TypeScript, declarations, CLI, and the signed Atelier.app"
-run = "scripts/build-package.sh"
-
-[dev]
-description = "Build and install the package into the Homebrew prefix, then reload Hammerspoon 2 yourself"
-run = "scripts/build-package.sh --install"
+# Every mise task. Both mise config files include this file and differ only in
+# the tools their environment can install.
 
 [test]
-description = "Run the TypeScript, Swift provider, and companion tests"
-depends = ["test:js", "test:native"]
-
-["test:js"]
-description = "Type-check against the pinned HS2 declarations, then run the TypeScript tests"
-run = [
-  "scripts/fetch-types.sh",
-  "tsc -p tsconfig.json --noEmit",
-  "node --test 'tests/*.test.ts'",
-]
-
-["test:native"]
-description = "Build and run the Swift provider and companion tests in Debug"
+description = "Build and run the Swift package tests in Debug"
 run = "scripts/build-native.sh --test"
-
-["test:release"]
-description = "Test release behavior with disposable history and a fake GitHub"
-run = "scripts/release-test.sh"
-
-["test:hs2"]
-description = "Test HS2 snapshot selection, reuse, and reference updates with isolated fixtures"
-run = "scripts/hammerspoon-test.sh"
 
 ["test:build"]
 description = "Test native build reuse and cache handling with fake compilers"
 run = "scripts/build-test.sh"
 
-["test:cli"]
-description = "Test the atelier command against a fake Mac"
-run = "scripts/cli-test.sh"
-
 [lint]
-description = "Lint scripts and workflows; check TypeScript and Swift formatting and lint"
-depends = ["lint:scripts", "lint:js", "lint:swift"]
+description = "Lint scripts and workflows; check Swift formatting"
+depends = ["lint:scripts", "lint:swift"]
 
 ["lint:scripts"]
 description = "Lint shell scripts and the workflows"
-run = ["shellcheck scripts/*.sh cli/atelier install/install.sh", "actionlint .github/workflows/*.yml"]
-
-["lint:js"]
-description = "Check TypeScript and JavaScript formatting and lint with Biome"
-run = "biome ci --error-on-warnings ."
+run = ["shellcheck scripts/*.sh", "actionlint .github/workflows/*.yml"]
 
 ["lint:swift"]
 description = "Check Swift formatting with the selected Xcode's swift-format"
 run = "xcrun swift-format lint --strict --recursive providers/Package.swift providers/Sources providers/Tests companion/Package.swift companion/Sources companion/Tests companion/App/Sources"
 
 [format]
-description = "Format TypeScript, JavaScript, and Swift sources in place and apply safe lint fixes"
-run = [
-  "biome check --write .",
-  "xcrun swift-format format --in-place --recursive providers/Package.swift providers/Sources providers/Tests companion/Package.swift companion/Sources companion/Tests companion/App/Sources",
-]
+description = "Format Swift sources in place"
+run = "xcrun swift-format format --in-place --recursive providers/Package.swift providers/Sources providers/Tests companion/Package.swift companion/Sources companion/Tests companion/App/Sources"
 
 ["native:build"]
 description = "Build or verify the Release Atelier.app, unsigned, with the providers executable inside"
@@ -70,83 +31,17 @@ run = "scripts/build-native.sh"
 
 ["native:check"]
 description = "Sequence Debug tests before Release native compilation"
-depends = ["test:native"]
+depends = ["test"]
 run = "scripts/build-native.sh"
-
-["types:fetch"]
-description = "Fetch upstream's hammerspoon.d.ts for the pinned revision into .build/types"
-run = "scripts/fetch-types.sh"
-
-["hs2:build"]
-description = "Dev only: build stock Hammerspoon 2 at the pinned revision into .build/native/hs2"
-run = "scripts/build-hammerspoon.sh"
-
-["hs2:install"]
-description = "Dev only: build stock Hammerspoon 2 at the pin and replace /Applications/Hammerspoon 2.app (quit it first)"
-run = "scripts/build-hammerspoon.sh --install"
-
-[casks]
-description = "Preview the selected channel casks in dist/casks: MANIFEST.json"
-run = "scripts/casks.sh dist/casks"
 
 [check]
 description = "Run the complete gate"
 depends = ["check:portable", "check:native"]
 
 ["check:portable"]
-description = "The gate's Linux-capable half: TypeScript tests, lint, and release/build/CLI fixtures"
-depends = ["test:js", "release:check"]
+description = "The gate's Linux-capable half: script and workflow lint, and the build fixtures"
+depends = ["lint:scripts", "test:build"]
 
 ["check:native"]
-description = "The gate's macOS half: Swift format, native tests, and a locally signed package"
+description = "The gate's macOS half: Swift format, native tests, and the Release build"
 depends = ["lint:swift", "native:check"]
-run = "scripts/build-package.sh --skip-build --identity - --output-dir .build/package-check"
-
-[refs]
-description = "Fetch missing read-only reference source into repos/ (gitignored)"
-run = "scripts/refs.sh fetch"
-
-["refs:update"]
-description = "Align reference checkouts with hammerspoon2.json (requires clean checkouts)"
-run = "scripts/refs.sh update"
-
-["refs:status"]
-description = "Show reference checkout revisions and local changes"
-run = "scripts/refs.sh status"
-
-["release:patch"]
-description = "Dispatch a stable patch release: [BRANCH] (default: main)"
-run = "scripts/release-dispatch.sh patch"
-
-["release:minor"]
-description = "Dispatch a stable minor release: [BRANCH] (default: main)"
-run = "scripts/release-dispatch.sh minor"
-
-["release:major"]
-description = "Dispatch a stable major release: [BRANCH] (default: main)"
-run = "scripts/release-dispatch.sh major"
-
-["release:dev"]
-description = "Dispatch a dev release: [BRANCH] (default: main)"
-run = "scripts/release-dispatch.sh dev"
-
-["release:plan"]
-description = "Print release metadata: dev [BRANCH] or stable patch|minor|major [BRANCH]"
-run = "scripts/release-plan.sh"
-
-["release:package"]
-description = "Build, sign, notarize, and package an existing release plan JSON"
-run = "scripts/build-package.sh --release-plan"
-
-["release:verify-package"]
-description = "Run the full gate, then package its verified same-run native output"
-depends = ["check"]
-run = "scripts/build-package.sh --skip-build --release-plan"
-
-["release:publish"]
-description = "Publish verified release assets and push the casks (used by GitHub Actions)"
-run = "scripts/publish-release.sh"
-
-["release:check"]
-description = "Lint scripts, workflows, and TypeScript, and test release, build, and CLI behavior"
-depends = ["lint:scripts", "lint:js", "test:release", "test:build", "test:cli", "test:hs2"]
