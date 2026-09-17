@@ -40,10 +40,6 @@ information from `AtelierKit`'s queries and events, never from a timer. Keys
 are defined only in the config file, and a reload applies the whole file or
 none of it. Preserve user-owned configuration across updates.
 
-`providers/` and `companion/` are carried over from the Hammerspoon 2 version
-as raw material. Rework their code into the layers above; do not extend the
-pipe protocol, the providers host, or the `Companion` library.
-
 Long-term maintainability is a core priority. Prefer shared, plainly named
 logic over duplication, and change an existing design when that produces a
 simpler system. Code should be easy to understand, work with, and test.
@@ -61,9 +57,9 @@ rather than enumerate details that can drift.
 
 ## Testing
 
-- Use the existing testing tools and small, hand-written fakes behind the
-  interfaces the code already defines. Avoid adding third-party assertion
-  or mocking frameworks.
+- Use Swift Testing and small, hand-written fakes behind the interfaces the
+  code already defines. Avoid adding third-party assertion or mocking
+  frameworks.
 - Use table tests where they clarify a set of cases, not as ritual.
 - Test observable behavior and failure cases. Add concurrency deliberately
   when tests have isolated state and it provides a meaningful benefit.
@@ -76,9 +72,12 @@ Research findings and experiment evidence live in Linear tickets and pull
 requests, not in the repository. Do not add prototype trees, dated evidence
 files, or research writeups to the checkout.
 
-The `hammerspoon-final` tag is the last Hammerspoon 2 version. Its `api/`,
-`defaults/`, `tests/`, and README manual trial describe the behaviour the
-native app must match; read them there, and do not copy them into this tree.
+Two tags hold the Hammerspoon 2 version: `hammerspoon-final`, and
+`hammerspoon-companion` for the `Atelier.app` project and the Spotlight
+action. Their `api/`, `defaults/`, and `tests/` describe the behaviour the
+native app must match, and the README there lists the manual trial. Read
+behaviour and take individual files from them; never restore either tree
+wholesale, and rework what you take, since its shape served Hammerspoon.
 
 ## Safety
 
