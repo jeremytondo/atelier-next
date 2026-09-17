@@ -1,13 +1,27 @@
 // The Atelier defaults: per-Desktop window lists, Desktop shortcuts, Quick
-// Apps, and the overlay, as policy over `hs.*` and the API. One session owns
-// every binding, observer, timer, and the providers process; stopping releases
-// all of them and leaves independent HS2 scripts untouched.
+// Apps, native window actions, the leader menu, and the HUDs, as policy over
+// `hs.*` and the API. One session owns every binding, event tap, timer, canvas,
+// and the providers process; stopping releases all of them and leaves
+// independent HS2 scripts untouched. Every action is a command in one
+// registry; global chords and leader sequences only name commands.
 import type {ResolvedApplication} from "../api/application.ts";
 import type {HS} from "../api/hs.ts";
 import type {AtelierAPI} from "../api/index.ts";
 import type {Snapshot} from "../api/spaces.ts";
 import {Timers} from "../api/timers.ts";
+import type {WindowMenu} from "../api/window.ts";
 import {setAXAttribute} from "./accessibility.ts";
+import {
+  type Builtin,
+  builtins,
+  type Command,
+  type Commands,
+  type Keymap,
+  presetCommand,
+  quickAppCommand,
+  resolveKeymap,
+  shortcutsFor,
+} from "./commands.ts";
 import {
   type Config,
   defaults as defaultOptions,
@@ -15,9 +29,10 @@ import {
   type Options,
   type PresetEntry,
   type QuickAppEntry,
-  type Shortcut,
-  shortcut,
 } from "./configuration.ts";
+import {Panel} from "./hud.ts";
+import {type Chord, chord, describe, eventChord} from "./keys.ts";
+import {Leader} from "./leader.ts";
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
 import {Startup} from "./startup.ts";
@@ -76,6 +91,8 @@ export interface Status {
     lists: number;
     file: {path: string; savedAt: string | null; restored: number | null; dropped: number | null};
   };
+  /** The leader chord and, while leader mode is active, the open submenu path. */
+  leader: {shortcut: string; active: boolean; path: string[]} | null;
   metrics: {name: string; milliseconds: number}[];
 }
 
@@ -100,6 +117,13 @@ export interface Defaults {
 type QuickApp = QuickAppEntry & ResolvedApplication;
 interface Preset extends PresetEntry {
   resolved: ResolvedApplication[];
+}
+
+/** A registered global chord, Carbon or event tap, with one release path. */
+interface Bound {
+  enable(): boolean;
+  disable(): void;
+  destroy(): void;
 }
 
 /** How long a preset's slot waits for its app to show a window on the Desktop. */
@@ -131,19 +155,25 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     file = new StateFile(hs),
     timers = new Timers(hs),
     startup = new Startup(hs);
-  const bindings: {key: HSHotkey; space: boolean}[] = [],
+  const bindings: {key: Bound; space: boolean}[] = [],
     observers = new Map<number, {element: HSAXElement; callback: () => void}>(),
     metrics: Status["metrics"] = [];
   let notificationsRequested = false;
   let config: Config = normalize(),
+    commands: Commands = new Map(),
+    keymap: Keymap = {global: [], leader: {label: "Atelier", entries: []}},
     generation = 0,
     busy = false,
     observing = false,
-    snapshot: Snapshot | null = null;
+    snapshot: Snapshot | null = null,
+    // While a HUD render runs, the first Window menu read serves every command.
+    windowMenu: WindowMenu | null = null,
+    caching = false;
   let state: State = "Paused",
     lastError: string | null = null,
     poll: HSTimer | null = null,
     overlay: Overlay | null = null,
+    leader: Leader | null = null,
     workspace: Workspace | null = null,
     quick: QuickApps | null = null,
     quickApps: QuickApp[] = [],
@@ -468,7 +498,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     presets: presets.map((p) => ({
       name: p.name,
       apps: p.resolved.map((a) => a.name),
-      shortcut: p.shortcut?.text ?? null,
+      shortcut: p.shortcut ?? null,
     })),
     windows: {
       lists: lists.entries.size,
@@ -479,55 +509,211 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
         dropped: restored?.dropped ?? null,
       },
     },
+    leader: config.leader
+      ? {
+          shortcut: describe(config.leader),
+          active: leader?.isActive ?? false,
+          path: leader?.location ?? [],
+        }
+      : null,
     metrics,
   });
-  function bind(binding: Shortcut, action: () => Promise<unknown>, space = false) {
+  /** Registers a chord through Carbon, or through HS2's event tap when Fn is involved. */
+  function bind(binding: Chord, action: () => void, space = false) {
+    if (binding.mods.includes("fn")) {
+      const key = hs.eventtap.bindHotkey(binding.mods, binding.key, action, null);
+      if (!key) throw new Error("Shortcut unavailable: " + describe(binding));
+      bindings.push({
+        key: {
+          enable: () => key.enable(),
+          disable: () => key.disable(),
+          destroy: () => hs.eventtap.removeHotkey(key),
+        },
+        space,
+      });
+      return;
+    }
     const occupied = hs.hotkey.getHotkeys().some((key) => {
       try {
-        return shortcut(key.mods.join("-") + "-" + key.key).identity === binding.identity;
+        return chord(key.mods.join("-") + "-" + key.key).identity === binding.identity;
       } catch (_) {
         return false;
       }
     });
     if (occupied || !hs.hotkey.assignable(binding.mods, binding.key))
-      throw new Error("Shortcut unavailable: " + binding.identity);
-    const key = hs.hotkey.create(
-      binding.mods,
-      binding.key,
-      () => fire(Promise.resolve().then(action)),
-      null,
-      null,
-    );
+      throw new Error("Shortcut unavailable: " + describe(binding));
+    const key = hs.hotkey.create(binding.mods, binding.key, action, null, null);
     if (!key?.enable()) {
       if (key) key.destroy();
-      throw new Error("Shortcut unavailable: " + binding.identity);
+      throw new Error("Shortcut unavailable: " + describe(binding));
     }
     bindings.push({key, space});
   }
-  const actions: Record<string, () => Promise<unknown>> = {
-    presets: async () => {
-      if (!chooser) return;
-      chooser.query = "";
-      chooser.show();
-    },
-    "cycle-previous": () => cycle(-1),
-    "cycle-next": () => cycle(1),
-    "move-previous": () => move(-1),
-    "move-next": () => move(1),
-    // Stop first so pending list state reaches disk before the context goes.
-    "reload-config": async () => {
-      session.stop();
-      hs.reload();
-    },
-    "desktop-create": () => space("create"),
-    "desktop-left": () => space("reorder", {offset: -1}),
-    "desktop-right": () => space("reorder", {offset: 1}),
-    "desktop-delete": () => space("delete"),
+  const nativeMenu = () => {
+    if (!caching) return api.window.actions();
+    windowMenu ??= api.window.actions();
+    return windowMenu;
   };
-  for (let n = 1; n <= 10; n++) {
-    actions["desktop-" + n] = () => space("switch", {number: n});
-    actions["select-" + n] = () => select(n);
-    actions["move-" + n] = () => move({slot: n});
+  /** The shipped commands the configuration enables, plus the user's own. */
+  function buildCommands(current: Config): Commands {
+    const map: Commands = new Map();
+    const add = (command: Command) => map.set(command.id, command);
+    const plain: Record<string, () => Promise<unknown>> = {
+      presets: () =>
+        run("presets", async () => {
+          if (!chooser) throw new Error("No preset is configured");
+          chooser.query = "";
+          chooser.show();
+        }),
+      "cycle-previous": () => cycle(-1),
+      "cycle-next": () => cycle(1),
+      "move-previous": () => move(-1),
+      "move-next": () => move(1),
+      // Stop first so pending list state reaches disk before the context goes.
+      "reload-config": () =>
+        run("reload-config", async () => {
+          session.stop();
+          hs.reload();
+        }),
+      "open-config": () =>
+        run("open-config", async () => {
+          const path = hs.appinfo.configPath;
+          if (!hs.urlevent.openURL("file://" + encodeURI(path)))
+            throw new Error("Could not open " + path);
+        }),
+      console: () => run("console", async () => hs.openConsole()),
+      "desktop-create": () => space("create"),
+      "desktop-left": () => space("reorder", {offset: -1}),
+      "desktop-right": () => space("reorder", {offset: 1}),
+      "desktop-delete": () => space("delete"),
+    };
+    // The Spaces menu lists only the Desktops of the display with keyboard
+    // focus, numbered as macOS numbers them, without fullscreen Spaces; the
+    // last census is current enough for a HUD, and no census lists them all.
+    const desktops = () => {
+      const display = snapshot?.displays.find((d) => d.id === snapshot?.targetDisplay);
+      return display ? display.spaces.filter((s) => !s.fullscreen).length : Infinity;
+    };
+    const listed: Record<string, () => boolean> = {};
+    for (let n = 1; n <= 10; n++) {
+      plain["desktop-" + n] = () => space("switch", {number: n});
+      listed["desktop-" + n] = () => n <= desktops();
+      plain["select-" + n] = () => select(n);
+      plain["move-" + n] = () => move({slot: n});
+    }
+    const native = (builtin: Builtin, name: NonNullable<Builtin["native"]>): Command => ({
+      id: builtin.id,
+      label: builtin.label,
+      run: () => run(builtin.id, async () => api.window.perform(name)),
+      available: () => {
+        const menu = nativeMenu(),
+          action = menu.actions[name];
+        if (!action.present)
+          return builtin.label + " is not in the Window menu" + (menu.app ? " of " + menu.app : "");
+        return action.enabled ? null : builtin.label + " is unavailable for the focused window";
+      },
+      native: () => {
+        const shortcut = nativeMenu().actions[name].shortcut;
+        return shortcut && eventChord(shortcut.mods, shortcut.key);
+      },
+    });
+    // Presets and their picker exist whenever presets are configured, so their
+    // keys stay consumed and explain themselves while window lists are off.
+    const presetsReason = () =>
+      current.windows ? null : "Presets need window lists; set windows: true";
+    for (const builtin of builtins) {
+      if (builtin.feature && !current[builtin.feature]) continue;
+      if (builtin.id === "presets" && !current.presets.length) continue;
+      if (builtin.native) {
+        add(native(builtin, builtin.native));
+        continue;
+      }
+      const action = plain[builtin.id];
+      if (!action) throw new Error("Unknown command: " + builtin.id);
+      add({
+        id: builtin.id,
+        label: builtin.label,
+        run: action,
+        space: builtin.space,
+        ...(builtin.id === "presets" ? {available: presetsReason} : {}),
+        ...(listed[builtin.id] ? {listed: listed[builtin.id]} : {}),
+      });
+    }
+    for (const entry of current.quickApps) {
+      const id = quickAppCommand(entry.app);
+      add({
+        id,
+        label: entry.app.replace(/^.*\//, "").replace(/\.app$/, ""),
+        run: () => quickApp(entry.app),
+        available: () =>
+          quickApps.some((app) => app.app === entry.app) ? null : entry.app + " is not installed",
+      });
+    }
+    for (const entry of current.presets) {
+      add({
+        id: presetCommand(entry.name),
+        label: entry.name,
+        run: () => preset(entry.name),
+        available: presetsReason,
+      });
+    }
+    for (const entry of current.commands) {
+      add({
+        id: entry.id,
+        label: entry.label,
+        run: () => run(entry.id, async () => entry.action()),
+        ...(entry.available
+          ? {
+              available: () => {
+                const result = entry.available?.();
+                return typeof result === "string" && result ? result : null;
+              },
+            }
+          : {}),
+      });
+    }
+    return map;
+  }
+  /** Runs a command unless it is unavailable; resolves to "done" or to the reason
+   *  or error to show. Every command runs through `run`, which reports failures. */
+  async function execute(command: Command): Promise<"done" | string> {
+    let reason: string | null;
+    try {
+      reason = command.available?.() ?? null;
+    } catch (error) {
+      reason = error instanceof Error ? error.message : String(error);
+    }
+    if (reason) return reason;
+    try {
+      const result = await command.run();
+      return result && typeof result === "object" && "busy" in result
+        ? "Another command is still running"
+        : "done";
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+  /** A global chord: unavailable commands are reported instead of reaching an app. */
+  function trigger(command: Command | null) {
+    if (!command || state !== "Running") return;
+    fire(
+      Promise.resolve().then(() => {
+        let reason: string | null;
+        try {
+          reason = command.available?.() ?? null;
+        } catch (error) {
+          reason = error instanceof Error ? error.message : String(error);
+        }
+        if (reason) report(reason);
+        else return command.run();
+      }),
+    );
+  }
+  function hint(command: Command): string | null {
+    const parts = shortcutsFor(keymap, command).map(describe),
+      native = command.native?.();
+    if (native) parts.push(describe(native));
+    return parts.length ? parts.join(" · ") : null;
   }
   function checkBuild() {
     const build = hs.appinfo.build;
@@ -579,6 +765,9 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       state = "Starting";
       ready = (async () => {
         config = normalize(startOptions);
+        // The whole keymap is checked against the registry before any resource exists.
+        commands = buildCommands(config);
+        keymap = resolveKeymap(config.global, config.leaderMap, commands);
         checkBuild();
         if (!hs.permissions.checkAccessibility()) await waitForAccessibility(epoch, false);
         assertValid(epoch);
@@ -632,29 +821,51 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
           presets.push({...entry, resolved});
         }
         await refresh(epoch);
-        for (const binding of config.shortcuts) {
-          const action = actions[binding.name];
-          if (!action) throw new Error("Unknown binding: " + binding.name);
-          if (binding.name === "presets" && !presets.length) continue;
-          bind(binding, action, binding.space);
+        for (const binding of keymap.global) {
+          const command = binding.command;
+          bind(binding.chord, () => trigger(command), command?.space ?? false);
         }
-        for (const entry of quickApps) bind(entry, () => quickApp(entry.bundleID));
-        if (config.windows) {
-          for (const entry of presets)
-            if (entry.shortcut) bind(entry.shortcut, () => preset(entry.name));
-          if (presets.length) {
-            chooser = hs.chooser.create();
-            chooser.placeholder = "Preset";
-            chooser.setChoices(
-              presets.map((p) => ({
-                text: p.name,
-                subText: p.resolved.map((a) => a.name).join(", "),
-              })),
-            );
-            chooser.onSelect = (item) => {
-              if (item && typeof item.text === "string") fire(preset(item.text));
-            };
-          }
+        if (config.leader) {
+          const menu = new Leader(
+            hs,
+            timers,
+            new Panel(hs),
+            {chord: config.leader, delay: config.hud.delay, timeout: config.hud.timeout},
+            {
+              prepare: () => {
+                caching = true;
+                return () => {
+                  caching = false;
+                  windowMenu = null;
+                };
+              },
+              hint,
+              execute,
+            },
+          );
+          leader = menu;
+          menu.start(keymap.leader);
+          bind(config.leader, () => {
+            if (state !== "Running") return;
+            try {
+              menu.enter();
+            } catch (error) {
+              report(error);
+            }
+          });
+        }
+        if (config.windows && presets.length) {
+          chooser = hs.chooser.create();
+          chooser.placeholder = "Preset";
+          chooser.setChoices(
+            presets.map((p) => ({
+              text: p.name,
+              subText: p.resolved.map((a) => a.name).join(", "),
+            })),
+          );
+          chooser.onSelect = (item) => {
+            if (item && typeof item.text === "string") fire(preset(item.text));
+          };
         }
         if (config.windows && config.overlay) {
           overlay = new Overlay(hs, config.overlayFlags, () => {
@@ -692,6 +903,8 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       poll = null;
       if (overlay) overlay.stop();
       overlay = null;
+      if (leader) leader.stop();
+      leader = null;
       if (chooser) {
         chooser.onSelect = null;
         if (chooser.isVisible) chooser.hide();

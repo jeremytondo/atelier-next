@@ -3,10 +3,11 @@
 // Hammerspoon 2 relaunch but not a restart. Membership follows macOS: a window
 // is listed on every Desktop it belongs to, and each list owns its order.
 //
-// The census is the window server's, so a window missing from it has closed
-// and one whose membership names other Desktops has left. Accessibility only
-// admits windows: it misses windows on inactive Desktops and misreports hidden
-// ones, so a listed window stays until the census says otherwise.
+// The provider combines WindowServer membership with Accessibility to exclude
+// closed windows that WindowServer still retains. A window missing from that
+// census has closed; one whose membership names other Desktops has left.
+// Accessibility's ordinary-window verdict only admits windows, since it can
+// miss inactive windows or misreport hidden ones.
 //
 // A list's slots are its windows plus the waiting slots of a preset whose apps
 // have not shown a window yet; a waiting slot keeps its number until the app's

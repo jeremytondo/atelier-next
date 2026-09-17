@@ -1,40 +1,24 @@
-// HS2 canvas positions use AppKit's y-up coordinates; screen frames use y-down
-// coordinates. Each canvas belongs to one display/Space; hiding retains HS2's
-// native window.
+// The window list HUD: shown while the overlay modifiers are held, on the
+// display of the focused Desktop, and redrawn as the list changes. Shift may
+// join the chord so the move shortcuts can be pressed while the list is
+// visible; any other extra modifier is a different chord.
 import type {HS} from "../api/hs.ts";
-import type {Frame} from "../api/spaces.ts";
+import {Panel, type PanelRow} from "./hud.ts";
 import {type DesktopWindows, isWindow, windowsOf} from "./windows.ts";
-
-const white = (alpha: number) => ({red: 1, green: 1, blue: 1, alpha});
-
-export function frameFor(
-  screen: Frame,
-  primary: {h: number},
-  width: number,
-  height: number,
-): Frame {
-  return {
-    x: screen.x + screen.w - width - 20,
-    y: primary.h - screen.y - screen.h + 20,
-    w: width,
-    h: height,
-  };
-}
 
 export class Overlay {
   private readonly hs: HS;
   private readonly flags: string[];
   private readonly refresh: () => void;
+  private readonly panel: Panel;
   private active = false;
   private tap: HSEventTap | null = null;
-  private canvas: HSCanvas | null = null;
-  private signature: string | null = null;
-  private canvasDesktop: string | null = null;
 
   constructor(hs: HS, flags: string[], refresh: () => void) {
     this.hs = hs;
     this.flags = flags;
     this.refresh = refresh;
+    this.panel = new Panel(hs);
   }
 
   start(): void {
@@ -47,8 +31,6 @@ export class Overlay {
     this.tap = this.hs.eventtap.addWatcher(
       types,
       (event) => {
-        // Shift may join the chord so the move shortcuts can be pressed while
-        // the list is visible; any other extra modifier is a different chord.
         const flags = event.flags;
         const active =
           this.flags.every((f) => flags.includes(f)) &&
@@ -62,14 +44,13 @@ export class Overlay {
       },
       true,
     );
-    if (!this.tap)
+    // HS2 creates the native tap in start(); only an enabled tap observes anything.
+    if (!this.tap?.start().isEnabled())
       throw new Error("Could not observe overlay modifiers; check Accessibility permission");
-    this.tap.start();
   }
 
   hide(): void {
-    if (this.canvas) this.canvas.hide();
-    this.signature = null;
+    this.panel.hide();
   }
 
   update(snapshot: {missionControl: boolean}, desktop: DesktopWindows | null | undefined): void {
@@ -78,111 +59,43 @@ export class Overlay {
       this.hide();
       return;
     }
-    const primary = this.hs.screen.primary();
     const screen =
       desktop.display === "Main"
-        ? primary
+        ? this.hs.screen.primary()
         : this.hs.screen.all().find((s) => s.uuid.toUpperCase() === desktop.display.toUpperCase());
-    if (!screen || !primary) {
+    if (!screen) {
       this.hide();
       return;
     }
-    const canvasDesktop = JSON.stringify([desktop.display, desktop.space]);
-    if (canvasDesktop !== this.canvasDesktop) {
-      // Recreate on the target Desktop instead of relying on a hidden window's
-      // all-Spaces behavior to carry its previous placement across Desktops.
-      if (this.canvas) this.canvas.destroy();
-      this.canvas = null;
-      this.signature = null;
-      this.canvasDesktop = canvasDesktop;
-    }
     const focus = this.hs.window.focusedWindow(),
       usable = screen.frame;
-    const rows = Math.max(1, Math.floor((usable.h - 120) / 42));
-    const columns = Math.ceil(list.length / rows),
-      width = Math.min(320 * columns, usable.w - 40);
-    const height = 68 + Math.min(rows, list.length) * 42,
-      column = width / columns;
-    const frame = frameFor(usable, primary.fullFrame, width, height);
-    const signature = JSON.stringify([
-      frame,
-      focus && [focus.pid, focus.id],
-      list.map((slot) =>
-        isWindow(slot) ? [slot.pid, slot.id, slot.title, slot.visible] : [slot.bundleID],
-      ),
-    ]);
-    if (signature === this.signature) return;
-    const text = (
-      value: string | number,
-      x: number,
-      y: number,
-      w: number,
-      size: number,
-      alpha = 1,
-    ) => ({
-      type: "text",
-      text: String(value).replace(/\s+/g, " "),
-      frame: {x, y, w, h: size + 6},
-      textSize: size,
-      textColor: white(alpha),
-      textLineBreak: "truncateTail",
-    });
-    const elements: object[] = [
-      {
-        type: "rectangle",
-        action: "fill",
-        frame: {x: 0, y: 0, w: width, h: height},
-        roundedRectRadii: {xRadius: 14, yRadius: 14},
-        fillColor: {red: 0.08, green: 0.09, blue: 0.12, alpha: 0.96},
-      },
-      text("WINDOWS", 18, 12, width - 36, 11, 0.6),
-    ];
     const counts = new Map<string, number>();
     for (const window of windowsOf(desktop))
       counts.set(window.app, (counts.get(window.app) || 0) + 1);
-    list.forEach((slot, index) => {
-      const x = Math.floor(index / rows) * column,
-        y = 36 + (index % rows) * 42;
-      const number = index === 9 ? 0 : index + 1;
-      if (!isWindow(slot)) {
-        // A preset app that has not shown a window yet keeps its number, dimmed.
-        elements.push(text(number, x + 18, y + 5, 28, 14, 0.45));
-        elements.push(text(slot.app, x + 52, y + 5, column - 66, 14, 0.45));
-        return;
-      }
-      if (focus && focus.pid === slot.pid && focus.id === slot.id)
-        elements.push({
-          type: "rectangle",
-          action: "fill",
-          frame: {x: x + 8, y: y - 2, w: column - 16, h: 38},
-          roundedRectRadii: {xRadius: 7, yRadius: 7},
-          fillColor: {red: 0.2, green: 0.4, blue: 0.8, alpha: 0.5},
-        });
-      // Hidden and minimized windows keep their numbers, shown dimmed.
-      const duplicate = (counts.get(slot.app) ?? 0) > 1,
-        alpha = slot.visible ? 1 : 0.55;
-      elements.push(text(number, x + 18, y + 5, 28, 14, index < 10 ? alpha : 0.45));
-      elements.push(text(slot.app, x + 52, y + (duplicate ? 0 : 5), column - 66, 14, alpha));
-      if (duplicate)
-        elements.push(text(slot.title || "Untitled", x + 52, y + 18, column - 66, 10, 0.6));
+    const rows: PanelRow[] = list.map((slot, index) => {
+      const key = String(index === 9 ? 0 : index + 1);
+      // A preset app that has not shown a window yet keeps its number, dimmed,
+      // as do hidden and minimized windows.
+      if (!isWindow(slot)) return {key, label: slot.app, dim: true};
+      const duplicate = (counts.get(slot.app) ?? 0) > 1;
+      return {
+        key,
+        label: slot.app,
+        ...(duplicate ? {detail: slot.title || "Untitled"} : {}),
+        dim: !slot.visible,
+        highlight: !!focus && focus.pid === slot.pid && focus.id === slot.id,
+      };
     });
-    elements.push(text("Release modifiers to hide", 18, height - 24, width - 36, 11, 0.5));
-    if (!this.canvas)
-      this.canvas = this.hs.canvas
-        .create(frame)
-        .level("floating")
-        .behaviorList(["canJoinAllSpaces", "stationary", "ignoresCycle"])
-        .clickActivating(false)
-        .ignoreMouseEvents(true);
-    this.canvas.setFrame(frame).replaceElements(elements).show();
-    this.signature = signature;
+    this.panel.show(
+      {title: "Windows", rows, footer: "Release modifiers to hide"},
+      {screen: usable, key: JSON.stringify([desktop.display, desktop.space])},
+    );
   }
 
   stop(): void {
     if (this.tap) this.hs.eventtap.removeWatcher(this.tap);
-    if (this.canvas) this.canvas.destroy();
-    this.tap = this.canvas = null;
+    this.tap = null;
     this.active = false;
-    this.signature = this.canvasDesktop = null;
+    this.panel.destroy();
   }
 }
