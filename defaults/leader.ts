@@ -227,10 +227,12 @@ export class Leader {
   }
 
   /** Runs the command with the tap off, so keystrokes the command posts reach
-   *  macOS; feedback that keeps the menu open turns the tap back on. */
+   *  macOS, and the HUD gone, so a Desktop switch does not carry it along;
+   *  feedback that keeps the menu open turns the tap back on and redraws. */
   private async run(command: Command): Promise<void> {
     const generation = this.generation;
     this.tap?.stop();
+    this.panel.destroy();
     const outcome = await this.hooks.execute(command);
     if (!this.active || this.generation !== generation) return;
     if (outcome === "done") {

@@ -461,9 +461,14 @@ test("the tap is off while a command runs, so the keystrokes a Desktop command p
   await g.press("x");
   assert.equal(g.tap().running, false);
   assert.equal(g.app.status().leader?.active, true);
+  // The HUD is gone while the command runs, so a Desktop switch cannot carry it along.
+  assert.ok(g.canvas()!.destroyed);
+  const canvases = g.state.canvases.length;
   settle(new Error("Slow failed"));
   await pump(g.state);
   assert.equal(g.tap().running, true);
+  assert.equal(g.state.canvases.length, canvases + 1);
+  assert.ok(g.canvas()!.showing);
   assert.equal(g.footer(), "Slow failed");
   assert.equal(await g.press("x"), false);
   settle();
