@@ -88,7 +88,7 @@ test("the leader shows the root menu at once, descends into Windows, and runs Fi
   // Bottom-right of the screen with keyboard focus, like the window list, and as tall as its rows.
   const frame = f.canvas()!.frame as {x: number; y: number; w: number; h: number};
   assert.deepEqual([frame.x + frame.w, frame.y, frame.w], [1180, 20, 320]);
-  assert.equal(frame.h, 36 + 3 * 30 + 34);
+  assert.equal(frame.h, 36 + 3 * 30 + 28);
   // Window-shaped corners and a hairline edge inside them, drawn under everything else.
   const [background, edge] = f.canvas()!.elements;
   assert.equal(background?.roundedRectRadii, 20);
@@ -101,7 +101,7 @@ test("the leader shows the root menu at once, descends into Windows, and runs Fi
     f.texts().filter((t) => /Spaces|Windows|Quick Apps|Configuration/.test(t)),
     ["Spaces", "Windows", "Configuration"],
   );
-  assert.equal(f.footer(), "Esc closes");
+  assert.equal(f.footer(), "");
   // Carbon sees the leader chord released only if its key-up gets through.
   assert.equal(f.tap().callback(keyEvent("space", ["alt"], eventTypes.keyUp)), true);
   assert.equal(await f.press("w"), false);
@@ -110,7 +110,7 @@ test("the leader shows the root menu at once, descends into Windows, and runs Fi
   assert.ok(f.texts().includes("Fill"));
   assert.ok(f.texts().includes("fn⌃F"), "the native shortcut is shown");
   assert.ok(f.texts().includes("Arrange"));
-  assert.equal(f.footer(), "Esc closes · ⌫ back");
+  assert.equal(f.footer(), "");
   assert.deepEqual(f.app.status().leader?.path, ["W"]);
   assert.equal(await f.press("f"), false);
   assert.deepEqual(f.bar.pressed, ["_zoomFill::AXPress"]);
@@ -131,7 +131,7 @@ test("unknown keys and unavailable commands keep the menu open with footer feedb
   assert.equal(f.title(), "ATELIER");
   const rows = f.texts().length;
   f.timer(feedbackSeconds)!.callback();
-  assert.equal(f.footer(), "Esc closes");
+  assert.equal(f.footer(), "");
   assert.equal(f.texts().length, rows);
   await f.press("w");
   assert.equal(f.alpha("Center"), 0.45);
@@ -500,7 +500,6 @@ test("digit keys are named although HS2's key map loses them to the codes they s
   const f = await leaderSession();
   await f.enter();
   await f.press("s");
-  assert.ok(f.texts().includes("Desktop 2"));
   assert.equal(await f.press("2"), false);
   assert.ok(f.state.requests.some((r) => r.command === "spaces.switch" && r.number === 2));
   assert.equal(f.app.status().leader?.active, false);
@@ -508,5 +507,26 @@ test("digit keys are named although HS2's key map loses them to the codes they s
   await f.press("s");
   await f.press("0");
   assert.ok(f.state.requests.some((r) => r.command === "spaces.switch" && r.number === 10));
+  f.app.stop();
+});
+
+test("the Spaces menu lists the Desktops that exist, without fullscreen Spaces", async () => {
+  const f = await leaderSession();
+  const desktops = () => f.texts().filter((t) => /^Desktop \d+$/.test(t));
+  await f.enter();
+  await f.press("s");
+  assert.deepEqual(desktops(), ["Desktop 1"]);
+  assert.ok(f.texts().includes("Create Desktop"));
+  await f.press("escape");
+  // The next census sees two more Spaces, one of them a fullscreen app.
+  f.state.snapshot.displays[0]!.spaces.push(
+    {id: "2", fullscreen: false},
+    {id: "3", fullscreen: true},
+  );
+  f.state.timers.find((t) => t.repeats && t.seconds === 2)!.callback();
+  await pump(f.state);
+  await f.enter();
+  await f.press("s");
+  assert.deepEqual(desktops(), ["Desktop 1", "Desktop 2"]);
   f.app.stop();
 });

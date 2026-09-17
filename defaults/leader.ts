@@ -272,23 +272,25 @@ export class Leader {
 
   private draw(): void {
     const menu = this.menu;
-    const rows: PanelRow[] = menu.entries.map((entry) => {
-      if (entry.menu) return {key: describe(entry.chord), label: entry.menu.label, hint: "›"};
+    const rows: PanelRow[] = menu.entries.flatMap((entry): PanelRow[] => {
+      if (entry.menu) return [{key: describe(entry.chord), label: entry.menu.label, hint: "›"}];
+      if (entry.command.listed?.() === false) return [];
       const reason = entry.command.available?.() ?? null;
-      return {
-        key: describe(entry.chord),
-        label: entry.command.label,
-        hint: this.hooks.hint(entry.command) ?? undefined,
-        dim: reason !== null,
-      };
+      return [
+        {
+          key: describe(entry.chord),
+          label: entry.command.label,
+          hint: this.hooks.hint(entry.command) ?? undefined,
+          dim: reason !== null,
+        },
+      ];
     });
-    const hints = this.path.length ? "Esc closes · ⌫ back" : "Esc closes";
     const content: PanelContent = {
       title: this.path.length
         ? this.path.map((entry) => entry.menu?.label ?? "").join(" › ")
         : this.root.label,
       rows,
-      footer: this.feedback ?? hints,
+      footer: this.feedback ?? "",
     };
     // The same corner as the window list: both are one HUD showing what the
     // keyboard can do right now.

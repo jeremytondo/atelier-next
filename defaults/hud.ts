@@ -34,7 +34,7 @@ export interface Placement {
 }
 
 const titleHeight = 36,
-  footerHeight = 34,
+  footerHeight = 28,
   margin = 20,
   panelWidth = 320;
 /** The corner radius of macOS 27 windows, measured from their transparent
@@ -152,7 +152,7 @@ export class Panel {
           }),
         );
     });
-    elements.push(text(content.footer, 18, height - 26, width - 36, 11, 0.5));
+    elements.push(text(content.footer, 18, height - 24, width - 36, 11, 0.5));
     if (!this.canvas)
       this.canvas = this.hs.canvas
         .create(frame)

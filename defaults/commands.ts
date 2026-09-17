@@ -12,6 +12,9 @@ export interface Command {
   run(): Promise<unknown>;
   /** Why the command cannot run now, or null when it can. Never called from a key-event callback. */
   available?(): string | null;
+  /** Whether the HUD lists the command now, so a Desktop that does not exist is
+   *  left out rather than dimmed. Never called from a key-event callback. */
+  listed?(): boolean;
   /** The macOS shortcut that reaches this command without Atelier, for the HUD. */
   native?(): Chord | null;
   /** Disabled while a Space operation runs. */

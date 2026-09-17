@@ -587,8 +587,17 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       "desktop-right": () => space("reorder", {offset: 1}),
       "desktop-delete": () => space("delete"),
     };
+    // The Spaces menu lists only the Desktops of the display with keyboard
+    // focus, numbered as macOS numbers them, without fullscreen Spaces; the
+    // last census is current enough for a HUD, and no census lists them all.
+    const desktops = () => {
+      const display = snapshot?.displays.find((d) => d.id === snapshot?.targetDisplay);
+      return display ? display.spaces.filter((s) => !s.fullscreen).length : Infinity;
+    };
+    const listed: Record<string, () => boolean> = {};
     for (let n = 1; n <= 10; n++) {
       plain["desktop-" + n] = () => space("switch", {number: n});
+      listed["desktop-" + n] = () => n <= desktops();
       plain["select-" + n] = () => select(n);
       plain["move-" + n] = () => move({slot: n});
     }
@@ -627,6 +636,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
         run: action,
         space: builtin.space,
         ...(builtin.id === "presets" ? {available: presetsReason} : {}),
+        ...(listed[builtin.id] ? {listed: listed[builtin.id]} : {}),
       });
     }
     for (const entry of current.quickApps) {
