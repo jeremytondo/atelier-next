@@ -18,7 +18,7 @@ export interface DisplayInfo {
   spaces: SpaceInfo[];
 }
 
-/** One window of the window server's census, on any Space, minimized or hidden. */
+/** A window in the provider's census, on any Space, minimized or hidden; confirmed closures excluded. */
 export interface WindowInfo {
   id: number;
   pid: number;

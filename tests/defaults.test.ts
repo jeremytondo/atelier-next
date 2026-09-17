@@ -732,6 +732,73 @@ test("moving the focused window changes only the order and leaves focus and Spac
   app.stop();
 });
 
+test("number shortcuts and the held overlay follow reordering, closure, and reload", async () => {
+  const {hs, state} = fakeHS();
+  const fake = fakeApp(hs, state, [1, 2, 3]);
+  for (const window of state.snapshot.windows) window.title = "Window " + window.id;
+  let app = session(hs);
+  const config = {...options, overlay: true, leader: false as const};
+  await app.start(config);
+  const drain = () => new Promise((resolve) => setImmediate(resolve));
+  const press = async (key: string, shift = false) => {
+    const count = app.status().metrics.length;
+    const binding = state.keys.find(
+      (k) =>
+        k.enabled &&
+        k.key === key &&
+        k.mods.includes("cmd") &&
+        k.mods.includes("alt") &&
+        k.mods.includes("shift") === shift,
+    )!;
+    assert.ok(binding);
+    binding.callback();
+    await drain();
+    assert.equal(app.status().metrics.length, count + 1);
+  };
+  state.taps
+    .find((tap) => tap.listenOnly)!
+    .callback({
+      type: 12,
+      keyCode: 0,
+      flags: ["cmd", "alt", "shift"],
+    });
+  await drain();
+  await press("3", true); // [2, 3, 1], with 1 still focused.
+  for (const [key, id] of [
+    ["1", 2],
+    ["2", 3],
+    ["3", 1],
+  ] as const) {
+    await press(key);
+    assert.equal(state.snapshot.focused, id);
+  }
+  // The provider now excludes a closed object even when WindowServer retains it.
+  fake.windows.splice(1, 1);
+  state.snapshot.windows = state.snapshot.windows.filter((w) => w.id !== 2);
+  state.timers.find((timer) => timer.repeats && !timer.stopped)!.callback();
+  await drain();
+  const panel = state.canvases.at(-1)!;
+  assert.equal(panel.showing, true);
+  assert.deepEqual(
+    panel.elements.flatMap((e) => (e.text?.startsWith("Window ") ? [e.text] : [])),
+    ["Window 3", "Window 1"],
+  );
+  await press("1");
+  assert.equal(state.snapshot.focused, 3);
+  app.stop();
+  app = session(hs);
+  await app.start(config);
+  for (const [key, id] of [
+    ["1", 3],
+    ["2", 1],
+  ] as const) {
+    await press(key);
+    assert.equal(state.snapshot.focused, id);
+  }
+  assert.equal(app.status().error, null);
+  app.stop();
+});
+
 test("a move needs a focused listed window, valid arguments, and a free session", async () => {
   const {hs, state} = fakeHS();
   fakeApp(hs, state, [1, 2, 3]);
