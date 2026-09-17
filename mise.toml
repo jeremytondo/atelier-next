@@ -1,14 +1,42 @@
-# Tools every task needs. Build and test tasks arrive with the first Swift code.
 [tools]
 "npm:xcodebuildmcp" = "2.6.2"
 node = "26.4.0"
 actionlint = "1.7.12"
 shellcheck = "0.11.0"
 
+[vars]
+swift_sources = "Package.swift Sources Tests App/Sources"
+
+[tasks.build]
+description = "Build Atelier.app into .build/xcode and the atelier command into .build/debug"
+# Both use the package's build folder, so not side by side in the gate.
+wait_for = ["test"]
+run = [
+  "scripts/build-app.sh",
+  "xcodebuildmcp swift-package build --package-path . --configuration debug",
+]
+
+[tasks.dev]
+description = "Build, then open the development Atelier.app"
+depends = ["build"]
+run = "open .build/xcode/Build/Products/Debug/Atelier.app"
+
+[tasks.test]
+description = "Run the Swift tests"
+run = "xcodebuildmcp swift-package test --package-path . --configuration debug"
+
 [tasks.lint]
-description = "Lint the workflows"
-run = "actionlint .github/workflows/*.yml"
+description = "Lint scripts and workflows; check Swift formatting and lint"
+run = [
+  "shellcheck scripts/*.sh",
+  "actionlint .github/workflows/*.yml",
+  "xcrun swift-format lint --strict --recursive {{vars.swift_sources}}",
+]
+
+[tasks.format]
+description = "Format Swift sources in place"
+run = "xcrun swift-format format --in-place --recursive {{vars.swift_sources}}"
 
 [tasks.check]
 description = "Run the complete gate"
-depends = ["lint"]
+depends = ["lint", "test", "build"]

@@ -1,0 +1,27 @@
+// Every setting of the app target. Debug has its own bundle identifier so a
+// development build and an installed Atelier keep separate permissions.
+// The build signs ad hoc unless `mise run build` finds a development
+// certificate; macOS forgets an ad hoc build's Accessibility permission on
+// every rebuild.
+PRODUCT_NAME = Atelier
+PRODUCT_BUNDLE_IDENTIFIER = com.elevenideas.Atelier
+PRODUCT_BUNDLE_IDENTIFIER[config=Debug] = com.elevenideas.Atelier.dev
+MARKETING_VERSION = 0.0.0
+CURRENT_PROJECT_VERSION = 0
+INFOPLIST_FILE = Info.plist
+GENERATE_INFOPLIST_FILE = NO
+MACOSX_DEPLOYMENT_TARGET = 26.0
+ARCHS = arm64
+ONLY_ACTIVE_ARCH = NO
+SWIFT_VERSION = 6.0
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+ENABLE_APP_SANDBOX = NO
+ENABLE_HARDENED_RUNTIME = YES
+ALWAYS_SEARCH_USER_PATHS = NO
+CLANG_ENABLE_MODULES = YES
+DEAD_CODE_STRIPPING = YES
+LD_RUNPATH_SEARCH_PATHS = @executable_path/../Frameworks
+SWIFT_OPTIMIZATION_LEVEL[config=Release] = -O
+SWIFT_OPTIMIZATION_LEVEL[config=Debug] = -Onone
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug] = DEBUG
