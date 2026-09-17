@@ -94,7 +94,10 @@ test("the leader shows the root menu at once, descends into Windows, and runs Fi
     ["Spaces", "Windows", "Configuration"],
   );
   assert.equal(f.footer(), "Esc closes");
+  // Carbon sees the leader chord released only if its key-up gets through.
+  assert.equal(f.tap().callback(keyEvent("space", ["alt"], eventTypes.keyUp)), true);
   assert.equal(await f.press("w"), false);
+  assert.equal(f.tap().callback(keyEvent("w", [], eventTypes.keyUp)), true);
   assert.equal(f.title(), "WINDOWS");
   assert.ok(f.texts().includes("Fill"));
   assert.ok(f.texts().includes("fn⌃F"), "the native shortcut is shown");
@@ -417,5 +420,62 @@ test("Quick Apps and presets are leader commands only where the user maps them",
   await f.press("p");
   assert.equal(f.title(), "SPACES › DESKTOP PRESETS");
   assert.ok(f.texts().includes("Dev"));
+  f.app.stop();
+});
+
+test("the tap is off while a command runs, so the keystrokes a Desktop command posts get through", async () => {
+  const f = await leaderSession();
+  // Records whether the tap was running when each providers request went out.
+  const task = f.state.tasks[0]!,
+    send = task.sendInput.bind(task),
+    sent: [string, boolean][] = [];
+  task.sendInput = (line) => {
+    sent.push([(JSON.parse(line) as {command: string}).command, f.tap().running]);
+    send(line);
+  };
+  await f.enter();
+  await f.press("s");
+  assert.equal(f.title(), "SPACES");
+  await f.press("n");
+  assert.deepEqual(
+    sent.filter(([command]) => command === "spaces.create"),
+    [["spaces.create", false]],
+  );
+  assert.equal(f.app.status().leader?.active, false);
+  // A command that keeps the menu open turns the tap back on for the next key.
+  let settle: (error?: Error) => void = () => {};
+  const g = await leaderSession({
+    commands: {
+      slow: {
+        label: "Slow",
+        action: () =>
+          new Promise<void>((resolve, reject) => {
+            settle = (error) => (error ? reject(error) : resolve());
+          }),
+      },
+    },
+    keymap: {leader: {x: "slow"}},
+  });
+  await g.enter();
+  await g.press("x");
+  assert.equal(g.tap().running, false);
+  assert.equal(g.app.status().leader?.active, true);
+  settle(new Error("Slow failed"));
+  await pump(g.state);
+  assert.equal(g.tap().running, true);
+  assert.equal(g.footer(), "Slow failed");
+  assert.equal(await g.press("x"), false);
+  settle();
+  await pump(g.state);
+  assert.equal(g.app.status().leader?.active, false);
+  assert.equal(g.tap().running, false);
+  // If the tap cannot come back, leader mode ends rather than letting keys through unnoticed.
+  await g.enter();
+  await g.press("x");
+  g.state.tapsFail = true;
+  settle(new Error("Slow failed again"));
+  await pump(g.state);
+  assert.equal(g.app.status().leader?.active, false);
+  g.app.stop();
   f.app.stop();
 });

@@ -1,7 +1,11 @@
 // Leader mode: after the leader chord, a modify event tap consumes every key
-// until a command runs, Escape, a click, Cmd-Tab, or the idle timeout. The
+// down until a command runs, Escape, a click, Cmd-Tab, or the idle timeout. The
 // tap callback only updates state and consumes; rendering and commands run on
 // the next run-loop turn so Accessibility work never sits in the event path.
+// Key-ups pass through: the leader chord is a Carbon hotkey, and Carbon counts
+// it as held until macOS sees the key-up, ignoring the next press meanwhile.
+// The tap is off while a command runs: the providers switch Desktops by posting
+// keystrokes, which the tap would otherwise swallow.
 // Fn is ignored in leader chords because macOS sets it on arrow keys itself.
 import type {HS} from "../api/hs.ts";
 import type {Timers} from "../api/timers.ts";
@@ -182,7 +186,9 @@ export class Leader {
       this.exit();
       return eventtap.emit;
     }
-    if (event.type === types.keyUp) return eventtap.consume;
+    // A key-up without its key-down does nothing in an app; a consumed one
+    // leaves the leader hotkey pressed as far as Carbon knows.
+    if (event.type === types.keyUp) return eventtap.emit;
     this.resetTimeout();
     if (raw.identity === this.options.chord.identity) {
       this.path = [];
@@ -217,12 +223,23 @@ export class Leader {
     return eventtap.consume;
   }
 
+  /** Runs the command with the tap off, so keystrokes the command posts reach
+   *  macOS; feedback that keeps the menu open turns the tap back on. */
   private async run(command: Command): Promise<void> {
     const generation = this.generation;
+    this.tap?.stop();
     const outcome = await this.hooks.execute(command);
     if (!this.active || this.generation !== generation) return;
-    if (outcome === "done") this.exit();
-    else this.explain(outcome);
+    if (outcome === "done") {
+      this.exit();
+      return;
+    }
+    if (!this.tap?.start().isEnabled()) {
+      this.exit();
+      console.error("Atelier: " + tapMessage);
+      return;
+    }
+    this.explain(outcome);
   }
 
   /** Shows brief feedback in the footer, revealing the HUD if the delay has not elapsed. */
