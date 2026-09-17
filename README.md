@@ -19,4 +19,4 @@ Atelier builds for Apple silicon Macs only. Install Xcode and mise, then run `mi
 
 `mise run dev` builds and opens the development app, which appears in the menu bar. It needs the Accessibility permission; its popover says so and opens the right settings pane. The build is signed with your Apple Development certificate when you have one, so the permission survives rebuilds.
 
-`mise run build` also builds the `atelier` command at `.build/debug/atelier`; `atelier --help` lists what it can ask the running app. The two talk over a socket in `~/Library/Application Support/Atelier/`.
+`mise run build` also builds the `atelier` command at `.build/debug/atelier`; `atelier --help` lists what it can ask the running app, one subcommand per request, such as `atelier desktops new` or `atelier windows move by -1`. The two talk over a socket in `~/Library/Application Support/Atelier/`, where the app also keeps the window lists between runs. Changing Desktops needs macOS 27.

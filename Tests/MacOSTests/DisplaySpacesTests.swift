@@ -27,7 +27,7 @@ import Testing
     #expect(
       decoded == [
         DisplaySpaces(
-          currentSpace: 7,
+          id: "Main", currentSpace: 7,
           spaces: [
             Space(id: 3, isDesktop: true), Space(id: 7, isDesktop: false),
             Space(id: 9, isDesktop: false),
@@ -36,14 +36,29 @@ import Testing
   }
 
   @Test func keepsEachDisplaysCurrentSpace() {
+    var second = display(current: 5, spaces: [["id64": 5, "type": 0]])
+    second["Display Identifier"] = "Second"
     let decoded = DisplaySpaces.decode([
-      display(current: 1, spaces: [["ManagedSpaceID": 1, "type": 0]]),
-      display(current: 5, spaces: [["id64": 5, "type": 0]]),
+      display(current: 1, spaces: [["ManagedSpaceID": 1, "type": 0]]), second,
     ])
     #expect(decoded.map(\.currentSpace) == [1, 5])
   }
 
-  @Test func skipsWhatItCannotRead() {
-    #expect(DisplaySpaces.decode([["Display Identifier": "Main"]]).isEmpty)
+  @Test func readsEverythingOrNothing() {
+    // Places in the list are what Desktops are moved by, so a gap is not tolerated.
+    let readable = display(current: 1, spaces: [["ManagedSpaceID": 1, "type": 0]])
+    #expect(DisplaySpaces.decode([readable, ["Display Identifier": "Other"]]).isEmpty)
+    #expect(
+      DisplaySpaces.decode([
+        display(current: 1, spaces: [["ManagedSpaceID": 1, "type": 0], ["type": 4]])
+      ]).isEmpty)
+    #expect(
+      DisplaySpaces.decode([
+        display(current: 1, spaces: [["ManagedSpaceID": 1, "type": 0], ["ManagedSpaceID": 2]])
+      ]).isEmpty)
+    #expect(
+      DisplaySpaces.decode([display(current: 9, spaces: [["ManagedSpaceID": 1, "type": 0]])])
+        .isEmpty)
+    #expect(DisplaySpaces.decode([readable, readable]).isEmpty)
   }
 }

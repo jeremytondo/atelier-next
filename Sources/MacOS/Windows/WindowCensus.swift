@@ -1,12 +1,12 @@
+import AppKit
 import ApplicationServices
 import CoreGraphics
-import Foundation
 
 /// The census of windows: WindowServer says which exist, where, and in what
 /// order; each app's Accessibility says which are ordinary and what they are
 /// called. Apps are asked side by side in the background, each within a time
 /// limit, so a frozen app delays the census by one limit and its windows
-/// simply go unconfirmed.
+/// simply go unanswered.
 struct WindowCensus: Sendable {
   let skyLight: SkyLight
 
@@ -15,9 +15,6 @@ struct WindowCensus: Sendable {
 
   /// How long one app may take to describe all its windows.
   static let appTimeLimit: TimeInterval = 0.5
-
-  private static let queue = DispatchQueue(
-    label: "com.elevenideas.Atelier.census", qos: .userInitiated, attributes: .concurrent)
 
   private struct ListedWindow: Sendable {
     var id: UInt32
@@ -30,41 +27,64 @@ struct WindowCensus: Sendable {
   private struct AppWindows: Sendable {
     var titles: [UInt32: String] = [:]
     var ordinary: Set<UInt32> = []
+    /// True when the app listed its windows and every one could be read.
+    var isComplete = false
+    var launched: Double?
   }
 
   func focus(of app: pid_t?) async -> Focus {
-    await Self.background {
-      let window = app.flatMap {
+    await Background.run {
+      let element = app.flatMap {
         AXUIElementCreateApplication($0).element(kAXFocusedWindowAttribute)
-      }.flatMap(skyLight.windowID)
+      }
+      let window = element.flatMap(skyLight.windowID)
       return Focus(
-        window: window, windowSpaces: window.map(skyLight.spaces) ?? [],
-        activeSpace: skyLight.activeSpace())
+        app: app, window: window, windowIsOrdinary: window != nil && element?.isOrdinary == true,
+        windowSpaces: window.map(skyLight.spaces) ?? [], activeSpace: skyLight.activeSpace())
     }
   }
 
   func snapshot() async -> Snapshot? {
-    guard let listed = await Self.background({ listWindows() }) else { return nil }
+    let shownBefore = shownSpaces()
+    guard let listed = await Background.run({ listWindows() }) else { return nil }
     let answers = await withTaskGroup(of: (pid_t, AppWindows).self) { group in
       for pid in Set(listed.map(\.pid)) {
-        group.addTask { (pid, await Self.background { read(pid) }) }
+        group.addTask { (pid, await Background.run { read(pid) }) }
       }
       return await group.reduce(into: [pid_t: AppWindows]()) { $0[$1.0] = $1.1 }
     }
+    // Read last, so the Spaces are as fresh as the slowest app's answer.
+    let displays = DisplaySpaces.decode(skyLight.managedDisplaySpaces())
+    // Apps list only windows on the Spaces being shown. After a switch
+    // part-way, a window left out may have been on the other side of it.
+    let isSettled = shownBefore == Set(displays.map(\.currentSpace))
     return Snapshot(
-      // Read last, so the Spaces are as fresh as the slowest app's answer.
-      displays: DisplaySpaces.decode(skyLight.managedDisplaySpaces()),
+      displays: displays,
       windows: listed.map { window in
-        WindowFacts(
-          id: window.id, app: window.app, title: answers[window.pid]?.titles[window.id] ?? "",
-          spaces: window.spaces, isOnScreen: window.isOnScreen,
-          isOrdinary: answers[window.pid]?.ordinary.contains(window.id) == true)
+        let answer = answers[window.pid]
+        let report: WindowFacts.Report =
+          if answer?.ordinary.contains(window.id) == true {
+            .ordinary
+          } else if answer?.titles[window.id] != nil {
+            .other
+          } else if answer?.isComplete == true, isSettled {
+            .missing
+          } else {
+            .unanswered
+          }
+        return WindowFacts(
+          id: window.id, app: window.pid, appLaunched: answer?.launched, appName: window.app,
+          title: answer?.titles[window.id] ?? "", spaces: window.spaces,
+          isOnScreen: window.isOnScreen, report: report)
       })
   }
 
+  private func shownSpaces() -> Set<UInt64> {
+    Set(DisplaySpaces.decode(skyLight.managedDisplaySpaces()).map(\.currentSpace))
+  }
+
   /// Layer-0 windows on any Space, minimized or hidden, front to back. This
-  /// process is skipped. WindowServer can keep closed windows listed; they
-  /// never come back as ordinary because their app no longer reports them.
+  /// process is skipped.
   private func listWindows() -> [ListedWindow]? {
     guard
       let descriptions =
@@ -83,31 +103,57 @@ struct WindowCensus: Sendable {
     }
   }
 
-  /// Subroles are not trusted: a hidden or minimized document window reports
-  /// AXDialog and an Open panel reports AXStandardWindow. A window that can be
-  /// minimized is ordinary in every state.
   private func read(_ pid: pid_t) -> AppWindows {
     let deadline = Date(timeIntervalSinceNow: Self.appTimeLimit)
-    let app = AXUIElementCreateApplication(pid)
     var result = AppWindows()
-    guard let windows = app.attribute(kAXWindowsAttribute) as? [AXUIElement] else { return result }
-    for window in windows where Date() < deadline {
-      guard let id = skyLight.windowID(of: window),
+    result.launched =
+      NSRunningApplication(processIdentifier: pid)?.launchDate?.timeIntervalSince1970
+    guard
+      let windows = AXUIElementCreateApplication(pid).attribute(kAXWindowsAttribute)
+        as? [AXUIElement]
+    else { return result }
+    var isComplete = true
+    for window in windows {
+      guard Date() < deadline, let id = skyLight.windowID(of: window),
         let values = window.attributes([kAXRoleAttribute, kAXTitleAttribute, "AXFullScreen"])
-      else { continue }
-      result.titles[id] = values[1] as? String
-      if values[0] as? String == kAXWindowRole, values[2] as? Bool != true,
-        window.isSettable(kAXMinimizedAttribute)
-      {
+      else {
+        isComplete = false
+        continue
+      }
+      result.titles[id] = values[1] as? String ?? ""
+      if Self.isOrdinary(role: values[0], isFullScreen: values[2], window: window) {
         result.ordinary.insert(id)
       }
     }
+    result.isComplete = isComplete
     return result
   }
 
+  /// Subroles are not trusted: a hidden or minimized document window reports
+  /// AXDialog and an Open panel reports AXStandardWindow. A window that can be
+  /// minimized is ordinary in every state.
+  fileprivate static func isOrdinary(
+    role: CFTypeRef?, isFullScreen: CFTypeRef?, window: AXUIElement
+  ) -> Bool {
+    role as? String == kAXWindowRole && isFullScreen as? Bool != true
+      && window.isSettable(kAXMinimizedAttribute)
+  }
+}
+
+extension AXUIElement {
+  fileprivate var isOrdinary: Bool {
+    guard let values = attributes([kAXRoleAttribute, "AXFullScreen"]) else { return false }
+    return WindowCensus.isOrdinary(role: values[0], isFullScreen: values[1], window: self)
+  }
+}
+
+enum Background {
+  private static let queue = DispatchQueue(
+    label: "com.elevenideas.Atelier.background", qos: .userInitiated, attributes: .concurrent)
+
   /// Accessibility requests block their thread, so they stay off both the main
   /// thread and Swift's small cooperative pool.
-  private static func background<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+  static func run<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
     await withCheckedContinuation { continuation in
       queue.async { continuation.resume(returning: work()) }
     }

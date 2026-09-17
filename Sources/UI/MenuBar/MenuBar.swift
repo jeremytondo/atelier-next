@@ -3,7 +3,7 @@ import AtelierKit
 import SwiftUI
 
 /// Atelier's menu-bar item and its popover. For now the popover lists the
-/// current Desktop's windows, fetched when it opens and on Refresh.
+/// current Desktop's windows in slot order, and follows them while it is open.
 @MainActor
 public final class MenuBar: NSObject, NSPopoverDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -41,12 +41,14 @@ public final class MenuBar: NSObject, NSPopoverDelegate {
       guard let button = item.button, !popover.isShown else { return }
       NSApp.activate()
       popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+      model.follow()
       await model.refresh()
     }
   }
 
   /// Hands the keyboard back to the app that had it.
   public func popoverDidClose(_ notification: Notification) {
+    model.stopFollowing()
     NSApp.hide(nil)
   }
 

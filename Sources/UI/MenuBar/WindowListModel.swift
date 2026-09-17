@@ -1,7 +1,8 @@
 import AtelierKit
 import Observation
 
-/// What the popover shows. It asks AtelierKit when told to and never on its own.
+/// What the popover shows. It asks AtelierKit when told to and, while
+/// following, whenever AtelierKit says the windows changed.
 @MainActor @Observable
 final class WindowListModel {
   enum State: Equatable {
@@ -15,6 +16,7 @@ final class WindowListModel {
   /// Where keyboard input was going before the popover took it.
   private var context: FocusContext?
   private var refreshes = 0
+  private var following: Task<Void, Never>?
 
   private let session: Session
   private let changed: @MainActor () -> Void
@@ -47,6 +49,19 @@ final class WindowListModel {
     guard refresh == refreshes else { return }
     state = result
     changed()
+  }
+
+  /// Keeps the list current until `stopFollowing`, while the popover is open.
+  func follow() {
+    following?.cancel()
+    following = Task {
+      for await _ in await session.windows.changes() { await refresh() }
+    }
+  }
+
+  func stopFollowing() {
+    following?.cancel()
+    following = nil
   }
 
   func requestAccessibility() {

@@ -34,4 +34,8 @@ extension AXUIElement {
     return AXUIElementIsAttributeSettable(self, name as CFString, &settable) == .success
       && settable.boolValue
   }
+
+  func set(_ name: String, _ value: Bool) {
+    AXUIElementSetAttributeValue(self, name as CFString, value as CFBoolean)
+  }
 }

@@ -1,0 +1,198 @@
+import Foundation
+import MacOS
+
+/// How long commands wait for macOS to show what was asked of it.
+package struct Patience: Sendable {
+  /// Between looks.
+  package var interval = Duration.milliseconds(10)
+  /// For a Space to become the current one, animation included.
+  package var transition = Duration.seconds(3)
+  /// For a created, moved, or deleted Desktop to show in the list of Spaces.
+  package var confirmation = Duration.seconds(1)
+  /// For a raised window to take the keyboard.
+  package var focus = Duration.seconds(1)
+
+  package init() {}
+}
+
+/// The state behind every subject: the window lists, the one-command-at-a-time
+/// rule, and who is listening for changes. Everything that reads or changes
+/// the lists goes through `observe`, so they are only ever brought up to date
+/// by a census newer than the last one used.
+actor Workspace {
+  enum Change: Sendable {
+    case windows, spaces
+  }
+
+  /// One census, and where the keyboard was when it was taken.
+  struct Observation: Sendable {
+    let snapshot: Snapshot
+    let focus: Focus
+    /// The display and Space receiving keyboard input.
+    let display: DisplaySpaces
+    let space: Space
+
+    /// The listed window with the keyboard, if any.
+    func focusedWindow(in list: [WindowIdentity]) -> WindowIdentity? {
+      list.first { $0.app == focus.app && $0.id == focus.window }
+    }
+  }
+
+  let mac: any Mac
+  let patience: Patience
+  private(set) var lists = WindowLists()
+  private var file: WindowListFile?
+  private var hasRestored = false
+  private var isBusy = false
+  private var censusesStarted = 0
+  private var censusApplied = 0
+  private var lastSeen: (displays: [DisplaySpaces], windows: [UInt64: [Window]])?
+  private var listeners: [UUID: (Change, AsyncStream<Void>.Continuation)] = [:]
+
+  init(mac: any Mac, stateFolder: URL?, patience: Patience) {
+    self.mac = mac
+    self.patience = patience
+    file = stateFolder.map(WindowListFile.init)
+  }
+
+  /// Keeps the lists current between commands, for as long as the Mac sends hints.
+  func watch() async {
+    for await _ in mac.changes() where !isBusy {
+      _ = try? await observe()
+    }
+  }
+
+  func changes(to change: Change) -> AsyncStream<Void> {
+    let (stream, continuation) = AsyncStream.makeStream(
+      of: Void.self, bufferingPolicy: .bufferingNewest(1))
+    let id = UUID()
+    listeners[id] = (change, continuation)
+    continuation.onTermination = { [weak self] _ in
+      Task { await self?.removeListener(id) }
+    }
+    return stream
+  }
+
+  private func removeListener(_ id: UUID) {
+    listeners[id] = nil
+  }
+
+  // MARK: - Observing
+
+  /// Takes a census, brings the lists up to date with it, and says where the
+  /// keyboard is. `focus` stands in for the present focus when the caller
+  /// noted it earlier, before taking the keyboard itself.
+  func observe(focus noted: Focus? = nil) async throws(AtelierError) -> Observation {
+    guard mac.hasAccessibility else { throw .accessibilityRequired }
+    // A census overtaken by a later one is thrown away, since the lists have
+    // moved on from it; so is one whose focus and Spaces were read either
+    // side of a switch. Both are rare, and neither lasts.
+    for _ in 0..<3 {
+      censusesStarted += 1
+      let census = censusesStarted
+      async let snapshotNow = mac.snapshot()
+      let focus = if let noted { noted } else { await mac.focus() }
+      guard let snapshot = await snapshotNow, !snapshot.displays.isEmpty else {
+        throw .unavailable
+      }
+      guard census > censusApplied else { continue }
+
+      // The focused window says which Space has the keyboard, which matters
+      // when several displays each show one. The active Space answers when no
+      // window has focus or the focused window is on every Space.
+      let shown = Set(snapshot.displays.map(\.currentSpace))
+      let focusedSpaces = shown.intersection(focus.windowSpaces)
+      let current = focusedSpaces.count == 1 ? focusedSpaces.first! : focus.activeSpace
+      guard let display = snapshot.displays.first(where: { $0.currentSpace == current }),
+        let space = display.spaces.first(where: { $0.id == current })
+      else { continue }
+
+      censusApplied = census
+      // A focus noted earlier is not news about the present one.
+      apply(snapshot, focused: focus.window, announcing: noted == nil)
+      return Observation(snapshot: snapshot, focus: focus, display: display, space: space)
+    }
+    throw .unavailable
+  }
+
+  private func apply(_ snapshot: Snapshot, focused: UInt32?, announcing: Bool) {
+    if hasRestored {
+      lists.reconcile(with: snapshot, focused: focused)
+    } else {
+      // Only now, with a census to check them against, can saved lists be believed.
+      lists.restore(file?.read() ?? [:], with: snapshot, focused: focused)
+      hasRestored = true
+    }
+    save()
+    guard announcing else { return }
+    let windows = lists.byDesktop.mapValues { Self.windows($0, in: snapshot, focused: focused) }
+    if let lastSeen {
+      if lastSeen.displays != snapshot.displays { announce(.spaces) }
+      if lastSeen.windows != windows { announce(.windows) }
+    }
+    lastSeen = (snapshot.displays, windows)
+  }
+
+  private func save() {
+    // The lists in memory stay right whether or not the file can be written.
+    try? file?.save(lists.byDesktop)
+  }
+
+  private func announce(_ change: Change) {
+    for (kind, listener) in listeners.values where kind == change {
+      listener.yield()
+    }
+  }
+
+  static func windows(_ list: [WindowIdentity], in snapshot: Snapshot, focused: UInt32?)
+    -> [Window]
+  {
+    list.compactMap { identity in
+      snapshot.windows.first { WindowIdentity($0) == identity }.map {
+        Window(
+          id: $0.id, app: $0.appName, title: $0.title, isFocused: $0.id == focused,
+          isVisible: $0.isOnScreen)
+      }
+    }
+  }
+
+  // MARK: - Commands
+
+  /// Runs one state-changing command, handing it a fresh observation. A
+  /// command that arrives while another runs is dropped.
+  func run(
+    _ command: (Observation) async throws(AtelierError) -> Outcome
+  ) async throws(AtelierError) -> Outcome {
+    guard mac.hasAccessibility else { throw .accessibilityRequired }
+    guard !isBusy else { throw .busy }
+    isBusy = true
+    defer {
+      isBusy = false
+      // Whatever happened should show in the lists and reach listeners, but
+      // the caller need not wait for it: with an app frozen a census is slow.
+      Task { _ = try? await observe() }
+    }
+    return try await command(try await observe())
+  }
+
+  func moveWindow(_ window: WindowIdentity, on desktop: UInt64, _ move: WindowMove) -> Bool {
+    guard lists.move(window, on: desktop, move) else { return false }
+    save()
+    return true
+  }
+
+  func forgetList(of desktop: UInt64) {
+    lists.forget(desktop: desktop)
+    save()
+  }
+
+  /// True as soon as `condition` holds; false once `limit` passes without it.
+  func wait(_ limit: Duration, until condition: () async -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + limit
+    while true {
+      if await condition() { return true }
+      guard ContinuousClock.now < deadline else { return false }
+      try? await Task.sleep(for: patience.interval)
+    }
+  }
+}
