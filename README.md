@@ -2,7 +2,7 @@
 
 Atelier is a keyboard-driven workspace for macOS: Desktops, ordered window lists, Quick Apps, and a leader menu.
 
-This branch is the native rebuild: one Mac app and a command-line tool, with no Hammerspoon. The design and its reasons are in [ATE-57](https://linear.app/elevenideas/issue/ATE-57/research-native-atelier-architecture-without-hammerspoon-2). The last Hammerspoon 2 version is the `hammerspoon-final` tag; its `api/`, `defaults/`, `tests/`, and README manual trial describe the behaviour the native app must match.
+This is the native rebuild: one Mac app and a command-line tool, with no Hammerspoon. The design and its reasons are in [ATE-57](https://linear.app/elevenideas/issue/ATE-57/research-native-atelier-architecture-without-hammerspoon-2). The last Hammerspoon 2 version is the `hammerspoon-final` tag; its `api/`, `defaults/`, `tests/`, and README manual trial describe the behaviour the native app must match.
 
 ## Layout
 
