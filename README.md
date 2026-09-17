@@ -15,4 +15,8 @@ Read behaviour and pull individual files from those tags. Do not restore either 
 
 ## Build and check
 
-Install Xcode and mise, then run `mise install`. `mise tasks` lists the entry points and `mise run check` is the gate CI runs. Both grow with the first Swift code.
+Atelier builds for Apple silicon Macs only. Install Xcode and mise, then run `mise install`. `mise tasks` lists the entry points and `mise run check` is the gate CI runs.
+
+`mise run dev` builds and opens the development app, which appears in the menu bar. It needs the Accessibility permission; its popover says so and opens the right settings pane. The build is signed with your Apple Development certificate when you have one, so the permission survives rebuilds.
+
+`mise run build` also builds the `atelier` command at `.build/debug/atelier`; `atelier --help` lists what it can ask the running app. The two talk over a socket in `~/Library/Application Support/Atelier/`.

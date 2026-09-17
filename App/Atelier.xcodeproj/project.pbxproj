@@ -1,0 +1,212 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A7E100000000000000000B01 /* AtelierApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E100000000000000000F01 /* AtelierApp.swift */; };
+		A7E100000000000000000B03 /* UI in Frameworks */ = {isa = PBXBuildFile; productRef = A7E100000000000000000D01 /* UI */; };
+		A7E100000000000000000B04 /* AtelierKit in Frameworks */ = {isa = PBXBuildFile; productRef = A7E100000000000000000D02 /* AtelierKit */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A7E100000000000000000F01 /* AtelierApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtelierApp.swift; sourceTree = "<group>"; };
+		A7E100000000000000000F03 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A7E100000000000000000F04 /* Atelier.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Atelier.xcconfig; sourceTree = "<group>"; };
+		A7E100000000000000000F05 /* Atelier.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atelier.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A7E100000000000000000502 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A7E100000000000000000B03 /* UI in Frameworks */,
+				A7E100000000000000000B04 /* AtelierKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A7E100000000000000000601 = {
+			isa = PBXGroup;
+			children = (
+				A7E100000000000000000603 /* Sources */,
+				A7E100000000000000000F03 /* Info.plist */,
+				A7E100000000000000000F04 /* Atelier.xcconfig */,
+				A7E100000000000000000602 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A7E100000000000000000602 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A7E100000000000000000F05 /* Atelier.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A7E100000000000000000603 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A7E100000000000000000F01 /* AtelierApp.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A7E100000000000000000701 /* Atelier */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7E100000000000000000C02 /* Build configuration list for PBXNativeTarget "Atelier" */;
+			buildPhases = (
+				A7E100000000000000000501 /* Sources */,
+				A7E100000000000000000502 /* Frameworks */,
+				A7E100000000000000000503 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Atelier;
+			packageProductDependencies = (
+				A7E100000000000000000D01 /* UI */,
+				A7E100000000000000000D02 /* AtelierKit */,
+			);
+			productName = Atelier;
+			productReference = A7E100000000000000000F05 /* Atelier.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A7E100000000000000000801 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					A7E100000000000000000701 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = A7E100000000000000000C01 /* Build configuration list for PBXProject "Atelier" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A7E100000000000000000601;
+			packageReferences = (
+				A7E100000000000000000E01 /* XCLocalSwiftPackageReference ".." */,
+			);
+			productRefGroup = A7E100000000000000000602 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A7E100000000000000000701 /* Atelier */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A7E100000000000000000503 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A7E100000000000000000501 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A7E100000000000000000B01 /* AtelierApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A7E100000000000000000A01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7E100000000000000000F04 /* Atelier.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		A7E100000000000000000A02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7E100000000000000000F04 /* Atelier.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		A7E100000000000000000A03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7E100000000000000000F04 /* Atelier.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		A7E100000000000000000A04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A7E100000000000000000F04 /* Atelier.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A7E100000000000000000C01 /* Build configuration list for PBXProject "Atelier" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7E100000000000000000A01 /* Debug */,
+				A7E100000000000000000A02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A7E100000000000000000C02 /* Build configuration list for PBXNativeTarget "Atelier" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7E100000000000000000A03 /* Debug */,
+				A7E100000000000000000A04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A7E100000000000000000E01 /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A7E100000000000000000D01 /* UI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = UI;
+		};
+		A7E100000000000000000D02 /* AtelierKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AtelierKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A7E100000000000000000801 /* Project object */;
+}
