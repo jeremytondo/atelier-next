@@ -1,9 +1,14 @@
+# Tools every task needs. Build and test tasks arrive with the first Swift code.
 [tools]
 "npm:xcodebuildmcp" = "2.6.2"
 node = "26.4.0"
-jq = "1.8.1"
-shellcheck = "0.11.0"
 actionlint = "1.7.12"
+shellcheck = "0.11.0"
 
-[task_config]
-includes = ["mise/tasks.toml"]
+[tasks.lint]
+description = "Lint the workflows"
+run = "actionlint .github/workflows/*.yml"
+
+[tasks.check]
+description = "Run the complete gate"
+depends = ["lint"]

@@ -1,7 +1,7 @@
 name: Check
 on:
   push:
-    branches: [main, native]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -13,22 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  portable:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      MISE_OVERRIDE_CONFIG_FILENAMES: mise.portable.toml
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
-        with:
-          version: 2026.6.14
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-      - run: mise run check:portable
-
-  native:
+  check:
     runs-on: macos-26
     timeout-minutes: 20
     env:
@@ -41,26 +26,4 @@ jobs:
         with:
           version: 2026.6.14
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - id: inputs
-        run: echo "native=$(scripts/native-inputs.sh)" >> "$GITHUB_OUTPUT"
-      - name: Restore Release native output
-        id: native
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: .build/cache/app.tar.gz
-          key: atelier-native-v1-${{ steps.inputs.outputs.native }}
-      - name: Unpack native output
-        run: scripts/native-cache.sh unpack
-      - name: Native checks
-        run: mise run check:native
-      # GitHub scopes PR caches to the PR merge ref; main cannot restore them.
-      # Release compiles its own output and never restores executable caches.
-      - name: Pack reusable output
-        if: steps.native.outputs.cache-hit != 'true'
-        run: scripts/native-cache.sh pack
-      - name: Save Release native output
-        if: steps.native.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: .build/cache/app.tar.gz
-          key: atelier-native-v1-${{ steps.inputs.outputs.native }}
+      - run: mise run check
