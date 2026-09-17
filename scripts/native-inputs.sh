@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # The exact input key that permits skipping native compilation when a
-# matching output receipt exists. TypeScript, tests, and resources do not
-# affect it.
+# matching output receipt exists. Tests and documentation do not affect it.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$root"

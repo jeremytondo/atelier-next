@@ -2,8 +2,6 @@
 .swiftpm/
 .DS_Store
 dist/
-/repos/
-release-plan.json
 mise.local.toml
 *.p8
 *.p12
