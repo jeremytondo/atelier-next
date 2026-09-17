@@ -3,7 +3,8 @@
 // `hs.*` and the API. One session owns every binding, event tap, timer, canvas,
 // and the providers process; stopping releases all of them and leaves
 // independent HS2 scripts untouched. Every action is a command in one
-// registry; global chords and leader sequences only name commands.
+// registry; global chords and leader sequences only name commands, and the
+// companion app reaches a short allowlist of them through `dispatch`.
 import type {ResolvedApplication} from "../api/application.ts";
 import type {HS} from "../api/hs.ts";
 import type {AtelierAPI} from "../api/index.ts";
@@ -30,13 +31,23 @@ import {
   type PresetEntry,
   type QuickAppEntry,
 } from "./configuration.ts";
+import {
+  credentialsPath,
+  type DispatchResponse,
+  type DispatchTable,
+  dispatch,
+  dispatchPort,
+  dispatchVersion,
+  newSecret,
+  serve,
+} from "./dispatch.ts";
 import {Panel} from "./hud.ts";
 import {type Chord, chord, describe, eventChord} from "./keys.ts";
 import {Leader} from "./leader.ts";
 import {Overlay} from "./overlay.ts";
 import {liveWorkspace, QuickApps, type ToggleResult, type Workspace} from "./quick-apps.ts";
 import {Startup} from "./startup.ts";
-import {StateFile} from "./state.ts";
+import {StateFile, stateDirectory} from "./state.ts";
 import {
   type DesktopWindows,
   identity,
@@ -93,6 +104,8 @@ export interface Status {
   };
   /** The leader chord and, while leader mode is active, the open submenu path. */
   leader: {shortcut: string; active: boolean; path: string[]} | null;
+  /** The loopback port answering the companion, or null while the session is not serving. */
+  companion: {port: number | null};
   metrics: {name: string; milliseconds: number}[];
 }
 
@@ -112,6 +125,8 @@ export interface Defaults {
     args?: {number?: number; offset?: -1 | 1},
   ): Promise<Snapshot | Noop | Busy>;
   quickApp(app: string): Promise<ToggleResult | Busy>;
+  /** The companion's entry point: a versioned request naming an allowed action, answered synchronously. */
+  dispatch(request: unknown): DispatchResponse;
 }
 
 type QuickApp = QuickAppEntry & ResolvedApplication;
@@ -181,6 +196,10 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     chooser: HSChooser | null = null,
     startOptions: Options | undefined,
     unwatchFailures: (() => void) | null = null,
+    // The server answering the companion while the session runs, and whether a
+    // reload is already on its way, after which nothing more is accepted.
+    server: HSHTTPServer | null = null,
+    reloadPending = false,
     // Saving starts after restore so start-up cannot overwrite the file with nothing.
     persisting = false,
     restored: {restored: number; dropped: number} | null = null;
@@ -516,6 +535,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
           path: leader?.location ?? [],
         }
       : null,
+    companion: {port: server ? server.getPort() : null},
     metrics,
   });
   /** Registers a chord through Carbon, or through HS2's event tap when Fn is involved. */
@@ -554,6 +574,35 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     windowMenu ??= api.window.actions();
     return windowMenu;
   };
+  /** Reload Config, from any entry point: stop first so pending list state
+   *  reaches disk and every resource is released before the context goes. */
+  function reload() {
+    // One turn later, so the caller, a key event or the companion's request, is
+    // answered by this context rather than torn down with it. A session timer:
+    // retained until it fires, and dropped if the session stops first.
+    if (reloadPending) return;
+    reloadPending = true;
+    timers.after(0, () => {
+      session.stop();
+      hs.reload();
+    });
+  }
+  /** Starts a registered command for the companion and returns once it has
+   *  begun; the command reports its own outcome, as it does from a key. */
+  function invoke(id: string) {
+    const command = commands.get(id);
+    if (!command) throw new Error("Command is not enabled: " + id);
+    const reason = command.available?.() ?? null;
+    if (reason) throw new Error(reason);
+    if (busy) throw new Error("Another command is still running");
+    fire(command.run());
+    return null;
+  }
+  /** Every action the companion may request. Adding one is a row here and an
+   *  intent in the companion; the registry itself is never exposed. */
+  const actions: DispatchTable = {
+    "reload-config": () => invoke("reload-config"),
+  };
   /** The shipped commands the configuration enables, plus the user's own. */
   function buildCommands(current: Config): Commands {
     const map: Commands = new Map();
@@ -569,12 +618,7 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       "cycle-next": () => cycle(1),
       "move-previous": () => move(-1),
       "move-next": () => move(1),
-      // Stop first so pending list state reaches disk before the context goes.
-      "reload-config": () =>
-        run("reload-config", async () => {
-          session.stop();
-          hs.reload();
-        }),
+      "reload-config": () => run("reload-config", async () => reload()),
       "open-config": () =>
         run("open-config", async () => {
           const path = hs.appinfo.configPath;
@@ -875,6 +919,33 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
           overlay.start();
         }
         state = "Running";
+        // The companion reaches the session over HTTP with this session's secret; a
+        // refusal is a Console line, never a dialog, and a stopped session answers
+        // nothing. A port already taken is reported by HS2's Console and atelier doctor.
+        const secret = newSecret();
+        server = hs.httpserver
+          .create()
+          .setInterface("localhost")
+          .setPort(dispatchPort)
+          .setCallback((method, path, headers, body) =>
+            serve(method, path, headers as Record<string, string>, body, secret, (request) => {
+              const response = session.dispatch(request);
+              if (!response.ok)
+                console.log("Atelier: Refused companion request: " + response.error);
+              return response;
+            }),
+          )
+          .start();
+        const credentials = JSON.stringify({version: dispatchVersion, port: dispatchPort, secret});
+        if (!hs.fs.mkdir(stateDirectory(hs)) || !hs.fs.write(credentialsPath(hs), credentials)) {
+          console.error(
+            "Atelier: Could not write " +
+              credentialsPath(hs) +
+              "; Spotlight actions are unavailable",
+          );
+          server.stop();
+          server = null;
+        }
         console.log("Atelier: Running");
         requestNotifications();
         if (config.windows) poll = hs.timer.doEvery(pollSeconds, observe);
@@ -920,6 +991,12 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
       timers.stop();
       if (unwatchFailures) unwatchFailures();
       unwatchFailures = null;
+      if (server) {
+        server.stop();
+        hs.fs.deletePath(credentialsPath(hs));
+      }
+      server = null;
+      reloadPending = false;
       api.providers.stop();
       startup.close();
     },
@@ -929,6 +1006,11 @@ export function createDefaults(hs: HS, api: AtelierAPI, info: DefaultsInfo): Def
     preset,
     space,
     quickApp,
+    dispatch: (request) =>
+      dispatch(request, actions, () => {
+        if (state !== "Running") return "Atelier is not running (" + state + ")";
+        return reloadPending ? "Reload Config is already on its way" : null;
+      }),
   };
   return session;
 }

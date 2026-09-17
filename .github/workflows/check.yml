@@ -42,13 +42,13 @@ jobs:
           version: 2026.6.14
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - id: inputs
-        run: echo "providers=$(scripts/native-inputs.sh providers)" >> "$GITHUB_OUTPUT"
-      - name: Restore Release providers
-        id: providers
+        run: echo "native=$(scripts/native-inputs.sh)" >> "$GITHUB_OUTPUT"
+      - name: Restore Release native output
+        id: native
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: .build/cache/providers.tar.gz
-          key: atelier-providers-v1-${{ steps.inputs.outputs.providers }}
+          path: .build/cache/app.tar.gz
+          key: atelier-native-v1-${{ steps.inputs.outputs.native }}
       - name: Unpack native output
         run: scripts/native-cache.sh unpack
       - name: Native checks and package assembly
@@ -56,11 +56,11 @@ jobs:
       # GitHub scopes PR caches to the PR merge ref; main cannot restore them.
       # Release compiles its own output and never restores executable caches.
       - name: Pack reusable output
-        if: steps.providers.outputs.cache-hit != 'true'
+        if: steps.native.outputs.cache-hit != 'true'
         run: scripts/native-cache.sh pack
-      - name: Save Release providers
-        if: steps.providers.outputs.cache-hit != 'true'
+      - name: Save Release native output
+        if: steps.native.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: .build/cache/providers.tar.gz
-          key: atelier-providers-v1-${{ steps.inputs.outputs.providers }}
+          path: .build/cache/app.tar.gz
+          key: atelier-native-v1-${{ steps.inputs.outputs.native }}

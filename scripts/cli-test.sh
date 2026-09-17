@@ -12,15 +12,17 @@ trap 'rm -rf "$temporary"' EXIT
 export HOME="$temporary/home"
 export ATELIER_PREFIX="$temporary/prefix"
 export ATELIER_HS2_APP="$temporary/Hammerspoon 2.app"
+export ATELIER_APP="$temporary/Atelier.app"
 export FAKE_STORE="$temporary/defaults.json"
 export FAKE_LOGIN_ITEMS="$temporary/login-items"
 export FAKE_LOG="$temporary/log" FAKE_HS2_STOPPED="$temporary/hs2-stopped"
-export FAKE_HS2_BUILD=133.1 FAKE_HS2_RUNNING=false FAKE_NCPREFS_ASKED=false
+export FAKE_HS2_BUILD=133.1 FAKE_HS2_RUNNING=false FAKE_NCPREFS_ASKED=false FAKE_DISPATCH_STATUS=405
 share="$ATELIER_PREFIX/share/atelier"
-mkdir -p "$HOME" "$share" "$temporary/bin" "$ATELIER_HS2_APP/Contents"
+mkdir -p "$HOME" "$share" "$temporary/bin" "$ATELIER_HS2_APP/Contents" "$ATELIER_APP/Contents/MacOS"
 cp "$root/hammerspoon2.json" "$root/install/init.js" "$share/"
 printf '{"version":"1.2.3-test"}\n' > "$share/version.json"
-printf '#!/bin/sh\nexit 0\n' > "$share/atelier-providers"; chmod +x "$share/atelier-providers"
+printf 'module.exports = {};\n' > "$share/index.js"
+printf '#!/bin/sh\nexit 0\n' > "$ATELIER_APP/Contents/MacOS/atelier-providers"; chmod +x "$ATELIER_APP/Contents/MacOS/atelier-providers"
 : > "$FAKE_LOGIN_ITEMS"
 printf '{}\n' > "$FAKE_STORE"
 cat > "$temporary/bin/defaults" <<'FAKE'
@@ -29,6 +31,7 @@ set -euo pipefail
 printf 'defaults %s\n' "$*" >> "$FAKE_LOG"
 case "$1 $2" in
   "read $ATELIER_HS2_APP/Contents/Info") echo "$FAKE_HS2_BUILD" ;;
+  "read $ATELIER_APP/Contents/Info") [[ $3 == AtelierVersion ]] && echo 1.2.3-test ;;
   "read com.apple.ncprefs") [[ $FAKE_NCPREFS_ASKED == true ]] && printf '( { "bundle-id" = "net.tenshu.Hammerspoon-2"; } )\n' || printf '( )\n' ;;
   "read net.tenshu.Hammerspoon-2") jq -er --arg key "$3" '.[$key] // empty' "$FAKE_STORE" ;;
   "write net.tenshu.Hammerspoon-2")
@@ -72,9 +75,16 @@ printf '#!/usr/bin/env bash\necho 27.1\n' > "$temporary/bin/sw_vers"
 printf '#!/usr/bin/env bash\necho arm64\n' > "$temporary/bin/uname"
 cat > "$temporary/bin/codesign" <<'FAKE'
 #!/usr/bin/env bash
-if [[ $1 == -dv ]]; then echo "Authority=Fixture Authority" >&2; fi
+if [[ $1 == -dv || $1 == -dvv ]]; then echo "Authority=Fixture Authority" >&2; fi
 FAKE
 printf '#!/usr/bin/env bash\necho unexpected-brew >&2; exit 99\n' > "$temporary/bin/brew"
+# The session's loopback server, answering every POST with the configured status.
+cat > "$temporary/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >> "$FAKE_LOG"
+[[ $* == *"http://127.0.0.1:47820/dispatch"* ]] || { echo "unexpected curl: $*" >&2; exit 99; }
+printf '%s' "$FAKE_DISPATCH_STATUS"
+FAKE
 cat > "$temporary/bin/sleep" <<'FAKE'
 #!/usr/bin/env bash
 [[ $1 == 0.1 ]]
@@ -89,6 +99,7 @@ atelier install > "$temporary/install.log"
 grep -Fq "require(\"$share\")" "$HOME/.config/atelier/init.js" || fail 'seeded init does not require the installed share path'
 grep -qx 'Hammerspoon 2' "$FAKE_LOGIN_ITEMS" || fail 'login item not added'
 grep -q "^open -a $ATELIER_HS2_APP" "$FAKE_LOG" || fail 'HS2 not started'
+grep -q "^open -g -a $ATELIER_APP" "$FAKE_LOG" || fail 'the companion was not registered'
 printf '// mine\nconst atelier = require("%s");\n' "$share" > "$HOME/.config/atelier/init.js"
 FAKE_HS2_RUNNING=true atelier install > "$temporary/reinstall.log"
 [[ $(head -1 "$HOME/.config/atelier/init.js") == '// mine' ]] || fail 'rerunning install rewrote the init file'
@@ -101,6 +112,11 @@ FAKE_HS2_RUNNING=true FAKE_NCPREFS_ASKED=true atelier doctor > "$temporary/docto
 grep -q 'Installation checks passed' "$temporary/doctor.log" || { cat "$temporary/doctor.log"; fail 'healthy doctor did not pass'; }
 ! grep -q '^FAIL' "$temporary/doctor.log" || fail 'healthy doctor reported failures'
 grep -q '^ok .*notification permission' "$temporary/doctor.log" || fail 'doctor missed the notification request'
+grep -q "^ok .*Atelier.app 1.2.3-test at $ATELIER_APP carries the providers executable" "$temporary/doctor.log" || fail 'doctor did not report the companion bundle'
+grep -q '^ok .*answers companion requests on port 47820' "$temporary/doctor.log" || fail 'doctor did not probe the session'
+grep -q '^curl .*http://127.0.0.1:47820/dispatch' "$FAKE_LOG" || fail 'doctor did not probe the port'
+FAKE_HS2_RUNNING=true FAKE_DISPATCH_STATUS=000 atelier doctor > "$temporary/stopped-doctor.log" && fail 'doctor passed with the session not answering'
+grep -q '^FAIL .*not answering companion requests' "$temporary/stopped-doctor.log" || fail 'doctor missed the silent session'
 ! grep -q 'Accessibility' "$temporary/doctor.log" || fail 'doctor reported an Accessibility status it cannot check'
 [[ $(atelier version) == 1.2.3-test ]] || fail 'version'
 
@@ -144,11 +160,13 @@ cmp -s "$HOME/.config/atelier/init.js" "$temporary/legacy.js" || fail 'install c
 grep -Fq "Warning: Kept existing $HOME/.config/atelier/init.js" "$temporary/conflicting.log" || fail 'install did not warn about the existing init'
 grep -Fq "const atelier = require(\"$share\"); before atelier.start(...)" "$temporary/conflicting.log" || fail 'install did not explain how to load Atelier'
 : > "$FAKE_LOGIN_ITEMS"
+mv "$ATELIER_APP" "$temporary/Atelier-aside.app"
 set +e
 FAKE_HS2_BUILD=133 FAKE_HS2_RUNNING=false atelier doctor > "$temporary/broken.log"; status=$?
 set -e
+mv "$temporary/Atelier-aside.app" "$ATELIER_APP"
 [[ $status == 1 ]] || fail 'broken doctor must exit 1'
-for pattern in 'build 133 is not the pinned build 133.1' 'is not running' 'could not find a require' 'is not a login item'; do
+for pattern in 'build 133 is not the pinned build 133.1' 'is not running' 'could not find a require' 'is not a login item' 'Atelier.app is missing or incomplete'; do
   grep -q "^FAIL .*$pattern" "$temporary/broken.log" || { cat "$temporary/broken.log"; fail "doctor missed: $pattern"; }
 done
 grep -q 'Fix the FAIL lines' "$temporary/broken.log" || fail 'broken doctor did not tell the user what to do'

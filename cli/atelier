@@ -8,6 +8,11 @@ set -euo pipefail
 bundle=net.tenshu.Hammerspoon-2
 app_name='Hammerspoon 2'
 app=${ATELIER_HS2_APP:-/Applications/$app_name.app}
+# The companion the cask installs: Spotlight actions and the providers executable.
+atelier_app=${ATELIER_APP:-/Applications/Atelier.app}
+providers="$atelier_app/Contents/MacOS/atelier-providers"
+# The loopback port the running session answers the companion on; see defaults/dispatch.ts.
+dispatch_port=47820
 prefix=${ATELIER_PREFIX:-$(brew --prefix 2>/dev/null || echo /opt/homebrew)}
 share="$prefix/share/atelier"
 config_dir="$HOME/.config/atelier"
@@ -39,6 +44,7 @@ hs2_build() { defaults read "$app/Contents/Info" CFBundleVersion 2>/dev/null || 
 login_items() { osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | tr ',' '\n' | sed -E 's/^ +| +$//g'; }
 login_item_present() { login_items | grep -qx "$app_name"; }
 setting() { defaults read "$bundle" "$1" 2>/dev/null || true; }
+companion_info() { defaults read "$atelier_app/Contents/Info" "$1" 2>/dev/null || true; }
 
 config_path() {
   local path
@@ -72,7 +78,8 @@ install() {
   local repair=${1:-false} config_warning=false backup staged
   [[ -d $app ]] || die "$app_name is not installed; run: brew install --cask $tap/$hs2_cask"
   [[ $(sw_vers -productVersion | cut -d. -f1) -ge 27 ]] || die 'Atelier requires macOS 27 or later.'
-  [[ -x $share/atelier-providers ]] || die "$share is incomplete; reinstall with: brew reinstall --cask $tap/$atelier_cask"
+  [[ -f $share/index.js && -f $share/hammerspoon2.json ]] || die "$share is incomplete; reinstall with: brew reinstall --cask $tap/$atelier_cask"
+  [[ -x $providers ]] || die "$atelier_app is missing or incomplete; reinstall with: brew reinstall --cask $tap/$atelier_cask"
   if [[ $repair == false && -f $init ]] && ! init_requires_atelier; then
     echo "Existing $init: could not find the Atelier import." >&2
     if [[ -t 0 && -t 1 ]]; then
@@ -117,6 +124,8 @@ install() {
       || echo 'Could not add the login item; allow this terminal to control System Events, then rerun atelier install.' >&2
   fi
   open -a "$app"
+  # Registers the companion's Spotlight actions with macOS; it quits again by itself.
+  open -g -a "$atelier_app"
   echo "Started $app_name with $init."
   if [[ $config_warning == true ]]; then
     echo "Setup needs attention: fix the config above or run atelier repair." >&2
@@ -137,7 +146,7 @@ doctor() {
   else
     fail "Atelier needs macOS 27 or later on Apple silicon; this is macOS $(sw_vers -productVersion) on $(uname -m)"
   fi
-  if [[ -f $share/hammerspoon2.json && -x $share/atelier-providers ]]; then
+  if [[ -f $share/hammerspoon2.json && -f $share/index.js ]]; then
     ok "Package installed in $share ($(jq -r .version "$share/version.json" 2>/dev/null || echo unknown version))"
   else
     fail "Package missing or incomplete in $share; run: brew reinstall --cask $tap/$atelier_cask"
@@ -176,11 +185,22 @@ doctor() {
   else
     fail "$app_name is not a login item; run: atelier install"
   fi
-  if [[ -x $share/atelier-providers ]]; then
-    if codesign --verify --strict "$share/atelier-providers" 2>/dev/null; then
-      ok "atelier-providers signature is valid ($(codesign -dv "$share/atelier-providers" 2>&1 | sed -n 's/^Authority=//p' | head -1 || true))"
+  if [[ -x $providers ]]; then
+    ok "Atelier.app $(companion_info AtelierVersion) at $atelier_app carries the providers executable"
+    if codesign --verify --deep --strict "$atelier_app" 2>/dev/null; then
+      ok "Atelier.app signature is valid ($(codesign -dvv "$atelier_app" 2>&1 | sed -n 's/^Authority=//p' | head -1 || true))"
     else
-      fail "atelier-providers signature is invalid; run: brew reinstall --cask $tap/$atelier_cask"
+      fail "Atelier.app signature is invalid; run: brew reinstall --cask $tap/$atelier_cask"
+    fi
+  else
+    fail "Atelier.app is missing or incomplete at $atelier_app; run: brew reinstall --cask $tap/$atelier_cask"
+  fi
+  if hs2_running; then
+    # The session answers a GET with 405 without involving the runtime; any answer means it is serving.
+    if [[ $(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dispatch_port/dispatch" 2>/dev/null) == 405 ]]; then
+      ok "Atelier answers companion requests on port $dispatch_port"
+    else
+      fail "Atelier is not answering companion requests on port $dispatch_port; it may be stopped or still starting, check the Console"
     fi
   fi
   if defaults read com.apple.ncprefs apps 2>/dev/null | grep -q "\"bundle-id\" = \"$bundle\""; then

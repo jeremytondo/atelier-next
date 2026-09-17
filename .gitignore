@@ -9,3 +9,5 @@ mise.local.toml
 *.p12
 *.keychain-db
 *.profraw
+xcuserdata/
+*.xcodeproj/project.xcworkspace/

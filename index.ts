@@ -1,6 +1,7 @@
 // The installed package entry: `require("/opt/homebrew/share/atelier")` returns
 // the atelier object. Tests never load this file; they compose the same pieces
 // with fakes. `version.json` is written by packaging and absent in a checkout.
+import {providersPath} from "./api/bundle.ts";
 import {type AtelierAPI, createAPI} from "./api/index.ts";
 import {createDefaults, type Defaults} from "./defaults/index.ts";
 
@@ -17,7 +18,7 @@ function installedVersion(): string {
   }
 }
 
-const api = createAPI(hs, {providers: __dirname + "/atelier-providers"});
+const api = createAPI(hs, {providers: () => providersPath(hs)});
 const defaults = createDefaults(hs, api, {expectedBuild: pin.build, version: installedVersion()});
 const atelier: Atelier = {...api, ...defaults};
 export = atelier;

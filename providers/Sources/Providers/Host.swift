@@ -76,6 +76,9 @@ final class SingleInstanceLock {
 /// Serves JSON-lines requests from stdin on the main thread until stdin closes
 /// or a termination signal arrives. An in-flight command finishes before the
 /// signal is honored, and shortcut and pointer state are restored first.
+/// The process runs a plain main run loop, never an `NSApplication`: it lives
+/// inside Atelier.app, and an application object would check in with Launch
+/// Services as that app, standing in for the companion.
 @MainActor
 public func runProviders() throws {
   setbuf(stdout, nil)
@@ -83,17 +86,16 @@ public func runProviders() throws {
     fputs("atelier-providers: another instance is still running.\n", stderr)
     exit(SingleInstanceLock.heldExitStatus)
   }
-  let app = NSApplication.shared
-  app.setActivationPolicy(.accessory)
   let host = try ProvidersHost()
+  let finish = {
+    host.cleanup()
+    exit(EXIT_SUCCESS)
+  }
   signal(SIGTERM, SIG_IGN)
   signal(SIGINT, SIG_IGN)
   let signals = [SIGTERM, SIGINT].map { number in
     let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
-    source.setEventHandler {
-      host.cleanup()
-      app.terminate(nil)
-    }
+    source.setEventHandler { MainActor.assumeIsolated(finish) }
     source.resume()
     return source
   }
@@ -103,10 +105,7 @@ public func runProviders() throws {
         MainActor.assumeIsolated { print(host.handle(line)) }
       }
     }
-    DispatchQueue.main.async {
-      host.cleanup()
-      app.terminate(nil)
-    }
+    DispatchQueue.main.async { MainActor.assumeIsolated(finish) }
   }
-  withExtendedLifetime((host, processLock, signals)) { app.run() }
+  withExtendedLifetime((host, processLock, signals)) { RunLoop.main.run() }
 }

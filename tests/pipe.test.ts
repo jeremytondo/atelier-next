@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
+import {bundleIdentifier, providersPath} from "../api/bundle.ts";
 import {Pipe} from "../api/pipe.ts";
 import {fakeHS} from "./fakes.ts";
 
@@ -91,4 +92,36 @@ test("pipe refuses a providers binary speaking another protocol version", async 
   );
   await assert.rejects(started, /versions do not match/);
   assert.equal(state.tasks[0]!.isRunning, false);
+});
+
+test("the providers executable is found in Atelier.app, with Launch Services as the second look", async () => {
+  const {hs, state} = fakeHS();
+  const installed = "/Applications/Atelier.app/Contents/MacOS/atelier-providers";
+  assert.throws(
+    () => providersPath(hs),
+    /Atelier\.app is not installed at \/Applications\/Atelier\.app; reinstall/,
+  );
+  state.registeredApps[bundleIdentifier] = "/Users/fake/Applications/Atelier.app";
+  assert.throws(() => providersPath(hs), /not installed/);
+  state.files["/Users/fake/Applications/Atelier.app/Contents/MacOS/atelier-providers"] = "";
+  assert.equal(
+    providersPath(hs),
+    "/Users/fake/Applications/Atelier.app/Contents/MacOS/atelier-providers",
+  );
+  state.files[installed] = "";
+  assert.equal(providersPath(hs), installed);
+  // The pipe asks at each launch and reports a missing bundle as its own failure.
+  delete state.files[installed];
+  delete state.files["/Users/fake/Applications/Atelier.app/Contents/MacOS/atelier-providers"];
+  const pipe = new Pipe(
+    hs,
+    () => providersPath(hs),
+    () => {},
+  );
+  await assert.rejects(pipe.start(), /not installed/);
+  assert.equal(state.tasks.length, 0);
+  state.files[installed] = "";
+  await pipe.start();
+  assert.equal(state.tasks[0]!.path, installed);
+  pipe.stop();
 });

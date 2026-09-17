@@ -27,8 +27,11 @@ then `hs.*` or a provider: the defaults call only `hs.*` and the `atelier`
 API, and each API function uses `hs.*` where Hammerspoon 2 can do the job and
 the out-of-process providers binary where it cannot. Name a provider after the
 HS2 module it stands in for, and delete it when upstream gains the ability.
-Add native mechanisms only for demonstrated gaps, and preserve user-owned
-configuration across updates.
+The companion, `Atelier.app`, holds only what macOS grants an app, such as
+Spotlight actions, and forwards each request to the runtime through
+`dispatch`; a feature that needs logic or state belongs in the runtime, never
+in the companion. Add native mechanisms only for demonstrated gaps, and
+preserve user-owned configuration across updates.
 
 Homebrew may install an official upstream HS2 release or an unpatched snapshot
 built, Developer ID signed, and notarized by Atelier. Snapshots are permanent

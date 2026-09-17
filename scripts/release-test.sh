@@ -208,6 +208,8 @@ grep -q "sha256 \"$(jq -r .sha256 "$asset_dir/manifest.json")\"" "$temporary/tap
 grep -q 'version "0.0.13"' "$temporary/tap-seed/Casks/hammerspoon2@dev.rb" || fail 'hammerspoon2 cask version'
 grep -q 'depends_on cask: "jeremytondo/atelier/hammerspoon2@dev"' "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'dev cask must depend on hammerspoon2'
 grep -q 'depends_on formula: "jq"' "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'clean installs need jq for the atelier command'
+grep -q '^  app "Atelier.app"' "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'the cask must install the companion app'
+grep -q 'uninstall quit: "com.elevenideas.Atelier"' "$temporary/tap-seed/Casks/atelier@dev.rb" || fail 'the cask must quit the companion before removal'
 dev_hs2_checksum=$(shasum -a 256 "$temporary/tap-seed/Casks/hammerspoon2@dev.rb")
 make_assets stable
 publish

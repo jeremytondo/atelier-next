@@ -2,7 +2,7 @@
 
 Atelier publishes to [jeremytondo/homebrew-atelier](https://github.com/jeremytondo/homebrew-atelier). Stable releases update `atelier` and `hammerspoon2`; rolling dev releases update `atelier@dev` and `hammerspoon2@dev`. A release updates only its own channel. Each HS2 cask installs either an official upstream ZIP or an Atelier-built, signed, notarized snapshot.
 
-Both channels are manual: `mise run release:dev` or `release:patch|minor|major`, or GitHub's **Run workflow** button. Pushes to `main` run checks only. Each Atelier release carries its package, a manifest recording the exact HS2 download, and checksums. Xcode and mise are needed only for development and builds.
+Both channels are manual: `mise run release:dev` or `release:patch|minor|major`, or GitHub's **Run workflow** button. Pushes to `main` run checks only. Each Atelier release carries its package, with `Atelier.app` as its one native artifact, a manifest recording the exact HS2 download, and checksums. Xcode and mise are needed only for development and builds.
 
 ## Install, update, and switch channels
 
@@ -54,8 +54,8 @@ Install Xcode and mise, then run `mise install`. Use `mise tasks` or `scripts/bu
 | Command | Result |
 | --- | --- |
 | `mise run check` | Full gate: TypeScript and Swift tests, lint, release/build/CLI fixtures, and a locally signed package |
-| `mise run build` | Local package under `dist/` |
-| `mise run dev` | Build and copy the package into the Homebrew prefix; reload Hammerspoon 2 yourself |
+| `mise run build` | Local package under `dist/`, including a locally signed `Atelier.app` |
+| `mise run dev` | Build, copy the package into the Homebrew prefix, and replace `/Applications/Atelier.app`; reload Hammerspoon 2 yourself |
 | `mise run hs2:build` / `hs2:install` | Dev only: stock Hammerspoon 2 at the pin, optionally replacing the installed app |
 | `mise run casks dist/release/manifest.json` | Preview the selected channel pair in `dist/casks/` |
 | `mise run release:dev` | Dispatch a dev release of remote `main` and return its link |
@@ -107,7 +107,7 @@ The workflow imports the certificate into a temporary runner keychain, restores 
 
 ## Pipeline behavior
 
-`.github/workflows/release.yml` has only a manual `workflow_dispatch` trigger with a `bump` choice of `dev`, `patch`, `minor`, or `major`. It plans the selected commit, checks credentials and the Developer ID identity before expensive work, runs the full gate through `release:verify-package`, and packages the providers binary that gate verified. The binary is signed with Developer ID and a secure timestamp, notarized, and verified; a bare executable cannot carry a stapled ticket, so Gatekeeper checks the notarization online. There is no unsigned fallback for either channel.
+`.github/workflows/release.yml` has only a manual `workflow_dispatch` trigger with a `bump` choice of `dev`, `patch`, `minor`, or `major`. It plans the selected commit, checks credentials and the Developer ID identity before expensive work, runs the full gate through `release:verify-package`, and packages the `Atelier.app` that gate verified, with the providers executable inside. The bundle is signed inside out with Developer ID, the hardened runtime, and a secure timestamp, notarized, stapled, and verified. There is no unsigned fallback for either channel.
 
 Dev and stable runs share one concurrency group, serializing the entire workflow across all source branches so snapshot publication and tap pushes cannot race. Dev checks that its commit is still the head of its selected source branch before compilation, before notarization, and immediately before publication; an obsolete build is skipped. Stable dispatches retain their selected commit even if their source branch advances. Publication uses Ubuntu with a separate mise configuration containing only `gh` and `jq`, verifies both packages and their manifests, publishes any new permanent HS2 snapshot, creates the Atelier release as a draft, publishes it, pushes the selected channel casks, and only then deletes the previous dev release.
 
@@ -115,4 +115,4 @@ For local distribution validation, create a plan with `mise run release:plan dev
 
 ## Checks
 
-`mise tasks` lists the focused TypeScript, Swift, lint, and fixture checks; `mise run format` applies the formatters that `mise run lint` enforces. The Check workflow runs the portable half of the gate on Ubuntu and the native half on macOS for every push and pull request; both jobs are required. The native job caches only the compressed unsigned providers output keyed by its exact inputs; releases restore none of it. Build state lives under `.build/`: downloaded upstream source, fetched type declarations, the verified providers output and its receipt, and locks. The scripts under `scripts/` document how those outputs are verified and reused.
+`mise tasks` lists the focused TypeScript, Swift, lint, and fixture checks; `mise run format` applies the formatters that `mise run lint` enforces. The Check workflow runs the portable half of the gate on Ubuntu and the native half on macOS for every push and pull request; both jobs are required. The native job caches only the compressed unsigned `Atelier.app` keyed by its exact inputs; releases restore none of it. Build state lives under `.build/`: downloaded upstream source, fetched type declarations, the verified native output and its receipt, and locks. The scripts under `scripts/` document how those outputs are verified and reused.

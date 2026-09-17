@@ -24,19 +24,22 @@ interface Pending {
 
 type Launch = {hello: Hello} | {status: number; reason: string};
 
+/** The executable's path, or a function that finds it at each launch and throws when it is missing. */
+export type ProvidersPath = string | (() => string);
+
 export class Pipe {
   readonly timers: Timers;
   task: HSTask | null = null;
   retiring: HSTask | null = null;
   private readonly hs: HS;
-  private readonly path: string;
+  private readonly path: ProvidersPath;
   private readonly args: string[];
   private readonly failure: (error: Error) => void;
   private readonly pending = new Map<number, Pending>();
   private sequence = 0;
   private buffer = "";
 
-  constructor(hs: HS, path: string, failure: (error: Error) => void, args: string[] = []) {
+  constructor(hs: HS, path: ProvidersPath, failure: (error: Error) => void, args: string[] = []) {
     this.hs = hs;
     this.path = path;
     this.failure = failure;
@@ -73,8 +76,9 @@ export class Pipe {
         resolve(outcome);
       };
       this.buffer = "";
+      const path = typeof this.path === "function" ? this.path() : this.path;
       const task: HSTask = this.hs.task.create(
-        this.path,
+        path,
         this.args,
         (code, reason) => {
           if (this.task !== task) return;
@@ -103,7 +107,7 @@ export class Pipe {
       this.task = task;
       if (!task.start()) {
         this.task = null;
-        reject(new Error("Could not start atelier-providers at " + this.path));
+        reject(new Error("Could not start atelier-providers at " + path));
         return;
       }
       this.request("hello").then(

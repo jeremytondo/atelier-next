@@ -4,7 +4,7 @@
 // any pipe failure stops it and tells every listener.
 import {type ApplicationAPI, createApplication} from "./application.ts";
 import type {HS} from "./hs.ts";
-import {type Hello, Pipe} from "./pipe.ts";
+import {type Hello, Pipe, type ProvidersPath} from "./pipe.ts";
 import {createSpaces, type SpacesAPI} from "./spaces.ts";
 import {createWindow, type WindowAPI} from "./window.ts";
 
@@ -25,8 +25,8 @@ export interface AtelierAPI {
 }
 
 export interface APIOptions {
-  /** Path of the atelier-providers executable. */
-  providers: string;
+  /** The atelier-providers executable, or a function that locates it at each launch. */
+  providers: ProvidersPath;
   arguments?: string[];
 }
 

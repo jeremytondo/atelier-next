@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Notarize a distribution artifact without changing its signing identity.
-# App bundles receive a stapled ticket; bare providers executables cannot.
+# App bundles receive a stapled ticket; bare executables cannot.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

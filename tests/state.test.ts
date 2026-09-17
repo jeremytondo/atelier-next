@@ -213,6 +213,10 @@ test("lists are written on stop and before reload, and come back on the next sta
   await second.windows.cycle(1);
   reload.callback();
   for (let i = 0; i < 5; i++) await Promise.resolve();
+  // The reload waits one turn so the key event returns first.
+  const deferred = state.timers.find((t) => !t.stopped && t.seconds === 0)!;
+  deferred.stopped = true;
+  deferred.callback();
   assert.equal(state.reloaded, true);
   assert.equal(second.status().state, "Paused");
   assert.deepEqual(savedIDs(state), [1, 2]);

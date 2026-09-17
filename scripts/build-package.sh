@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Assemble the package the atelier cask installs: compiled TypeScript, type
-# declarations, the seed config, the atelier command, and the signed providers
-# binary. Distribution is fail-closed: Developer ID, a secure timestamp, and
-# accepted notarization must all pass. A bare executable cannot carry a
-# stapled ticket, so Gatekeeper checks the notarization online.
+# declarations, the seed config, the atelier command, and Atelier.app, the
+# companion carrying the providers executable. Distribution is fail-closed:
+# Developer ID, a secure timestamp, and accepted notarization must all pass,
+# and the notarization ticket is stapled to the bundle.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -16,8 +16,9 @@ usage: mise run build [--install] [--skip-build] [--identity NAME_OR_HASH] [--ou
 
 Local builds default to Apple Development signing, then ad-hoc.
 Release plans require Developer ID signing and notarization credentials.
---skip-build requires a matching providers receipt.
---install copies the package into the Homebrew prefix in place of the cask's copy.
+--skip-build requires a matching native receipt.
+--install copies the package into the Homebrew prefix and Atelier.app into
+/Applications, in place of the cask's copies.
 USAGE
 }
 arguments=("$@")
@@ -90,16 +91,18 @@ else
 fi
 
 if [[ $skip_build == false ]]; then
-  "$root/scripts/build-providers.sh"
+  "$root/scripts/build-native.sh"
 fi
-# Copy the verified binary while holding the producer's lock.
+# Copy the verified bundle while holding the producer's lock.
 mkdir "$temporary/native"
 # shellcheck disable=SC2016  # the quoted command receives its paths as arguments
-"$root/scripts/with-lock.sh" "$root/.build/locks/providers" sh -c \
-  '"$1/scripts/build-providers.sh" --locked --verify && cp "$1/.build/native/providers/atelier-providers" "$2/native/"' \
+"$root/scripts/with-lock.sh" "$root/.build/locks/native" sh -c \
+  '"$1/scripts/build-native.sh" --locked --verify && ditto "$1/.build/native/app/Atelier.app" "$2/native/Atelier.app"' \
   sh "$root" "$temporary"
-providers="$temporary/native/atelier-providers"
-[[ $(lipo -archs "$providers") == arm64 ]] || die 'expected an arm64 providers executable'
+app="$temporary/native/Atelier.app"
+for executable in Atelier atelier-providers; do
+  [[ $(lipo -archs "$app/Contents/MacOS/$executable") == arm64 ]] || die "expected an arm64 executable: $executable"
+done
 
 if [[ $channel != local ]]; then
   if [[ ${GITHUB_ACTIONS:-} == true ]]; then "$root/scripts/release-current.sh" "$plan"; fi
@@ -115,25 +118,32 @@ tsc -p tsconfig.json --outDir "$share"
 cp "$root/.build/types/hammerspoon.d.ts" "$share/hammerspoon.d.ts"
 cp "$root/hammerspoon2.json" "$share/hammerspoon2.json"
 cp "$root/install/init.js" "$share/init.js"
-cp "$providers" "$share/atelier-providers"
 install -m 755 "$root/cli/atelier" "$stage/bin/atelier"
 jq -n --arg version "$version" --arg channel "$channel" --arg commit "$commit" --arg built_at "$built_at" \
   --slurpfile pin "$root/hammerspoon2.json" \
   '{version: $version, channel: $channel, commit: $commit, built_at: $built_at, hammerspoon2: $pin[0]}' > "$share/version.json"
+# The bundle records the package version it was built with.
+ditto "$app" "$stage/Atelier.app"
+plist="$stage/Atelier.app/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "${marketing_version:-0.0.0}" "$plist"
+plutil -replace CFBundleVersion -string "$build_number" "$plist"
+plutil -replace AtelierVersion -string "$version" "$plist"
 # Credential setup uses umask 077; installed files still need to be readable
 # and executable for every user on the Mac.
 umask 022
 chmod -R u=rwX,go=rX "$stage"
-codesign --force --sign "$identity" --options runtime "$timestamp" "$share/atelier-providers"
-codesign --verify --strict --verbose=2 "$share/atelier-providers"
+# Inside out: the second executable first, then the bundle that seals it.
+codesign --force --sign "$identity" --options runtime "$timestamp" "$stage/Atelier.app/Contents/MacOS/atelier-providers"
+codesign --force --sign "$identity" --options runtime "$timestamp" "$stage/Atelier.app"
+codesign --verify --deep --strict --verbose=2 "$stage/Atelier.app"
 
 asset="atelier-$version-macos-arm64.tar.gz"
 if [[ $channel != local ]]; then
   if [[ ${GITHUB_ACTIONS:-} == true ]]; then "$root/scripts/release-current.sh" "$plan"; fi
-  "$root/scripts/notarize.sh" "$share/atelier-providers" "$output/notarization/providers"
+  "$root/scripts/notarize.sh" "$stage/Atelier.app" "$output/notarization/app"
 fi
 # Nothing replaces the last package until signing and notarization have passed.
-COPYFILE_DISABLE=1 tar -czf "$temporary/$asset" -C "$stage" bin share
+COPYFILE_DISABLE=1 tar -czf "$temporary/$asset" -C "$stage" bin share Atelier.app
 rm -rf "$output/package"
 ditto "$stage" "$output/package"
 mv "$temporary/$asset" "$output/$asset"
@@ -152,7 +162,11 @@ if [[ $install_package == true ]]; then
   rm -rf "$prefix/share/atelier"
   ditto "$stage/share/atelier" "$prefix/share/atelier"
   install -m 755 "$stage/bin/atelier" "$prefix/bin/atelier"
-  printf 'Installed: %s/share/atelier and %s/bin/atelier\n' "$prefix" "$prefix"
-  echo 'Choose Reload Config in Hammerspoon 2 to load it. New Macs also need atelier install once.'
+  # The companion is replaced the way the cask replaces it: quit, then swap the bundle.
+  osascript -e 'tell application id "com.elevenideas.Atelier" to quit' > /dev/null 2>&1 || true
+  rm -rf /Applications/Atelier.app
+  ditto "$stage/Atelier.app" /Applications/Atelier.app
+  printf 'Installed: %s/share/atelier, %s/bin/atelier, and /Applications/Atelier.app\n' "$prefix" "$prefix"
+  echo 'Choose Reload Config in Hammerspoon 2 or Spotlight to load it. New Macs also need atelier install once.'
 fi
 printf 'Package: %s/%s\nVersion: %s (%s)\n' "$output" "$asset" "$version" "$channel"

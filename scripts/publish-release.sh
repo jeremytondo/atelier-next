@@ -51,7 +51,7 @@ files=("$assets/$asset" "$manifest" "$assets/checksums.txt")
 {
   printf 'Version: `%s`  \nCommit: [`%s`](https://github.com/%s/commit/%s)\n\n' "$version" "${commit:0:8}" "$GH_REPO" "$commit"
   printf 'Source branch:\n\n    %s\n\n' "${source_ref#refs/heads/}"
-  printf 'Requires Apple silicon and macOS 27 or later. The providers binary is signed with Developer ID and notarized by Apple.\n\n'
+  printf 'Requires Apple silicon and macOS 27 or later. Atelier.app, which carries the providers executable, is signed with Developer ID and notarized by Apple.\n\n'
   if [[ $channel == dev ]]; then
     printf 'Install with `brew tap jeremytondo/atelier && brew install --cask atelier@dev`. Each dev release replaces the previous one; stable releases keep their downloads.\n'
   else

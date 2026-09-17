@@ -22,8 +22,13 @@ export interface SavedDesktop {
 export const stateVersion = 1;
 export const debounceSeconds = 1;
 
+/** Where the session keeps what outlives a context: the window lists and the companion's credentials. */
+export function stateDirectory(hs: HS): string {
+  return hs.fs.homeDirectory() + "/Library/Application Support/Atelier";
+}
+
 export function statePath(hs: HS): string {
-  return hs.fs.homeDirectory() + "/Library/Application Support/Atelier/windows.json";
+  return stateDirectory(hs) + "/windows.json";
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

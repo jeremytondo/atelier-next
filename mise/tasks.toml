@@ -2,7 +2,7 @@
 # only in the tools their environment can install.
 
 [build]
-description = "Build the package in dist/: compiled TypeScript, declarations, CLI, signed providers"
+description = "Build the package in dist/: compiled TypeScript, declarations, CLI, and the signed Atelier.app"
 run = "scripts/build-package.sh"
 
 [dev]
@@ -10,7 +10,7 @@ description = "Build and install the package into the Homebrew prefix, then relo
 run = "scripts/build-package.sh --install"
 
 [test]
-description = "Run the TypeScript and Swift provider tests"
+description = "Run the TypeScript, Swift provider, and companion tests"
 depends = ["test:js", "test:native"]
 
 ["test:js"]
@@ -22,8 +22,8 @@ run = [
 ]
 
 ["test:native"]
-description = "Build and run the Swift provider tests in Debug"
-run = "scripts/build-providers.sh --test"
+description = "Build and run the Swift provider and companion tests in Debug"
+run = "scripts/build-native.sh --test"
 
 ["test:release"]
 description = "Test release behavior with disposable history and a fake GitHub"
@@ -34,7 +34,7 @@ description = "Test HS2 snapshot selection, reuse, and reference updates with is
 run = "scripts/hammerspoon-test.sh"
 
 ["test:build"]
-description = "Test providers build reuse and cache handling with a fake compiler"
+description = "Test native build reuse and cache handling with fake compilers"
 run = "scripts/build-test.sh"
 
 ["test:cli"]
@@ -55,23 +55,23 @@ run = "biome ci --error-on-warnings ."
 
 ["lint:swift"]
 description = "Check Swift formatting with the selected Xcode's swift-format"
-run = "xcrun swift-format lint --strict --recursive providers/Package.swift providers/Sources providers/Tests"
+run = "xcrun swift-format lint --strict --recursive providers/Package.swift providers/Sources providers/Tests companion/Package.swift companion/Sources companion/Tests companion/App/Sources"
 
 [format]
 description = "Format TypeScript, JavaScript, and Swift sources in place and apply safe lint fixes"
 run = [
   "biome check --write .",
-  "xcrun swift-format format --in-place --recursive providers/Package.swift providers/Sources providers/Tests",
+  "xcrun swift-format format --in-place --recursive providers/Package.swift providers/Sources providers/Tests companion/Package.swift companion/Sources companion/Tests companion/App/Sources",
 ]
 
-["providers:build"]
-description = "Build or verify the Release atelier-providers executable"
-run = "scripts/build-providers.sh"
+["native:build"]
+description = "Build or verify the Release Atelier.app, unsigned, with the providers executable inside"
+run = "scripts/build-native.sh"
 
 ["native:check"]
-description = "Sequence Debug tests before Release providers compilation"
+description = "Sequence Debug tests before Release native compilation"
 depends = ["test:native"]
-run = "scripts/build-providers.sh"
+run = "scripts/build-native.sh"
 
 ["types:fetch"]
 description = "Fetch upstream's hammerspoon.d.ts for the pinned revision into .build/types"
@@ -98,7 +98,7 @@ description = "The gate's Linux-capable half: TypeScript tests, lint, and releas
 depends = ["test:js", "release:check"]
 
 ["check:native"]
-description = "The gate's macOS half: Swift format, provider tests, and a locally signed package"
+description = "The gate's macOS half: Swift format, native tests, and a locally signed package"
 depends = ["lint:swift", "native:check"]
 run = "scripts/build-package.sh --skip-build --identity - --output-dir .build/package-check"
 
@@ -139,7 +139,7 @@ description = "Build, sign, notarize, and package an existing release plan JSON"
 run = "scripts/build-package.sh --release-plan"
 
 ["release:verify-package"]
-description = "Run the full gate, then package its verified same-run providers output"
+description = "Run the full gate, then package its verified same-run native output"
 depends = ["check"]
 run = "scripts/build-package.sh --skip-build --release-plan"
 

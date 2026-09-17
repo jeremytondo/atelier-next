@@ -142,6 +142,30 @@ export interface FakeState {
   missingApps: string[];
   /** App references that resolve to another reference's app, like a bundle ID. */
   aliases: Record<string, string>;
+  /** Every `hs.httpserver` created, with what it was configured to do. */
+  servers: FakeServer[];
+  /** What Launch Services answers for a bundle identifier. */
+  registeredApps: Record<string, string>;
+}
+
+export type FakeHandler = (
+  method: string,
+  path: string,
+  headers: object,
+  body: string,
+) => {status: number; body: string; headers: object};
+
+export interface FakeServer {
+  port: number;
+  interface: string | null;
+  callback: FakeHandler | null;
+  running: boolean;
+  setPort(port: number): FakeServer;
+  setInterface(iface: string | null): FakeServer;
+  setCallback(callback: FakeHandler | null): FakeServer;
+  start(): FakeServer;
+  stop(): FakeServer;
+  getPort(): number;
 }
 
 export interface FakeChooser {
@@ -296,6 +320,8 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     choosers: [],
     missingApps: [],
     aliases: {},
+    servers: [],
+    registeredApps: {},
   };
   const timer = (seconds: number, repeats: boolean, callback: () => void): FakeTimer => {
     const value: FakeTimer = {
@@ -364,6 +390,7 @@ export function fakeHS(): {hs: HS; state: FakeState} {
         state.files[path] = content;
         return true;
       },
+      deletePath: (path: string) => delete state.files[path],
     },
     appinfo: {
       get build() {
@@ -602,7 +629,11 @@ export function fakeHS(): {hs: HS; state: FakeState} {
         return key;
       },
     },
-    application: {fromPID: (): unknown => null, frontmost: (): unknown => null},
+    application: {
+      fromPID: (): unknown => null,
+      frontmost: (): unknown => null,
+      pathForBundleID: (bundleID: string) => state.registeredApps[bundleID] ?? null,
+    },
     window: {focusedWindow: (): unknown => null},
     ax: {
       applicationElement: (): unknown => null,
@@ -612,6 +643,41 @@ export function fakeHS(): {hs: HS; state: FakeState} {
     notify: {
       show: (_: string, body: string) => {
         state.notifications.push(body);
+      },
+    },
+    httpserver: {
+      create: () => {
+        const server: FakeServer = {
+          port: 0,
+          interface: null,
+          callback: null,
+          running: false,
+          setPort(port) {
+            this.port = port;
+            return this;
+          },
+          setInterface(iface) {
+            this.interface = iface;
+            return this;
+          },
+          setCallback(callback) {
+            this.callback = callback;
+            return this;
+          },
+          start() {
+            this.running = true;
+            return this;
+          },
+          stop() {
+            this.running = false;
+            return this;
+          },
+          getPort() {
+            return this.port;
+          },
+        };
+        state.servers.push(server);
+        return server;
       },
     },
     chooser: {

@@ -1,0 +1,27 @@
+// Every setting of the companion target. Packaging signs the built bundle
+// itself, so the build never signs, and stamps the version into Info.plist.
+// The deployment target is the SDK floor for Xcode 26 toolchains, as in
+// providers/Package.swift; Info.plist requires macOS 27 at launch.
+PRODUCT_NAME = Atelier
+PRODUCT_BUNDLE_IDENTIFIER = com.elevenideas.Atelier
+MARKETING_VERSION = 0.0.0
+CURRENT_PROJECT_VERSION = 0
+INFOPLIST_FILE = Info.plist
+GENERATE_INFOPLIST_FILE = NO
+MACOSX_DEPLOYMENT_TARGET = 26.0
+ARCHS = arm64
+ONLY_ACTIVE_ARCH = NO
+SWIFT_VERSION = 5.0
+SWIFT_STRICT_CONCURRENCY = minimal
+CODE_SIGN_STYLE = Manual
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGNING_REQUIRED = NO
+ENABLE_APP_SANDBOX = NO
+ENABLE_HARDENED_RUNTIME = YES
+ALWAYS_SEARCH_USER_PATHS = NO
+CLANG_ENABLE_MODULES = YES
+DEAD_CODE_STRIPPING = YES
+LD_RUNPATH_SEARCH_PATHS = @executable_path/../Frameworks
+SWIFT_OPTIMIZATION_LEVEL[config=Release] = -O
+SWIFT_OPTIMIZATION_LEVEL[config=Debug] = -Onone
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug] = DEBUG

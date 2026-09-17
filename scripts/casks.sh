@@ -60,7 +60,7 @@ cask "$token" do
 
   url "https://github.com/$repository/releases/download/v#{version}/atelier-#{version}-macos-arm64.tar.gz"
   name "Atelier"
-  desc "Customizable workspace on Hammerspoon 2: Desktops, windows, and Quick Apps"
+  desc "Customizable workspace on Hammerspoon 2: Desktops, windows, Quick Apps, and Spotlight actions"
   homepage "https://github.com/$repository"
 
   conflicts_with cask: "jeremytondo/atelier/$other"
@@ -69,6 +69,7 @@ cask "$token" do
   depends_on arch: :arm64
   depends_on macos: :golden_gate
 
+  app "Atelier.app"
   binary "bin/atelier"
   artifact "share/atelier", target: "#{HOMEBREW_PREFIX}/share/atelier"
 
@@ -76,8 +77,11 @@ cask "$token" do
     system_command "#{HOMEBREW_PREFIX}/bin/atelier", args: ["install"]
   end
 
-  # Uninstall removes the package files. Zap also undoes what \`atelier install\`
-  # wrote into Hammerspoon 2's settings and Login Items; the init file stays.
+  # Uninstall removes the companion app and the package files. Zap also undoes
+  # what \`atelier install\` wrote into Hammerspoon 2's settings and Login Items;
+  # the init file stays.
+  uninstall quit: "com.elevenideas.Atelier"
+
   zap login_item: "Hammerspoon 2",
       script:     {
         executable:   "/bin/sh",
