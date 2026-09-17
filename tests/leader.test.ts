@@ -89,6 +89,13 @@ test("the leader shows the root menu at once, descends into Windows, and runs Fi
   const frame = f.canvas()!.frame as {x: number; y: number; w: number; h: number};
   assert.deepEqual([frame.x + frame.w, frame.y, frame.w], [1180, 20, 320]);
   assert.equal(frame.h, 36 + 3 * 30 + 34);
+  // Window-shaped corners and a hairline edge inside them, drawn under everything else.
+  const [background, edge] = f.canvas()!.elements;
+  assert.equal(background?.roundedRectRadii, 20);
+  assert.deepEqual(
+    [edge?.action, edge?.roundedRectRadii, edge?.strokeColor?.alpha],
+    ["stroke", 19.5, 0.14],
+  );
   // Quick Apps has nothing configured under it, so it is not offered.
   assert.deepEqual(
     f.texts().filter((t) => /Spaces|Windows|Quick Apps|Configuration/.test(t)),

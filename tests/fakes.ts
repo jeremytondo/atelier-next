@@ -68,7 +68,9 @@ export interface FakeEventHotkey {
 export interface FakeElement {
   text?: string;
   textColor?: {alpha: number};
-  roundedRectRadii?: {xRadius: number};
+  action?: string;
+  roundedRectRadii?: number;
+  strokeColor?: {alpha: number};
   frame?: {x: number; y: number; w: number; h: number};
 }
 

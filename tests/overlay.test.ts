@@ -145,7 +145,7 @@ test("overlay stays while Shift comes and goes and redraws a reordered list at o
     canvas.elements.map((e) => e.text).filter((t) => t === "First" || t === "Second");
   // The focus highlight is drawn just before the focused window's number and name.
   const highlighted = () => {
-    const index = canvas.elements.findIndex((e) => e.roundedRectRadii?.xRadius === 7);
+    const index = canvas.elements.findIndex((e) => e.roundedRectRadii === 7);
     return canvas.elements[index + 2]?.text;
   };
   assert.deepEqual([apps(), highlighted()], [["First", "Second"], "First"]);

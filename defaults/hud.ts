@@ -37,6 +37,9 @@ const titleHeight = 36,
   footerHeight = 34,
   margin = 20,
   panelWidth = 320;
+/** The corner radius of macOS 27 windows, measured from their transparent
+ *  corners on this OS; HS2's canvas takes one number, not an x/y pair. */
+const cornerRadius = 20;
 const white = (alpha: number) => ({red: 1, green: 1, blue: 1, alpha});
 
 export function frameFor(
@@ -108,8 +111,19 @@ export class Panel {
         type: "rectangle",
         action: "fill",
         frame: {x: 0, y: 0, w: width, h: height},
-        roundedRectRadii: {xRadius: 14, yRadius: 14},
+        roundedRectRadii: cornerRadius,
         fillColor: {red: 0.08, green: 0.09, blue: 0.12, alpha: 0.96},
+      },
+      // A hairline highlight just inside the edge, as dark-mode windows have,
+      // so the panel reads against a dark background. The stroke is centered
+      // on its path, hence the half-point inset.
+      {
+        type: "rectangle",
+        action: "stroke",
+        frame: {x: 0.5, y: 0.5, w: width - 1, h: height - 1},
+        roundedRectRadii: cornerRadius - 0.5,
+        strokeColor: white(0.14),
+        strokeWidth: 1,
       },
       text(content.title.toUpperCase(), 18, 12, width - 36, 11, 0.6, {textWeight: "semibold"}),
     ];
@@ -122,7 +136,7 @@ export class Panel {
           type: "rectangle",
           action: "fill",
           frame: {x: x + 8, y: y - 2, w: width - 16, h: rowHeight - 4},
-          roundedRectRadii: {xRadius: 7, yRadius: 7},
+          roundedRectRadii: 7,
           fillColor: {red: 0.2, green: 0.4, blue: 0.8, alpha: 0.5},
         });
       const hintWidth = row.hint ? Math.min(120, width / 3) : 0;
