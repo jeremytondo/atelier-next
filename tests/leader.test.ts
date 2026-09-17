@@ -11,6 +11,7 @@ import {
   type FakeState,
   fakeHS,
   fakeMenuBar,
+  keycodeMap,
   keyEvent,
   windowMenu,
 } from "./fakes.ts";
@@ -477,5 +478,23 @@ test("the tap is off while a command runs, so the keystrokes a Desktop command p
   await pump(g.state);
   assert.equal(g.app.status().leader?.active, false);
   g.app.stop();
+  f.app.stop();
+});
+
+test("digit keys are named although HS2's key map loses them to the codes they spell", async () => {
+  // On HS2, `map["1"]` is the S key's name, so the map holds no name for key code 18.
+  assert.equal(keycodeMap["1"], "s");
+  assert.equal(keycodeMap["18"], undefined);
+  const f = await leaderSession();
+  await f.enter();
+  await f.press("s");
+  assert.ok(f.texts().includes("Desktop 2"));
+  assert.equal(await f.press("2"), false);
+  assert.ok(f.state.requests.some((r) => r.command === "spaces.switch" && r.number === 2));
+  assert.equal(f.app.status().leader?.active, false);
+  await f.enter();
+  await f.press("s");
+  await f.press("0");
+  assert.ok(f.state.requests.some((r) => r.command === "spaces.switch" && r.number === 10));
   f.app.stop();
 });

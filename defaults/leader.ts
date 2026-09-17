@@ -11,7 +11,7 @@ import type {HS} from "../api/hs.ts";
 import type {Timers} from "../api/timers.ts";
 import type {Command, Menu, MenuEntry} from "./commands.ts";
 import type {Panel, PanelContent, PanelRow} from "./hud.ts";
-import {type Chord, describe, eventChord} from "./keys.ts";
+import {type Chord, describe, eventChord, namesByCode} from "./keys.ts";
 
 export interface LeaderOptions {
   chord: Chord;
@@ -45,6 +45,8 @@ export class Leader {
   private active = false;
   private generation = 0;
   private path: MenuEntry[] = [];
+  /** Key names by key code for the current layout, read as leader mode starts. */
+  private names = new Map<number, string>();
   private shown = false;
   /** The leader's own modifiers are ignored until the user releases them once. */
   private heldLeader = false;
@@ -109,6 +111,7 @@ export class Leader {
     this.path = [];
     this.feedback = null;
     this.heldLeader = true;
+    this.names = namesByCode(this.hs.keycodes.map);
     this.shown = this.options.delay <= 0;
     if (!this.tap.start().isEnabled()) {
       this.active = false;
@@ -179,7 +182,7 @@ export class Leader {
       this.exit();
       return eventtap.emit;
     }
-    const key = String(this.hs.keycodes.map[String(event.keyCode)] ?? ""),
+    const key = this.names.get(event.keyCode) ?? "",
       flags = event.flags.filter((flag) => flag !== "fn"),
       raw = eventChord(flags, key);
     if (raw.mods.includes("cmd") && raw.key === "tab") {

@@ -163,8 +163,11 @@ export const eventTypes: Record<string, number> = {
   otherMouseDown: 25,
 };
 
-/** Key names to macOS key codes, both directions, like `hs.keycodes.map` on a US layout. */
+/** Key names and codes on a US layout, in one map the way HS2 builds
+ *  `hs.keycodes.map`: named keys first, then each key code's character unless
+ *  either string is taken, so a digit's name is lost to the code it spells. */
 export const keycodeMap: Record<string, string | number> = {};
+const keyCodes: Record<string, number> = {};
 {
   const codes: Record<string, number> = {
     a: 0,
@@ -224,7 +227,17 @@ export const keycodeMap: Record<string, string | number> = {};
     down: 125,
     up: 126,
   };
-  for (const [name, code] of Object.entries(codes)) {
+  Object.assign(keyCodes, codes);
+  const named = ["return", "tab", "space", "delete", "escape", "left", "right", "down", "up"];
+  for (const name of named) {
+    keycodeMap[name] = codes[name]!;
+    keycodeMap[String(codes[name])] = name;
+  }
+  const characters = Object.entries(codes)
+    .filter(([name]) => !named.includes(name))
+    .sort((a, b) => a[1] - b[1]);
+  for (const [name, code] of characters) {
+    if (keycodeMap[name] !== undefined || keycodeMap[String(code)] !== undefined) continue;
     keycodeMap[name] = code;
     keycodeMap[String(code)] = name;
   }
@@ -232,7 +245,7 @@ export const keycodeMap: Record<string, string | number> = {};
 
 /** A key event for a fake tap: the key's code and the modifiers HS2 would report. */
 export function keyEvent(key: string, flags: string[] = [], type = eventTypes.keyDown!): FakeEvent {
-  const code = keycodeMap[key];
+  const code = keyCodes[key];
   if (typeof code !== "number") throw new Error("No key code for " + key);
   return {type, keyCode: code, flags};
 }

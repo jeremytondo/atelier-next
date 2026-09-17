@@ -120,3 +120,29 @@ export function describe(value: Chord): string {
 }
 
 export const describeSequence = (chords: Chord[]): string => chords.map(describe).join(" ");
+
+/** Key codes of the digit row, the same on every Apple keyboard. */
+const digitRow: [number, string][] = [
+  [18, "1"],
+  [19, "2"],
+  [20, "3"],
+  [21, "4"],
+  [23, "5"],
+  [22, "6"],
+  [26, "7"],
+  [28, "8"],
+  [25, "9"],
+  [29, "0"],
+];
+
+/** The key name of each key code in `hs.keycodes.map`. That map keeps names
+ *  and codes in one set of string keys, so a name that reads as a number is
+ *  lost to the code it spells and the digit row gets no name at all; only the
+ *  name-to-code entries are trusted, and the digits come from their positions. */
+export function namesByCode(map: Record<string, unknown>): Map<number, string> {
+  const names = new Map<number, string>();
+  for (const [name, code] of Object.entries(map))
+    if (typeof code === "number") names.set(code, name);
+  for (const [code, digit] of digitRow) if (!names.has(code)) names.set(code, digit);
+  return names;
+}
