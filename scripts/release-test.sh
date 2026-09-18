@@ -35,6 +35,17 @@ grep -Fxq 'version=1.11.0' "$temporary/minor-plan" || fail 'minor plan did not r
 "$plan/scripts/release-plan.sh" major >"$temporary/major-plan"
 grep -Fxq 'version=2.0.0' "$temporary/major-plan" || fail 'major plan did not reset minor and patch'
 
+# Homebrew quarantines cask downloads. The app keeps that protection, while
+# the nested command must not wait forever on an app-launch confirmation that
+# does not reliably surface from the terminal.
+dev_cask="$temporary/atelier@dev.rb"
+"$root/scripts/cask.sh" dev 0.0.1 20260918201812 \
+  1111111111111111111111111111111111111111111111111111111111111111 >"$dev_cask"
+ruby -c "$dev_cask" >/dev/null
+grep -Fq 'run "/usr/bin/xattr"' "$dev_cask" || fail 'the cask does not make its command directly runnable'
+grep -Fq 'args: ["-dr", "com.apple.quarantine", "{{appdir}}/Atelier.app/Contents/Helpers/atelier"]' "$dev_cask" ||
+  fail 'the cask removes quarantine from something other than its command'
+
 fakebin="$temporary/bin"
 events="$temporary/events"
 mkdir -p "$fakebin"
