@@ -11,6 +11,12 @@ import Synchronization
 final class FakeMac: Mac, Sendable {
   struct State: Sendable {
     var hasAccessibility = true
+    var isInstalled = false
+    var loginItemStatus = LoginItemStatus.notRegistered
+    /// Why macOS refuses to add the login item; nil to add it.
+    var loginRefusal: String?
+    /// What a login item that was added becomes: enabled, or awaiting approval.
+    var registeredLoginItemStatus = LoginItemStatus.enabled
     var displays: [DisplaySpaces] = []
     var activeSpace: UInt64 = 1
     /// Nil while Atelier itself is frontmost. It need not be in `windows`: a
@@ -184,6 +190,22 @@ final class FakeMac: Mac, Sendable {
   var hasAccessibility: Bool { state.withLock(\.hasAccessibility) }
 
   func requestAccessibility() {}
+
+  var isInstalled: Bool { state.withLock(\.isInstalled) }
+
+  var loginItemStatus: LoginItemStatus { state.withLock(\.loginItemStatus) }
+
+  func registerLoginItem() -> String? {
+    state.withLock { state in
+      state.requests.append("register login item")
+      if state.loginRefusal == nil { state.loginItemStatus = state.registeredLoginItemStatus }
+      return state.loginRefusal
+    }
+  }
+
+  func openLoginItemSettings() {
+    state.withLock { $0.requests.append("open login item settings") }
+  }
 
   func focus() async -> Focus {
     state.withLock { state in

@@ -2,25 +2,24 @@ import AppKit
 import AtelierKit
 
 /// Atelier's menu-bar item and its menu: what is wrong, if anything, with the
-/// means to put it right, and reloading or opening the configuration. The
-/// icon says when there is something to read.
+/// means to put it right, reloading or opening the configuration, and the way
+/// to the setup window. The icon says when there is something to read.
 @MainActor
 public final class MenuBar: NSObject, NSMenuDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let menu = NSMenu()
   private let atelier: Atelier
+  private let showSetup: @MainActor () -> Void
   private var config: ConfigModel!
 
-  public init(atelier: Atelier) {
+  public init(atelier: Atelier, showSetup: @escaping @MainActor () -> Void) {
     self.atelier = atelier
+    self.showSetup = showSetup
     super.init()
     config = ConfigModel(atelier: atelier) { [unowned self] in render() }
     menu.delegate = self
     item.menu = menu
     render()
-    // A missing permission should not wait to be discovered. The menu cannot
-    // be opened to say so: at launch the item has no place in the menu bar yet.
-    if !atelier.permissions.hasAccessibility { requestAccessibility() }
   }
 
   /// macOS does not say when the permission is granted, so each opening asks.
@@ -38,7 +37,7 @@ public final class MenuBar: NSObject, NSMenuDelegate {
         : troubled ? "Atelier has configuration problems" : "Atelier")
     menu.items =
       (missing ? accessibilityItems + [.separator()] : []) + configItems + [
-        .separator(),
+        .separator(), setupItem, .separator(),
         NSMenuItem(
           title: "Quit Atelier", action: #selector(NSApplication.terminate), keyEquivalent: "q"),
       ]
@@ -51,6 +50,12 @@ public final class MenuBar: NSObject, NSMenuDelegate {
     open.target = self
     open.subtitle = "Atelier reads other apps' windows through Accessibility."
     return [.sectionHeader(title: "Accessibility Permission Needed"), open]
+  }
+
+  private var setupItem: NSMenuItem {
+    let item = NSMenuItem(title: "Setup…", action: #selector(openSetup), keyEquivalent: "")
+    item.target = self
+    return item
   }
 
   private var configItems: [NSMenuItem] {
@@ -80,6 +85,10 @@ public final class MenuBar: NSObject, NSMenuDelegate {
   @objc private func run(_ sender: NSMenuItem) {
     guard let command = sender.representedObject as? Command else { return }
     Task { await atelier.attempt(command) }
+  }
+
+  @objc private func openSetup() {
+    showSetup()
   }
 
   @objc private func requestAccessibility() {

@@ -12,6 +12,19 @@ public struct ConfigReport: Sendable {
     configuration.problems + (rejection.map { [$0] } ?? [])
   }
 
+  /// The leader key as the HUD writes keys, such as ⌥Space; nil when unbound.
+  public var leaderKey: String? { configuration.leader.chord.map(KeyGrammar.describe) }
+
+  /// The modifiers that show the window list while held, such as ⌥⌘.
+  public var windowListModifiers: String {
+    KeyGrammar.describe(configuration.windowListModifiers)
+  }
+
+  /// The file as a person would write it, with `~` for the home folder.
+  public var filePath: String? {
+    file.map { ($0.path as NSString).abbreviatingWithTildeInPath }
+  }
+
   public var text: String {
     var lines: [String] = []
     if let file, FileManager.default.fileExists(atPath: file.path) {

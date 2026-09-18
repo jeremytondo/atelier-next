@@ -12,6 +12,7 @@ public struct Atelier: Sendable {
   public let spaces: Spaces
   public let desktops: Desktops
   public let permissions: Permissions
+  public let login: Login
   public let config: Config
   public let quickApps: QuickApps
   public let leader: Leader
@@ -30,6 +31,7 @@ public struct Atelier: Sendable {
     spaces = Spaces(workspace: workspace)
     desktops = Desktops(workspace: workspace)
     permissions = Permissions(mac: mac)
+    login = Login(mac: mac, stateFolder: stateFolder)
     config = Config(store: store, installation: Task { await store.start() })
     notices = Notices()
     quickApps = QuickApps(workspace: workspace, config: store)
@@ -66,6 +68,8 @@ public struct Atelier: Sendable {
       stateFolder: URL(filePath: Socket.defaultPath).deletingLastPathComponent(),
       configFile: configFile)
     try Server.start { await atelier.reply(to: $0) }
+    // Only the one running Atelier has a first launch.
+    atelier.login.begin()
     return atelier
   }
 

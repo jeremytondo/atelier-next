@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private static let shared = AppDelegate()
   private let log = Logger(subsystem: "com.elevenideas.Atelier", category: "app")
+  private var setup: Setup?
   private var menuBar: MenuBar?
   private var hud: HUD?
 
@@ -23,8 +24,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     do {
       let atelier = try Atelier.live()
       Appearance.follow(atelier)
-      menuBar = MenuBar(atelier: atelier)
+      let setup = Setup(atelier: atelier)
+      self.setup = setup
+      menuBar = MenuBar(atelier: atelier, showSetup: setup.show)
       hud = HUD(atelier: atelier)
+      // A missing permission should not wait to be discovered, and the menu
+      // cannot be opened to say so: at launch its item has no place yet.
+      if atelier.login.isFirstLaunch || !atelier.permissions.hasAccessibility { setup.show() }
     } catch Server.StartError.alreadyRunning {
       log.notice("Another Atelier is already running; leaving it in charge.")
       NSApp.terminate(nil)
