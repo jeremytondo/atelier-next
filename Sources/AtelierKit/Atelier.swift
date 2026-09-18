@@ -36,7 +36,8 @@ public struct Atelier: Sendable {
     notices = Notices()
     quickApps = QuickApps(workspace: workspace, config: store)
     runner = CommandRunner(
-      windows: windows, spaces: spaces, desktops: desktops, config: config, notices: notices,
+      mac: mac, workspace: workspace, windows: windows, spaces: spaces, desktops: desktops,
+      config: config, notices: notices,
       quickApps: quickApps)
     leader = Leader(
       session: LeaderSession(mac: mac, workspace: workspace, store: store, runner: runner))
@@ -63,11 +64,22 @@ public struct Atelier: Sendable {
       ProcessInfo.processInfo.environment["ATELIER_CONFIG"].map { URL(filePath: $0) }
       ?? FileManager.default.homeDirectoryForCurrentUser.appending(
         path: ".config/atelier/\(configFileName)")
+    let mac = try LiveMac()
     let atelier = Atelier(
-      mac: try LiveMac(),
+      mac: mac,
       stateFolder: URL(filePath: Socket.defaultPath).deletingLastPathComponent(),
       configFile: configFile)
-    try Server.start { await atelier.reply(to: $0) }
+    try Server.start {
+      await atelier.reply(to: $0)
+    } afterReply: { request, reply, delivered in
+      guard reply.ok, Command(name: request.name, arguments: request.arguments) == .quit else {
+        return
+      }
+      // Asked to quit and agreed. With the answer delivered, now is the time.
+      // An asker that never heard back will say Atelier could not be asked,
+      // and must find it still running, so closing is taken back.
+      if delivered { mac.terminate() } else { Task { await atelier.runner.reopen() } }
+    }
     // Only the one running Atelier has a first launch.
     atelier.login.begin()
     return atelier

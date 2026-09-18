@@ -21,6 +21,12 @@ package protocol Mac: Sendable {
   /// copy does and a build in a source checkout does not.
   var isInstalled: Bool { get }
 
+  /// Where this app is on disk.
+  var appPath: String { get }
+
+  /// Ends this app the way its Quit does.
+  func terminate()
+
   var loginItemStatus: LoginItemStatus { get }
 
   /// Asks macOS to open this app at login. Nil when macOS took the request,

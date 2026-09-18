@@ -4,13 +4,19 @@ import Foundation
 
 /// The `atelier` command. It knows how to reach the running app and nothing
 /// about what the app does: each subcommand is one AtelierKit request, worded
-/// for the terminal, and the app does the work and words the reply.
+/// for the terminal, and the app does the work and words the reply. `doctor`
+/// and `restart` are the two that must work with no app to ask, so they add
+/// what the command can see for itself.
 @main
 struct AtelierCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "atelier",
     abstract: "Talk to the running Atelier app.",
-    subcommands: [Windows.self, Spaces.self, Desktops.self, QuickApps.self, Config.self])
+    version: Build.description,
+    subcommands: [
+      Windows.self, Spaces.self, Desktops.self, QuickApps.self, Config.self, Doctor.self, Quit.self,
+      Restart.self,
+    ])
 }
 
 /// A subcommand that stands for one request.
@@ -302,7 +308,7 @@ enum Direction: String, ExpressibleByArgument, CaseIterable {
   case next, previous
 }
 
-private struct Failure: Error, CustomStringConvertible {
+struct Failure: Error, CustomStringConvertible {
   var message: String
   var description: String { message }
 }

@@ -1,3 +1,4 @@
+import Client
 import Foundation
 import MacOS
 
@@ -195,10 +196,4 @@ extension ReloadResult {
         outcome: "\(outcome)",
         problems: problems.map { Payload.ProblemItem(location: $0.location, message: $0.message) }))
   }
-}
-
-func encoded(_ payload: some Encodable) -> String {
-  let encoder = JSONEncoder()
-  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-  return String(decoding: (try? encoder.encode(payload)) ?? Data(), as: UTF8.self)
 }

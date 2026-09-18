@@ -1,5 +1,6 @@
 import Client
 import Foundation
+import MacOS
 
 /// Routes each request from outside the app, by its name and arguments, to
 /// the same command or query the interface uses, and words the answer, so
@@ -13,7 +14,7 @@ extension Atelier {
     do {
       return Reply(ok: true, output: try await answer(command, json: request.json))
     } catch {
-      return Reply(ok: false, output: error.message)
+      return Reply(ok: false, output: error.message, busy: error == .busy ? true : nil)
     }
   }
 
@@ -44,11 +45,41 @@ extension Atelier {
     case .quickAppsList:
       let list = await quickApps.list()
       return json ? list.json : list.text
+    case .doctor:
+      // Always JSON: the command reads it, adds what it sees from outside,
+      // and words the whole.
+      return encoded(await report())
+    case .quit:
+      // The app ends once this reply is out; see `Atelier.live`.
+      try await runner.close()
+      return json ? #"{"outcome": "changed"}"# : "Atelier is quitting."
     default:
       let outcome = try await perform(command)
       return json
         ? #"{"outcome": "\#(outcome)"}"# : outcome == .changed ? "Done." : "Nothing to do."
     }
+  }
+
+  /// What only the running app can say about itself, for `atelier doctor`.
+  func report() async -> AppReport {
+    let configuration = await config.show()
+    let login = login.status()
+    return AppReport(
+      version: Build.version, build: Build.number, path: runner.mac.appPath,
+      hasAccessibility: permissions.hasAccessibility,
+      login: AppReport.Login(
+        status: login.kind.rawValue, needsAttention: login.needsAttention,
+        summary: login.summary, advice: login.advice),
+      configurationFile: configuration.filePath,
+      configurationProblems: configuration.problems.map {
+        AppReport.Problem(location: $0.location, message: $0.message)
+      })
+  }
+
+  /// For the app, before it ends by any road: the menu's Quit, macOS, or an
+  /// update. Returns once no command is running, and none starts after.
+  public func prepareToQuit() async {
+    await runner.workspace.closeWhenIdle()
   }
 
   /// Runs a command for a key. A query has nothing to show a key, so it is
@@ -71,6 +102,8 @@ extension Atelier {
 /// Runs a command for whoever holds one: the router for the terminal, a
 /// shortcut, or the leader menu.
 struct CommandRunner: Sendable {
+  let mac: any Mac
+  let workspace: Workspace
   let windows: Windows
   let spaces: Spaces
   let desktops: Desktops
@@ -78,8 +111,25 @@ struct CommandRunner: Sendable {
   let notices: Notices
   let quickApps: QuickApps
 
+  /// Takes the one command at a time for good, so that nothing starts once
+  /// Atelier is leaving. Busy, changing nothing, while a command runs.
+  func close() async throws(AtelierError) {
+    try await workspace.close()
+  }
+
+  /// Takes `close` back: whoever asked Atelier to quit never heard that it
+  /// would, so it stays, and is as it was.
+  func reopen() async {
+    await workspace.reopen()
+  }
+
   func perform(_ command: Command) async throws(AtelierError) -> Outcome {
     switch command {
+    case .quit:
+      // From a key or a menu there is no reply to wait for.
+      try await close()
+      mac.terminate()
+      return .changed
     case .windowsSelect(let slot): return try await windows.select(slot)
     case .windowsCycle(let direction): return try await windows.cycle(direction)
     case .windowsMove(let move): return try await windows.move(move)
@@ -103,7 +153,8 @@ struct CommandRunner: Sendable {
         )
       }
       return result.outcome
-    case .windowsList, .spacesList, .quickAppsList, .configShow, .configCheck: return .unchanged
+    case .windowsList, .spacesList, .quickAppsList, .configShow, .configCheck, .doctor:
+      return .unchanged
     }
   }
 }

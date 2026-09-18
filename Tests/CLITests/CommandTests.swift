@@ -69,6 +69,7 @@ import Testing
     ["spaces", "select", "1.5"], ["spaces", "move", "by"], ["spaces", "move", "by", "1", "2"],
     ["windows", "arrange"], ["windows", "arrange", "fill", "center"], ["config", "show", "now"],
     ["config", "reset"], ["quick-apps", "toggle"], ["quick-apps", "show", "1Password"],
+    ["quit", "now"], ["quit", "--json"], ["doctor", "everything"], ["restart", "--json"],
   ])
   func refusesWhatItDoesNotKnow(words: [String]) {
     #expect(throws: (any Error).self) { try AtelierCommand.parseAsRoot(words) }

@@ -28,6 +28,18 @@ package struct LiveMac: Mac {
 
   package var isInstalled: Bool { LoginItem.isInstalled }
 
+  package var appPath: String { Bundle.main.bundleURL.path }
+
+  /// Through the run loop, not the main queue: the app may put its ending off
+  /// until a command finishes, and AppKit then waits inside this call for an
+  /// answer that arrives on the main queue, which a block of that queue would
+  /// be holding up.
+  package func terminate() {
+    RunLoop.main.perform(inModes: [.common]) {
+      MainActor.assumeIsolated { NSApp.terminate(nil) }
+    }
+  }
+
   package var loginItemStatus: LoginItemStatus { LoginItem.status }
 
   package func registerLoginItem() -> String? {

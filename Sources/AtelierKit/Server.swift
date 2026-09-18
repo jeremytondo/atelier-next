@@ -5,6 +5,9 @@ import Foundation
 /// as long as the app runs. Holding the lock beside the socket is what makes
 /// this the one running Atelier; a second app finds it taken and must not
 /// start. macOS releases the lock when the process ends, however it ends.
+/// `afterReply` runs once a connection is done with, and is told whether the
+/// whole reply was written: that is the moment for what would have cut the
+/// reply short, and for undoing what an asker who never heard back cannot rely on.
 public enum Server {
   public enum StartError: Error, Equatable {
     case alreadyRunning
@@ -16,7 +19,8 @@ public enum Server {
 
   package static func start(
     path: String = Socket.defaultPath,
-    answer: @escaping @Sendable (Request) async -> Reply
+    answer: @escaping @Sendable (Request) async -> Reply,
+    afterReply: (@Sendable (Request, Reply, _ delivered: Bool) -> Void)? = nil
   ) throws(StartError) {
     do {
       try FileManager.default.createDirectory(
@@ -57,13 +61,14 @@ public enum Server {
           continue
         }
         Socket.setTimeouts(connection)
-        queue.async { serve(connection, answer) }
+        queue.async { serve(connection, answer, afterReply) }
       }
     }
   }
 
   private static func serve(
-    _ connection: Int32, _ answer: @escaping @Sendable (Request) async -> Reply
+    _ connection: Int32, _ answer: @escaping @Sendable (Request) async -> Reply,
+    _ afterReply: (@Sendable (Request, Reply, Bool) -> Void)?
   ) {
     guard let message = Socket.readMessage(connection),
       let request = try? JSONDecoder().decode(Request.self, from: message)
@@ -74,10 +79,11 @@ public enum Server {
     Task {
       let reply = await answer(request)
       queue.async {
-        if let message = try? JSONEncoder().encode(reply) {
-          _ = Socket.writeMessage(message, to: connection)
-        }
+        let delivered =
+          (try? JSONEncoder().encode(reply)).map { Socket.writeMessage($0, to: connection) }
+          ?? false
         close(connection)
+        afterReply?(request, reply, delivered)
       }
     }
   }

@@ -21,6 +21,8 @@ Atelier builds for Apple silicon Macs only. Install Xcode and mise, then run `mi
 
 `mise run build` also builds the `atelier` command at `.build/debug/atelier`; `atelier --help` lists what it can ask the running app, one subcommand per request, such as `atelier desktops new` or `atelier windows move by -1`. The two talk over a socket in `~/Library/Application Support/Atelier/`, where the app also keeps the window lists between runs. Changing Desktops needs macOS 27.
 
+`atelier doctor` checks the installation and changes nothing; it works with no app running and exits with 1 when something is wrong. `atelier quit` and `atelier restart` end and restart the app once any command in progress is done. `atelier doctor --help` and the others say the rest.
+
 ## Keys
 
 The built-in shortcuts are the ones `atelier config show` lists. Option+Space opens the leader menu in the bottom-right corner of the screen: type a sequence such as `w f` for Fill or `s 3` for Desktop 3, Backspace goes up a level, Escape leaves, and a click or a switch of apps leaves too and lands where it was aimed. Directions are `h`, `j`, `k`, and `l`, as in Vim: `w h` puts the window on the left half and `s shift+l` moves the Space one place right. The arrow keys do the same without a row in the menu; they are bindings of their own, so changing or unbinding `w h` leaves `w left` alone, and an arrow you bind yourself gets its row. Every other key is consumed while the menu is open, so a typo never reaches the app. Holding Cmd+Option shows the current Desktop's numbered windows in the same corner, with Shift allowed for the reorder shortcuts.

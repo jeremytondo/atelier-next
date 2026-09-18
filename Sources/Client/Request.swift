@@ -21,9 +21,21 @@ public struct Request: Codable, Equatable, Sendable {
 public struct Reply: Codable, Equatable, Sendable {
   public var ok: Bool
   public var output: String
+  /// True when the request was refused only because another command was
+  /// running, so asking again shortly may well work. Absent otherwise, and
+  /// from an app too old to say.
+  public var busy: Bool?
 
-  public init(ok: Bool, output: String) {
+  public init(ok: Bool, output: String, busy: Bool? = nil) {
     self.ok = ok
     self.output = output
+    self.busy = busy
   }
+}
+
+/// JSON as Atelier prints it for `--json`, the same from the app and the command.
+package func encoded(_ payload: some Encodable) -> String {
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+  return String(decoding: (try? encoder.encode(payload)) ?? Data(), as: UTF8.self)
 }

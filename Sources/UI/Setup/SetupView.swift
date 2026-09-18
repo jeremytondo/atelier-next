@@ -27,7 +27,9 @@ struct SetupView: View {
       }
       if let login = model.login {
         Section(
-          title: "Open at Login", isGood: login.kind == .enabled,
+          // An item the user removed is their choice: neither good nor a problem.
+          title: "Open at Login",
+          isGood: login.needsAttention ? false : login.kind == .enabled ? true : nil,
           text: [
             login.summary, login.advice,
             "macOS Login Items decides this; Atelier asks only once, when the installed app first opens.",
@@ -39,7 +41,7 @@ struct SetupView: View {
           }
         }
       }
-      Section(title: "Keys", isGood: nil, text: keys) {}
+      Section(title: "Keys", isGood: nil, plainSymbol: "keyboard", text: keys) {}
       Section(
         title: "Configuration", isGood: model.rejection == nil && model.problems.isEmpty,
         text: configuration
@@ -84,8 +86,9 @@ struct SetupView: View {
 
 private struct Section<Actions: View>: View {
   let title: String
-  /// Nil for a section that only informs.
+  /// Nil for a section that only informs, which then shows `plainSymbol`.
   let isGood: Bool?
+  var plainSymbol = "minus.circle"
   let text: String
   @ViewBuilder let actions: Actions
 
@@ -99,7 +102,7 @@ private struct Section<Actions: View>: View {
         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
           .accessibilityLabel("Needs attention")
       case nil:
-        Image(systemName: "keyboard").foregroundStyle(.secondary).accessibilityHidden(true)
+        Image(systemName: plainSymbol).foregroundStyle(.secondary).accessibilityHidden(true)
       }
       VStack(alignment: .leading, spacing: 6) {
         Text(title).font(.headline)
