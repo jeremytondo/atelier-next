@@ -10,7 +10,7 @@ struct AtelierCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "atelier",
     abstract: "Talk to the running Atelier app.",
-    subcommands: [Windows.self, Spaces.self, Desktops.self, Config.self])
+    subcommands: [Windows.self, Spaces.self, Desktops.self, QuickApps.self, Config.self])
 }
 
 /// A subcommand that stands for one request.
@@ -227,6 +227,32 @@ struct Desktops: ParsableCommand {
     @Flag(help: "Print JSON.") var json = false
 
     var request: Request { Request(name: "desktops.delete", json: json) }
+  }
+}
+
+struct QuickApps: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "quick-apps",
+    abstract: "Apps summoned to the current Desktop with a key and hidden with the same key.",
+    subcommands: [List.self, Toggle.self])
+
+  struct List: Asking {
+    static let configuration = CommandConfiguration(
+      abstract: "List the configured Quick Apps, marking the one shown.")
+
+    @Flag(help: "Print JSON.") var json = false
+
+    var request: Request { Request(name: "quick-apps.list", json: json) }
+  }
+
+  struct Toggle: Asking {
+    static let configuration = CommandConfiguration(
+      abstract: "Show the app on this Desktop, or hide it when it is the one shown.")
+
+    @Argument(help: "The app as configured: its name, bundle identifier, or path.") var app: String
+    @Flag(help: "Print JSON.") var json = false
+
+    var request: Request { Request(name: "quick-apps.toggle", arguments: [app], json: json) }
   }
 }
 

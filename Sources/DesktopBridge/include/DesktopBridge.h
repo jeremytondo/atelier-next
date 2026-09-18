@@ -36,6 +36,8 @@ typedef NS_ENUM(NSInteger, DesktopBridgeStatus) {
                            toIndex:(uint32_t)index
                          onDisplay:(NSString *)display;
 + (DesktopBridgeResult *)destroySpace:(uint64_t)spaceID;
+/// Moves a window to a Space, leaving every other Space.
++ (DesktopBridgeResult *)moveWindow:(uint32_t)windowID toSpace:(uint64_t)spaceID;
 @end
 
 NS_ASSUME_NONNULL_END

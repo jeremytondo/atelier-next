@@ -13,6 +13,7 @@ public struct Atelier: Sendable {
   public let desktops: Desktops
   public let permissions: Permissions
   public let config: Config
+  public let quickApps: QuickApps
   public let leader: Leader
   public let notices: Notices
   let runner: CommandRunner
@@ -31,8 +32,10 @@ public struct Atelier: Sendable {
     permissions = Permissions(mac: mac)
     config = Config(store: store, installation: Task { await store.start() })
     notices = Notices()
+    quickApps = QuickApps(workspace: workspace, config: store)
     runner = CommandRunner(
-      windows: windows, spaces: spaces, desktops: desktops, config: config, notices: notices)
+      windows: windows, spaces: spaces, desktops: desktops, config: config, notices: notices,
+      quickApps: quickApps)
     leader = Leader(
       session: LeaderSession(mac: mac, workspace: workspace, store: store, runner: runner))
     Task { await workspace.watch() }
@@ -51,12 +54,17 @@ public struct Atelier: Sendable {
 
   /// Atelier on the real Mac, answering the `atelier` command from now on.
   /// Throws `Server.StartError.alreadyRunning` when another Atelier has the job.
+  /// `ATELIER_CONFIG` in the environment names another file, for trying a
+  /// configuration without touching one's own.
   public static func live() throws -> Atelier {
+    let configFile =
+      ProcessInfo.processInfo.environment["ATELIER_CONFIG"].map { URL(filePath: $0) }
+      ?? FileManager.default.homeDirectoryForCurrentUser.appending(
+        path: ".config/atelier/\(configFileName)")
     let atelier = Atelier(
       mac: try LiveMac(),
       stateFolder: URL(filePath: Socket.defaultPath).deletingLastPathComponent(),
-      configFile: FileManager.default.homeDirectoryForCurrentUser.appending(
-        path: ".config/atelier/\(configFileName)"))
+      configFile: configFile)
     try Server.start { await atelier.reply(to: $0) }
     return atelier
   }

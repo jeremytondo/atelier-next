@@ -43,6 +43,16 @@ import Testing
     (["config", "check"], Request(name: "config.check")),
     (["config", "open"], Request(name: "config.open")),
     (["config", "reload"], Request(name: "config.reload")),
+    (["quick-apps", "list"], Request(name: "quick-apps.list")),
+    (["quick-apps", "list", "--json"], Request(name: "quick-apps.list", json: true)),
+    (
+      ["quick-apps", "toggle", "1Password"],
+      Request(name: "quick-apps.toggle", arguments: ["1Password"])
+    ),
+    (
+      ["quick-apps", "toggle", "Visual Studio Code", "--json"],
+      Request(name: "quick-apps.toggle", arguments: ["Visual Studio Code"], json: true)
+    ),
   ]
 
   @Test(arguments: commands)
@@ -58,7 +68,7 @@ import Testing
     ["desktops", "new", "now"],
     ["spaces", "select", "1.5"], ["spaces", "move", "by"], ["spaces", "move", "by", "1", "2"],
     ["windows", "arrange"], ["windows", "arrange", "fill", "center"], ["config", "show", "now"],
-    ["config", "reset"],
+    ["config", "reset"], ["quick-apps", "toggle"], ["quick-apps", "show", "1Password"],
   ])
   func refusesWhatItDoesNotKnow(words: [String]) {
     #expect(throws: (any Error).self) { try AtelierCommand.parseAsRoot(words) }

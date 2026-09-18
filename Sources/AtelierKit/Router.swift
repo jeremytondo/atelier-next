@@ -41,6 +41,9 @@ extension Atelier {
     case .configReload:
       let result = try await config.reload()
       return json ? result.json : result.text
+    case .quickAppsList:
+      let list = await quickApps.list()
+      return json ? list.json : list.text
     default:
       let outcome = try await perform(command)
       return json
@@ -63,6 +66,7 @@ struct CommandRunner: Sendable {
   let desktops: Desktops
   let config: Config
   let notices: Notices
+  let quickApps: QuickApps
 
   func perform(_ command: Command) async throws(AtelierError) -> Outcome {
     switch command {
@@ -78,8 +82,7 @@ struct CommandRunner: Sendable {
     case .desktopsNew: return try await desktops.new()
     case .desktopsSelect(let number): return try await desktops.select(number: number)
     case .desktopsDelete: return try await desktops.delete()
-    case .quickAppsToggle:
-      throw .unsupported("Quick Apps are not part of this build of Atelier yet.")
+    case .quickAppsToggle(let app): return try await quickApps.toggle(app)
     case .configOpen: return try await config.open()
     case .configReload:
       // From a key there is no reply to read, so problems become a notice.
@@ -165,4 +168,36 @@ extension WindowList {
       }
     return encoded(payload)
   }
+}
+
+extension [QuickAppInfo] {
+  var text: String {
+    guard !isEmpty else { return "No Quick Apps are configured. Add one under [[quick-apps]]." }
+    return map { info in
+      var parts = [(info.isShown ? "* " : "  ") + info.app]
+      if let name = info.name, name != info.app { parts.append("(\(name))") }
+      if let leader = info.leader { parts.append("leader \(leader)") }
+      if let shortcut = info.shortcut { parts.append("shortcut \(shortcut)") }
+      if let problem = info.problem { parts.append(problem) }
+      return parts.joined(separator: "  ")
+    }.joined(separator: "\n")
+  }
+
+  var json: String {
+    encoded(
+      map {
+        QuickAppItem(
+          app: $0.app, name: $0.name, leader: $0.leader, shortcut: $0.shortcut, shown: $0.isShown,
+          problem: $0.problem)
+      })
+  }
+}
+
+private struct QuickAppItem: Encodable {
+  var app: String
+  var name: String?
+  var leader: String?
+  var shortcut: String?
+  var shown: Bool
+  var problem: String?
 }

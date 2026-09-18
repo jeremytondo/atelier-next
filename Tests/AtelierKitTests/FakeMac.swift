@@ -57,6 +57,24 @@ final class FakeMac: Mac, Sendable {
     var refusesListening = false
     /// Every start and stop of a key listener, in order.
     var listening: [String] = []
+    /// Apps on disk, by the references that find them.
+    var installed: [AppReference] = []
+    /// Running apps by process number: hidden or not.
+    var apps: [Int32: (app: AppReference, hidden: Bool)] = [:]
+    var launches: [String] = []
+    /// Runs when an app launches, given its process number, to give it windows.
+    var onLaunch: (@Sendable (inout State, Int32) -> Void)?
+    var nextPid: Int32 = 50
+    var refusesLaunch = false
+    var refusesHiding = false
+    var ignoresHiding = false
+    var frames: [UInt32: CGRect] = [:]
+    /// The smallest size an app allows its window.
+    var minimumSizes: [UInt32: CGSize] = [:]
+    var usableFrames: [String: CGRect] = [
+      "only": CGRect(x: 0, y: 25, width: 1440, height: 875),
+      "first": CGRect(x: 0, y: 25, width: 1440, height: 875),
+    ]
   }
 
   /// A key listener the test drives.
@@ -260,6 +278,22 @@ final class FakeMac: Mac, Sendable {
     }
   }
 
+  func moveWindow(_ id: UInt32, toSpace space: UInt64, expecting: [DisplaySpaces]) async
+    -> SpaceDispatch
+  {
+    state.withLock { state in
+      guard state.displays == expecting else { return .changed }
+      state.requests.append("move window \(id) to \(space)")
+      guard state.moveResult == .sent, !state.ignoresSpaceChanges else { return state.moveResult }
+      state.windows = state.windows.map { $0.id == id ? $0.with(spaces: [space]) : $0 }
+      return .sent
+    }
+  }
+
+  func spaces(ofWindow id: UInt32) -> [UInt64] {
+    state.withLock { $0.windows.first { $0.id == id }?.spaces ?? [] }
+  }
+
   func raise(window: UInt32, of app: Int32) async -> RaiseResult {
     state.withLock { state in
       state.requests.append("raise \(window)")
@@ -321,6 +355,7 @@ extension Patience {
     patience.transition = .milliseconds(30)
     patience.confirmation = .milliseconds(30)
     patience.focus = .milliseconds(30)
+    patience.launch = .milliseconds(60)
     return patience
   }
 }
@@ -372,6 +407,84 @@ extension FakeMac {
   func open(_ file: URL) -> Bool {
     state.withLock { $0.openedFiles.append(file) }
     return true
+  }
+
+  func findApp(_ reference: String) -> AppReference? {
+    state.withLock { state in
+      state.installed.first {
+        $0.name == reference || $0.bundleID == reference || $0.url.path == reference
+      }
+    }
+  }
+
+  func runningApp(_ app: AppReference) -> Int32? {
+    state.withLock { $0.apps.first { $0.value.app == app }?.key }
+  }
+
+  func launch(_ app: AppReference) async -> Int32? {
+    state.withLock { state in
+      state.launches.append(app.name)
+      guard !state.refusesLaunch else { return nil }
+      if let pid = state.apps.first(where: { $0.value.app == app })?.key {
+        state.onLaunch?(&state, pid)
+        return pid
+      }
+      let pid = state.nextPid
+      state.nextPid += 1
+      state.apps[pid] = (app, false)
+      state.onLaunch?(&state, pid)
+      return pid
+    }
+  }
+
+  func isAppHidden(_ pid: Int32) -> Bool? {
+    state.withLock { $0.apps[pid]?.hidden }
+  }
+
+  func setAppHidden(_ pid: Int32, _ hidden: Bool) -> Bool {
+    state.withLock { state in
+      guard state.apps[pid] != nil, !state.refusesHiding else { return false }
+      state.requests.append(hidden ? "hide \(pid)" : "unhide \(pid)")
+      guard !state.ignoresHiding else { return true }
+      state.apps[pid]?.hidden = hidden
+      state.windows = state.windows.map { $0.app == pid ? $0.with(isOnScreen: !hidden) : $0 }
+      if hidden,
+        state.focusedApp == pid
+          || state.windows.contains(where: { $0.id == state.focusedWindow && $0.app == pid })
+      {
+        state.focusedWindow = nil
+        state.focusedApp = nil
+      }
+      return true
+    }
+  }
+
+  func frame(ofWindow id: UInt32, in app: Int32) async -> CGRect? {
+    state.withLock { state in
+      guard !state.frozenApps.contains(app),
+        state.windows.contains(where: { $0.id == id && $0.app == app })
+      else { return nil }
+      return state.frames[id]
+    }
+  }
+
+  func setFrame(_ frame: CGRect, ofWindow id: UInt32, in app: Int32) async -> Bool {
+    state.withLock { state in
+      guard state.frames[id] != nil, !state.frozenApps.contains(app),
+        state.windows.contains(where: { $0.id == id && $0.app == app })
+      else { return false }
+      let minimum = state.minimumSizes[id] ?? .zero
+      state.frames[id] = CGRect(
+        origin: frame.origin,
+        size: CGSize(
+          width: max(frame.width, minimum.width), height: max(frame.height, minimum.height)))
+      state.requests.append("frame \(id)")
+      return true
+    }
+  }
+
+  func usableFrame(ofDisplay id: String) async -> CGRect? {
+    state.withLock { $0.usableFrames[id] }
   }
 
   func listenToKeys(_ decide: @escaping @Sendable (KeyEvent) -> KeyDecision) async
