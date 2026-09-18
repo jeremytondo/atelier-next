@@ -26,6 +26,8 @@ package enum Command: Hashable, Sendable {
   case configCheck
   case configOpen
   case configReload
+  case doctor
+  case quit
 
   /// Nil for a name or arguments Atelier does not know.
   package init?(name: String, arguments: [String]) {
@@ -70,15 +72,22 @@ package enum Command: Hashable, Sendable {
     case ("config.check", nil, _): self = .configCheck
     case ("config.open", nil, _): self = .configOpen
     case ("config.reload", nil, _): self = .configReload
+    case ("doctor", nil, _): self = .doctor
+    case ("quit", nil, _): self = .quit
     default: return nil
     }
   }
 
-  /// From the words as the terminal takes them, such as `windows select 1`.
+  /// From the words as the terminal takes them, such as `windows select 1`,
+  /// or `quit`, which stands alone.
   package init?(words: String) {
     let parts = words.split(whereSeparator: \.isWhitespace).map(String.init)
-    guard parts.count >= 2 else { return nil }
-    self.init(name: "\(parts[0]).\(parts[1])", arguments: Array(parts.dropFirst(2)))
+    guard let first = parts.first else { return nil }
+    if parts.count == 1 {
+      self.init(name: first, arguments: [])
+    } else {
+      self.init(name: "\(first).\(parts[1])", arguments: Array(parts.dropFirst(2)))
+    }
   }
 
   package var name: String {
@@ -102,13 +111,15 @@ package enum Command: Hashable, Sendable {
     case .configCheck: "config.check"
     case .configOpen: "config.open"
     case .configReload: "config.reload"
+    case .doctor: "doctor"
+    case .quit: "quit"
     }
   }
 
   package var arguments: [String] {
     switch self {
     case .windowsList, .spacesList, .spacesNext, .spacesPrevious, .desktopsNew, .desktopsDelete,
-      .quickAppsList, .configShow, .configCheck, .configOpen, .configReload:
+      .quickAppsList, .configShow, .configCheck, .configOpen, .configReload, .doctor, .quit:
       []
     case .windowsSelect(let slot): ["\(slot)"]
     case .windowsCycle(.next): ["next"]
@@ -132,7 +143,7 @@ package enum Command: Hashable, Sendable {
   /// A query answers; it has nothing to do for a key.
   package var isQuery: Bool {
     switch self {
-    case .windowsList, .spacesList, .quickAppsList, .configShow, .configCheck: true
+    case .windowsList, .spacesList, .quickAppsList, .configShow, .configCheck, .doctor: true
     default: false
     }
   }
@@ -168,6 +179,8 @@ package enum Command: Hashable, Sendable {
     case .configCheck: "Check Configuration"
     case .configOpen: "Open Configuration"
     case .configReload: "Reload Configuration"
+    case .doctor: "Doctor"
+    case .quit: "Quit Atelier"
     }
   }
 }

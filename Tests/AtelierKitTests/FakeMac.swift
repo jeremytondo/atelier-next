@@ -1,3 +1,4 @@
+import Client
 import Foundation
 import MacOS
 import Synchronization
@@ -192,6 +193,12 @@ final class FakeMac: Mac, Sendable {
   func requestAccessibility() {}
 
   var isInstalled: Bool { state.withLock(\.isInstalled) }
+
+  var appPath: String { "/Applications/Atelier.app" }
+
+  func terminate() {
+    state.withLock { $0.requests.append("terminate") }
+  }
 
   var loginItemStatus: LoginItemStatus { state.withLock(\.loginItemStatus) }
 
@@ -540,4 +547,19 @@ func eventually(_ condition: @Sendable () async -> Bool) async -> Bool {
 
 func chord(_ text: String) -> Chord {
   try! KeyGrammar.chord(text, bare: true)
+}
+
+extension Request {
+  /// `send` from a thread of its own. `send` blocks until the reply comes,
+  /// and the server words its reply on Swift's shared threads, so a test that
+  /// blocked one of those for each request could leave none to answer: on a
+  /// Mac with three cores, three such tests at once wait on each other until
+  /// the socket gives up.
+  func sent(to path: String) async throws -> Reply {
+    try await withCheckedThrowingContinuation { continuation in
+      Thread.detachNewThread {
+        continuation.resume(with: Result { try send(to: path) })
+      }
+    }
+  }
 }

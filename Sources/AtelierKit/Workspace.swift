@@ -46,7 +46,12 @@ actor Workspace {
   var quickApp = QuickAppState()
   private var file: WindowListFile?
   private var hasRestored = false
-  private var isBusy = false
+  /// A command is running, and no other may.
+  private var isRunning = false
+  /// Atelier is leaving, and no command may start.
+  private(set) var isClosed = false
+  /// Whoever waits for the running command to finish.
+  private var idleWaiters: [CheckedContinuation<Void, Never>] = []
   private var censusesStarted = 0
   private var censusApplied = 0
   private var lastSeen: (displays: [DisplaySpaces], windows: [UInt64: [Window]])?
@@ -63,7 +68,7 @@ actor Workspace {
   func watch() async {
     for await _ in mac.changes() {
       await followQuickApps()
-      if !isBusy { _ = try? await observe() }
+      if !isRunning { _ = try? await observe() }
     }
   }
 
@@ -180,15 +185,47 @@ actor Workspace {
     _ command: (Observation) async throws(AtelierError) -> Outcome
   ) async throws(AtelierError) -> Outcome {
     guard mac.hasAccessibility else { throw .accessibilityRequired }
-    guard !isBusy else { throw .busy }
-    isBusy = true
+    guard !isRunning, !isClosed else { throw .busy }
+    isRunning = true
     defer {
-      isBusy = false
+      finish()
       // Whatever happened should show in the lists and reach listeners, but
       // the caller need not wait for it: with an app frozen a census is slow.
       Task { _ = try? await observe() }
     }
     return try await command(try await observe())
+  }
+
+  /// Atelier is leaving, so no command may start from now on; one started
+  /// now would be cut short. Busy, changing nothing, while a command runs or
+  /// when Atelier is closed already.
+  func close() throws(AtelierError) {
+    guard !isRunning, !isClosed else { throw .busy }
+    isClosed = true
+  }
+
+  /// `close`, for a quit that cannot be refused, as from the menu or from
+  /// macOS. No command may start from this moment, so commands that keep
+  /// arriving cannot put the ending off; the one running, which is never cut
+  /// short, is waited for.
+  func closeWhenIdle() async {
+    isClosed = true
+    while isRunning {
+      await withCheckedContinuation { idleWaiters.append($0) }
+    }
+  }
+
+  /// Atelier is staying after all, so commands may run again.
+  func reopen() {
+    isClosed = false
+  }
+
+  /// The running command is done, which whoever waits to close is told.
+  private func finish() {
+    isRunning = false
+    let waiters = idleWaiters
+    idleWaiters = []
+    for waiter in waiters { waiter.resume() }
   }
 
   func moveWindow(_ window: WindowIdentity, on desktop: UInt64, _ move: WindowMove) -> Bool {

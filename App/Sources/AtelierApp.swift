@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private static let shared = AppDelegate()
   private let log = Logger(subsystem: "com.elevenideas.Atelier", category: "app")
+  private var atelier: Atelier?
   private var setup: Setup?
   private var menuBar: MenuBar?
   private var hud: HUD?
@@ -23,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     do {
       let atelier = try Atelier.live()
+      self.atelier = atelier
       Appearance.follow(atelier)
       let setup = Setup(atelier: atelier)
       self.setup = setup
@@ -42,5 +44,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       alert.runModal()
       NSApp.terminate(nil)
     }
+  }
+
+  /// Every road out comes through here: the menu's Quit, `atelier quit`,
+  /// macOS, and an update. A command in progress is let finish first.
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard let atelier else { return .terminateNow }
+    Task {
+      await atelier.prepareToQuit()
+      NSApp.reply(toApplicationShouldTerminate: true)
+    }
+    return .terminateLater
   }
 }

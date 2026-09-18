@@ -9,18 +9,18 @@ import Testing
   // Unix socket paths are short, so not the long per-user temporary folder.
   private let path = "/tmp/atelier-tests-\(UUID().uuidString.prefix(8))/atelier.sock"
 
-  @Test func carriesARequestToTheAppAndItsReplyBack() throws {
+  @Test func carriesARequestToTheAppAndItsReplyBack() async throws {
     try Server.start(path: path) { request in
       Reply(ok: request.json, output: "asked for \(request.name)")
     }
-    let reply = try Request(name: "windows.list", json: true).send(to: path)
+    let reply = try await Request(name: "windows.list", json: true).sent(to: path)
     #expect(reply == Reply(ok: true, output: "asked for windows.list"))
   }
 
   @Test func answersTheSameQueryAsTheInterface() async throws {
     let atelier = Atelier(FakeMac(windows: [window(1)]))
     try Server.start(path: path) { await atelier.reply(to: $0) }
-    let reply = try Request(name: "windows.list").send(to: path)
+    let reply = try await Request(name: "windows.list").sent(to: path)
     #expect(reply == Reply(ok: true, output: "  1  App 1 — Window 1"))
   }
 

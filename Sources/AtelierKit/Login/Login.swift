@@ -102,6 +102,12 @@ public struct LoginStatus: Equatable, Sendable {
     self.failure = failure
   }
 
+  /// True when something stands between Atelier and what was asked of macOS.
+  /// An item the user removed is their choice, and not a problem.
+  public var needsAttention: Bool {
+    kind == .requiresApproval || kind == .notFound || failure != nil
+  }
+
   public var summary: String {
     switch kind {
     case .enabled: "Atelier opens at login."
