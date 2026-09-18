@@ -1,0 +1,108 @@
+# Releases are started by hand, never by a push. `dev` replaces the one rolling
+# development build; `patch`, `minor`, and `major` cut a stable release that
+# keeps its download for good. Each run updates its own channel's cask in the
+# tap and leaves the other alone. Never cancel a run part-way through publishing.
+name: Release
+run-name: Release (${{ inputs.bump }}, ${{ github.ref_name }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: A development build, or the next stable patch, minor, or major version
+        type: choice
+        default: dev
+        options: [dev, patch, minor, major]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  # Both channels push to one tap, so one release at a time.
+  group: atelier-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    # The signing credentials live in the release environment, which only a
+    # run started by hand from a branch may use.
+    if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: release
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The next stable version is worked out from the version tags.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+        with:
+          version: 2026.6.14
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Plan the release
+        id: plan
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: scripts/release-plan.sh "$BUMP" | tee -a "$GITHUB_OUTPUT"
+      # Packaging builds the app and the command itself, in Release.
+      - name: Check what is about to be released
+        run: 'mise run lint ::: test'
+      - name: Build, sign, and notarize
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          BUILD: ${{ steps.plan.outputs.build }}
+          ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.ATELIER_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.ATELIER_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          ATELIER_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.ATELIER_APP_STORE_CONNECT_KEY_BASE64 }}
+          ATELIER_APP_STORE_CONNECT_KEY_ID: ${{ vars.ATELIER_APP_STORE_CONNECT_KEY_ID }}
+          ATELIER_APP_STORE_CONNECT_ISSUER_ID: ${{ vars.ATELIER_APP_STORE_CONNECT_ISSUER_ID }}
+        run: scripts/with-signing.sh scripts/package.sh "$VERSION" "$BUILD"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: atelier-release
+          path: |
+            dist/Atelier-*.zip
+            dist/release.json
+          if-no-files-found: error
+          # Only to hand the archive to the next job; the release keeps it.
+          retention-days: 1
+          compression-level: 0
+      - name: Keep what notarization said
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: atelier-notarization
+          path: dist/notarization.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    # Apart from the job that holds the signing credentials, so that the one
+    # allowed to write releases never sees them.
+    needs: package
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: atelier-release
+          path: dist
+      - name: Publish the download, then the cask
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATELIER_TAP_TOKEN: ${{ secrets.ATELIER_TAP_TOKEN }}
+          CHANNEL: ${{ needs.package.outputs.channel }}
+          TAG: ${{ needs.package.outputs.tag }}
+        run: scripts/publish.sh dist "$CHANNEL" "$TAG"

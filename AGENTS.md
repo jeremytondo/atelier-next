@@ -120,6 +120,9 @@ Use the XcodeBuildMCP CLI skill for native Apple-platform build, test, run,
 and debugging work.
 
 Releases are manual. Pushes run checks only; do not add automatic
-publication. Release tooling returns with the native app's first release.
+publication. `docs/releases.md` covers installing and releasing. Starting a
+release publishes to the tap that installed copies update from, so it is the
+user's decision each time; the `--dry-run` of `scripts/publish.sh` is how to
+look first.
 
 When delegating work, select a cost-appropriate model and review its output.
