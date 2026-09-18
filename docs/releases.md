@@ -48,6 +48,10 @@ A release is started by hand and never by a push:
 mise run release dev            # the development build of main
 mise run release minor          # the next stable minor version; also patch, major
 mise run release dev my-branch  # a branch other than main
+
+# The established names remain available too:
+mise run release:dev
+mise run release:minor
 ```
 
 It releases the branch as it is on GitHub; nothing local is pushed. `.github/workflows/release.yml` and the scripts it runs, each with its own header, are the reference for how. What they promise:
@@ -58,7 +62,7 @@ It releases the branch as it is on GitHub; nothing local is pushed. `.github/wor
 
 `scripts/publish.sh … --dry-run` changes nothing and says what a real run would do; it cannot tell whether the tap's token works. `mise run package` makes the signed app locally without notarizing, for looking at, and the publisher refuses it.
 
-**Before the first native development release, delete the `dev` release left by the Hammerspoon version.** The publisher refuses a `dev` release holding files it did not name, and that one holds `Atelier-macos-arm64.zip`, `checksums.txt`, and `manifest.json`. The Hammerspoon version's other releases are what its casks download from; remove them once nothing installed needs them.
+The first native development release transitions the rolling `dev` release left by the Hammerspoon version. Its three known assets stay in place until the native download is verified and the tap points at it, then the publisher removes them. An unrecognized asset still stops publication rather than being deleted. The Hammerspoon version's other releases are what its casks download from; remove them once nothing installed needs them.
 
 The casks are what require macOS 27. The app's own deployment target stays 26.0, the newest that the Xcode on GitHub's `macos-26` runners can build for.
 

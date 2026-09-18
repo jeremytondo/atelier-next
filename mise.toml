@@ -23,9 +23,14 @@ run = "open .build/xcode/Build/Products/Debug/Atelier.app"
 
 [tasks.test]
 description = "Run the Swift tests"
+depends = ["test:release"]
 # Raw, since the summary alone gives only how many tests failed when what
 # failed was an expectation: not which, nor what it found.
 run = "xcodebuildmcp swift-package test --package-path . --configuration debug --output raw"
+
+[tasks."test:release"]
+description = "Test release behavior with disposable history and fake services"
+run = "scripts/release-test.sh"
 
 [tasks.lint]
 description = "Lint scripts and workflows; check Swift formatting and lint"
@@ -55,4 +60,20 @@ arg "<bump>" help="A development build, or the next stable version" {
 }
 arg "[branch]" help="The branch to release" default="main"
 '''
-run = 'gh workflow run release.yml --repo jeremytondo/atelier-next --ref "$usage_branch" -f bump="$usage_bump"'
+run = 'scripts/release-dispatch.sh "$usage_bump" "$usage_branch"'
+
+[tasks."release:dev"]
+description = "Start a development release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh dev"
+
+[tasks."release:patch"]
+description = "Start a stable patch release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh patch"
+
+[tasks."release:minor"]
+description = "Start a stable minor release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh minor"
+
+[tasks."release:major"]
+description = "Start a stable major release: [BRANCH] (default: main)"
+run = "scripts/release-dispatch.sh major"

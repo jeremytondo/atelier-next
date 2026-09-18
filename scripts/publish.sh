@@ -61,26 +61,33 @@ fi
 
 # Everything that could refuse is asked before anything is created.
 $dry || [[ -n ${ATELIER_TAP_TOKEN:-} ]] || die 'ATELIER_TAP_TOKEN is not set'
-gh auth status >/dev/null 2>&1 || die 'gh is not signed in'
 exists=false
-gh release view "$tag" --repo "$repository" >/dev/null 2>&1 && exists=true
+assets=''
+if assets=$(gh release view "$tag" --repo "$repository" --json assets --jq '.assets[].name' 2>/dev/null); then
+  exists=true
+else
+  # `release view` uses the same failure for a missing tag and an unavailable
+  # API. Confirm the repository is readable before treating it as absent.
+  gh api "repos/$repository" --silent >/dev/null || die "could not read $repository from GitHub"
+fi
 [[ $channel == stable ]] && $exists && die "the release $tag already exists; a stable release is never overwritten"
 tag_exists=false
 gh api "repos/$repository/git/ref/tags/$tag" >/dev/null 2>&1 && tag_exists=true
 
-# The rolling release is this script's alone. One holding anything it did not
-# name is somebody else's, such as the dev build of the Hammerspoon version, and
-# is neither added to nor cleared out.
+# Native builds follow one name. The three other names are the complete asset
+# set of the Hammerspoon-era `dev` release that the first native publication
+# replaces. They stay available until the tap points at the native archive,
+# then are retired with any earlier native archive. Anything else is still
+# somebody else's and is neither added to nor cleared out.
 ours='^Atelier-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.zip$'
-assets=''
-if [[ $channel == dev ]] && $exists; then
-  assets=$(gh release view "$tag" --repo "$repository" --json assets --jq '.assets[].name')
-fi
-others=$(grep -vE "$ours" <<<"$assets" | grep . || true)
-# The builds this script made earlier, which the new one replaces.
-earlier=$(grep -E "$ours" <<<"$assets" | grep -vxF "$asset" || true)
+legacy='^(Atelier-macos-arm64\.zip|checksums\.txt|manifest\.json)$'
+# Stable releases were refused above, so only dev reaches this with assets.
+[[ $channel == dev ]] || assets=''
+others=$(grep -vE "$ours|$legacy" <<<"$assets" | grep . || true)
+# Files the new native build replaces, removed only after the tap moves.
+retired=$(grep -E "$ours|$legacy" <<<"$assets" | grep -vxF "$asset" || true)
 if [[ -n $others ]]; then
-  message="the release $tag holds files this script did not make: $(paste -sd, - <<<"$others"). Delete that release once, then publish again."
+  message="the release $tag holds files this script does not recognize: $(paste -sd, - <<<"$others"). Remove or rename them before publishing."
   $dry || die "$message"
   echo "WARNING: $message A real run refuses."
   refused=true
@@ -96,8 +103,7 @@ commit=$(git -C "$root" rev-parse HEAD)
 if $dry; then
   $refused && echo 'A real run stops at the warnings above. With those put right, it would do this:'
   echo "Would publish $asset ($version, build $build) as $channel under $tag, from $commit."
-  # A release that is somebody else's will have been deleted by then.
-  if $exists && [[ -z $others ]]; then
+  if $exists; then
     echo "Would add it to the existing release $tag."
   else
     echo "Would create the release $tag."
@@ -106,7 +112,7 @@ if $dry; then
   echo "Would write Casks/$token.rb in $tap and no other file:"
   "$root/scripts/cask.sh" "$channel" "$version" "$build" "$sha256" | sed 's/^/    /'
   if [[ $channel == dev ]]; then
-    echo "Would then remove the builds it made earlier from $tag: ${earlier:-none}"
+    echo "Would then remove the files replaced in $tag: ${retired:-none}"
   fi
   exit 0
 fi
@@ -206,13 +212,15 @@ fi
 tap_moved=true
 
 if [[ $channel == dev ]]; then
-  # The tap points at the new build now, so the earlier ones can go, and the
-  # tag can say which commit the build is of.
+  # The tap points at the new build now, so earlier native archives and the
+  # recognized Hammerspoon-era assets can go, and the rolling release can be
+  # normalized to the native build.
   while read -r old; do
     [[ -z $old ]] || gh release delete-asset "$tag" "$old" --repo "$repository" --yes
-  done <<<"$earlier"
+  done <<<"$retired"
   gh api --method PATCH "repos/$repository/git/refs/tags/$tag" -f sha="$commit" -F force=true >/dev/null
   gh release edit "$tag" --repo "$repository" \
+    --title 'Atelier development build' --prerelease --latest=false \
     --notes "Atelier $version, build $build. This release always holds the newest development build."
 fi
 echo "Published $token $version,$build"
