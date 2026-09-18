@@ -2,9 +2,10 @@
 import PackageDescription
 
 // Each layer knows only the one below it: `UI`, then `AtelierKit`, then
-// `MacOS`. `Client` is what the `atelier` command and the app's server agree
-// on, so the command never links the app's behavior. `App/` holds the bundle
-// that links `UI` and `AtelierKit`.
+// `MacOS`. `DesktopBridge` is the one piece of Objective-C, which only `MacOS`
+// uses. `Client` is what the `atelier` command and the app's server agree on,
+// so the command never links the app's behavior. `App/` holds the bundle that
+// links `UI` and `AtelierKit`.
 let package = Package(
   name: "Atelier",
   platforms: [.macOS(.v26)],
@@ -19,7 +20,8 @@ let package = Package(
   targets: [
     .target(name: "UI", dependencies: ["AtelierKit"]),
     .target(name: "AtelierKit", dependencies: ["MacOS", "Client"]),
-    .target(name: "MacOS"),
+    .target(name: "MacOS", dependencies: ["DesktopBridge"]),
+    .target(name: "DesktopBridge"),
     .target(name: "Client"),
     .executableTarget(
       name: "CLI",
@@ -29,6 +31,7 @@ let package = Package(
       ]),
     .testTarget(name: "AtelierKitTests", dependencies: ["AtelierKit"]),
     .testTarget(name: "MacOSTests", dependencies: ["MacOS"]),
+    .testTarget(name: "CLITests", dependencies: ["CLI"]),
   ],
   swiftLanguageModes: [.v6]
 )

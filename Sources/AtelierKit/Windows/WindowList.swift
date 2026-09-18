@@ -18,17 +18,11 @@ public struct Window: Equatable, Identifiable, Sendable {
 }
 
 public enum WindowList: Equatable, Sendable {
-  /// The focused window, then other visible windows front to back, then
-  /// minimized and hidden ones. The order is fresh each time, not stable.
+  /// In slot order: the first window is number one. See `WindowLists` for
+  /// how the order comes about and what changes it.
   case desktop([Window])
   /// Keyboard input is going to a full-screen or Split View Space.
   case notDesktop
-}
-
-public enum WindowListError: Error, Equatable, Sendable {
-  case accessibilityRequired
-  /// macOS would not describe its windows or Spaces.
-  case unavailable
 }
 
 /// Where keyboard input was going at one moment. Atelier's own interface takes
@@ -37,46 +31,112 @@ public struct FocusContext: Sendable {
   let focus: Focus
 }
 
-/// The `windows` subject. This first query exists to prove the layers; the
-/// finished window lists arrive with Desktop and window operations.
+public enum CycleDirection: Sendable {
+  case next, previous
+}
+
+/// The `windows` subject: the current Desktop's numbered windows. The current
+/// Desktop is the one receiving keyboard input.
 public struct Windows: Sendable {
-  let mac: any Mac
+  let workspace: Workspace
 
   public func context() async -> FocusContext {
-    FocusContext(focus: await mac.focus())
+    FocusContext(focus: await workspace.mac.focus())
   }
 
-  /// `windows.list`: the ordinary windows of the current Desktop, which is the
-  /// Desktop receiving keyboard input.
-  public func list(in context: FocusContext? = nil) async throws(WindowListError) -> WindowList {
-    guard mac.hasAccessibility else { throw .accessibilityRequired }
-    async let snapshotNow = mac.snapshot()
-    let focus = if let context { context.focus } else { await mac.focus() }
-    guard let snapshot = await snapshotNow else { throw .unavailable }
-
-    // The focused window says which Space has the keyboard, which matters
-    // when several displays each show one. The active Space answers when no
-    // window has focus or the focused window is on every Space.
-    let shown = Set(snapshot.displays.map(\.currentSpace))
-    let focusedSpaces = shown.intersection(focus.windowSpaces)
-    let current = focusedSpaces.count == 1 ? focusedSpaces.first! : focus.activeSpace
-
-    guard let space = snapshot.displays.flatMap(\.spaces).first(where: { $0.id == current })
-    else { throw .unavailable }
-    guard space.isDesktop else { return .notDesktop }
-
-    let windows = snapshot.windows
-      .filter { $0.isOrdinary && $0.spaces.contains(current) }
-      .map {
-        Window(
-          id: $0.id, app: $0.app, title: $0.title, isFocused: $0.id == focus.window,
-          isVisible: $0.isOnScreen)
-      }
-    // The sort is stable, so front-to-back order survives within each rank.
-    return .desktop(windows.sorted { rank($0) < rank($1) })
+  /// `windows.list`
+  public func list(in context: FocusContext? = nil) async throws(AtelierError) -> WindowList {
+    try await workspace.windowList(focus: context?.focus)
   }
 
-  private func rank(_ window: Window) -> Int {
-    window.isFocused ? 0 : window.isVisible ? 1 : 2
+  /// `windows.select`: shows the window in a one-based slot if it is
+  /// minimized or hidden, brings exactly that window forward, and confirms it
+  /// has the keyboard. Nothing to do for an empty slot or off a Desktop.
+  public func select(_ slot: Int) async throws(AtelierError) -> Outcome {
+    try await workspace.selectWindow(slot)
+  }
+
+  /// `windows.cycle`: the listed window after or before the focused one,
+  /// wrapping. With no listed window focused, next is the first and previous
+  /// the last.
+  public func cycle(_ direction: CycleDirection) async throws(AtelierError) -> Outcome {
+    try await workspace.cycleWindow(direction)
+  }
+
+  /// `windows.move`: gives the focused window another slot, held within the
+  /// list. Only the numbering changes: no window moves, and focus stays put.
+  public func move(_ move: WindowMove) async throws(AtelierError) -> Outcome {
+    try await workspace.moveFocusedWindow(move)
+  }
+
+  /// Yields after the windows of any Desktop, their order, or the focused
+  /// window changed.
+  public func changes() async -> AsyncStream<Void> {
+    await workspace.changes(to: .windows)
+  }
+}
+
+extension Workspace {
+  func selectWindow(_ slot: Int) async throws(AtelierError) -> Outcome {
+    try await run { observation async throws(AtelierError) in
+      guard slot >= 1, let list = lists.byDesktop[observation.space.id],
+        list.indices.contains(slot - 1)
+      else { return .noop }
+      try await focus(list[slot - 1], from: observation)
+      return .done
+    }
+  }
+
+  func cycleWindow(_ direction: CycleDirection) async throws(AtelierError) -> Outcome {
+    try await run { observation async throws(AtelierError) in
+      guard let list = lists.byDesktop[observation.space.id], !list.isEmpty else { return .noop }
+      let focused = observation.focusedWindow(in: list).flatMap(list.firstIndex)
+      let index =
+        switch direction {
+        case .next: focused.map { ($0 + 1) % list.count } ?? 0
+        case .previous: focused.map { ($0 + list.count - 1) % list.count } ?? list.count - 1
+        }
+      try await focus(list[index], from: observation)
+      return .done
+    }
+  }
+
+  func moveFocusedWindow(_ move: WindowMove) async throws(AtelierError) -> Outcome {
+    try await run { observation async throws(AtelierError) in
+      let desktop = observation.space.id
+      guard let window = observation.focusedWindow(in: lists.byDesktop[desktop] ?? []),
+        moveWindow(window, on: desktop, move)
+      else { return .noop }
+      return .done
+    }
+  }
+
+  func windowList(focus: Focus?) async throws(AtelierError) -> WindowList {
+    let observation = try await observe(focus: focus)
+    guard observation.space.isDesktop else { return .notDesktop }
+    return .desktop(
+      Self.windows(
+        lists.byDesktop[observation.space.id] ?? [], in: observation.snapshot,
+        focused: observation.focus.window))
+  }
+
+  /// A window counts as focused when it has the keyboard or, once it was
+  /// asked forward, when a dialog or sheet of its app keeps the keyboard:
+  /// that is the app's say, and it is respected.
+  func focus(_ window: WindowIdentity, from observation: Observation) async throws(AtelierError) {
+    guard observation.focusedWindow(in: [window]) == nil else { return }
+    let name =
+      observation.snapshot.windows.first { WindowIdentity($0) == window }?.appName ?? "the app"
+    switch await mac.raise(window: window.id, of: window.app) {
+    case .asked: break
+    case .closed: throw .failed("The selected window closed.")
+    case .unanswered: throw .failed("\(name) is not responding.")
+    }
+    let hasFocus = await wait(patience.focus) {
+      let focus = await mac.focus()
+      return focus.app == window.app
+        && (focus.window == window.id || focus.window != nil && !focus.windowIsOrdinary)
+    }
+    guard hasFocus else { throw .failed("Could not bring the window in \(name) forward.") }
   }
 }

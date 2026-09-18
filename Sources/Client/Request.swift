@@ -6,11 +6,14 @@ import Foundation
 public struct Request: Codable, Equatable, Sendable {
   /// A grouped AtelierKit name such as `windows.list`.
   public var name: String
+  /// What the name needs to be complete, such as the slot for `windows.select`.
+  public var arguments: [String]
   /// Asks for JSON in place of text meant for a person.
   public var json: Bool
 
-  public init(name: String, json: Bool = false) {
+  public init(name: String, arguments: [String] = [], json: Bool = false) {
     self.name = name
+    self.arguments = arguments
     self.json = json
   }
 }
