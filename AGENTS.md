@@ -36,9 +36,12 @@ macOS stay inside it. Requests to other apps run in the background with a short
 time limit, so a frozen app holds up nothing else. The key-listening used by
 the leader runs only while the leader is open and does almost no work itself.
 Each piece of `UI` stands alone: pieces share only `Design` and get their
-information from `AtelierKit`'s queries and events, never from a timer. Keys
-are defined only in the config file, and a reload applies the whole file or
-none of it. Preserve user-owned configuration across updates.
+information from `AtelierKit`'s queries and events, never from a timer. The
+core defaults are built in; `~/.config/atelier/config-next.toml` overrides them
+and is read only at startup and on an explicit reload. A setting with a
+problem is left out and reported, a file that cannot be parsed is refused
+whole, and either way the bindings in effect are replaced together, never
+mixed. Preserve user-owned configuration across updates.
 
 Long-term maintainability is a core priority. Prefer shared, plainly named
 logic over duplication, and change an existing design when that produces a

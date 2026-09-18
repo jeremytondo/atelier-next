@@ -10,7 +10,7 @@ struct AtelierCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "atelier",
     abstract: "Talk to the running Atelier app.",
-    subcommands: [Windows.self, Spaces.self, Desktops.self])
+    subcommands: [Windows.self, Spaces.self, Desktops.self, Config.self])
 }
 
 /// A subcommand that stands for one request.
@@ -33,7 +33,7 @@ extension Asking {
 struct Windows: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "The current Desktop's numbered windows.",
-    subcommands: [List.self, Select.self, Cycle.self, Move.self])
+    subcommands: [List.self, Select.self, Cycle.self, Move.self, Arrange.self])
 
   struct List: Asking {
     static let configuration = CommandConfiguration(
@@ -63,6 +63,22 @@ struct Windows: ParsableCommand {
     var request: Request {
       Request(name: "windows.cycle", arguments: [direction.rawValue], json: json)
     }
+  }
+
+  struct Arrange: Asking {
+    static let configuration = CommandConfiguration(
+      abstract: "Arrange the focused window with one of macOS's own Window menu actions.",
+      discussion: """
+        macOS chooses the windows and the layout, as choosing the item in the Window menu \
+        would. The arrangements are fill, center, left, right, top, bottom, top-left, \
+        top-right, bottom-left, bottom-right, left-right, right-left, top-bottom, \
+        bottom-top, left-quarters, right-quarters, top-quarters, bottom-quarters, and quarters.
+        """)
+
+    @Argument(help: "The arrangement, such as fill or top-left.") var arrangement: String
+    @Flag(help: "Print JSON.") var json = false
+
+    var request: Request { Request(name: "windows.arrange", arguments: [arrangement], json: json) }
   }
 
   struct Move: ParsableCommand {
@@ -149,15 +165,35 @@ struct Spaces: ParsableCommand {
 
   struct Move: Asking {
     static let configuration = CommandConfiguration(
-      abstract: "Move a Space to another position, as dragging it in Mission Control would.")
+      abstract: "Move a Space: one by position, or the current one by some positions.",
+      usage: """
+        atelier spaces move <from> <to> [--json]
+        atelier spaces move by <offset> [--json]
+        """,
+      discussion: """
+        With two positions, the Space at the first moves to the second, as dragging it \
+        in Mission Control would. With `by`, the current Space moves that many positions \
+        later, or earlier when negative, and stays where it is at either end.
+        """)
 
-    @Argument(help: "The position of the Space to move, from `spaces list`.") var from: Int
-    @Argument(help: "The position to move it to.") var to: Int
+    // Taken as words, so that a negative number is not read as an option.
+    @Argument(
+      parsing: .allUnrecognized,
+      help: ArgumentHelp("Two positions, or `by` and an offset such as 1 or -1.", valueName: "move")
+    )
+    var words: [String] = []
     @Flag(help: "Print JSON.") var json = false
 
-    var request: Request {
-      Request(name: "spaces.move", arguments: ["\(from)", "\(to)"], json: json)
+    func validate() throws {
+      let byOffset = words.count == 2 && words[0] == "by" && Int(words[1]) != nil
+      let positions = words.count == 2 && Int(words[0]) != nil && Int(words[1]) != nil
+      guard byOffset || positions else {
+        throw ValidationError(
+          "Give two positions, such as 1 3, or `by` and an offset, such as by -1.")
+      }
     }
+
+    var request: Request { Request(name: "spaces.move", arguments: words, json: json) }
   }
 }
 
@@ -191,6 +227,48 @@ struct Desktops: ParsableCommand {
     @Flag(help: "Print JSON.") var json = false
 
     var request: Request { Request(name: "desktops.delete", json: json) }
+  }
+}
+
+struct Config: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    abstract: "The configuration file, ~/.config/atelier/config-next.toml, and what is in effect.",
+    subcommands: [Show.self, Check.self, Open.self, Reload.self])
+
+  struct Show: Asking {
+    static let configuration = CommandConfiguration(
+      abstract: "Print the configuration in effect: keys, leader menu, Quick Apps, and problems.")
+
+    @Flag(help: "Print JSON.") var json = false
+
+    var request: Request { Request(name: "config.show", json: json) }
+  }
+
+  struct Check: Asking {
+    static let configuration = CommandConfiguration(
+      abstract: "Read the file and report its problems without applying it.")
+
+    @Flag(help: "Print JSON.") var json = false
+
+    var request: Request { Request(name: "config.check", json: json) }
+  }
+
+  struct Open: Asking {
+    static let configuration = CommandConfiguration(
+      abstract: "Open the file in its app, writing a commented starting point if there is none.")
+
+    @Flag(help: "Print JSON.") var json = false
+
+    var request: Request { Request(name: "config.open", json: json) }
+  }
+
+  struct Reload: Asking {
+    static let configuration = CommandConfiguration(
+      abstract: "Read the file and put it into effect. Atelier never reloads on its own.")
+
+    @Flag(help: "Print JSON.") var json = false
+
+    var request: Request { Request(name: "config.reload", json: json) }
   }
 }
 

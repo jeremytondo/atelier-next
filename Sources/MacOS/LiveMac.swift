@@ -7,11 +7,14 @@ package struct LiveMac: Mac {
   private let skyLight: SkyLight
   private let census: WindowCensus
   private let shortcuts: SpaceShortcuts
+  private let windowMenu: WindowMenu
+  private let hotKeys = HotKeys()
 
   package init() throws {
     skyLight = try SkyLight()
     census = WindowCensus(skyLight: skyLight)
     shortcuts = SpaceShortcuts(skyLight: skyLight)
+    windowMenu = WindowMenu(skyLight: skyLight)
     // The system-wide element sets the limit for every request this process
     // makes; a limit set on an app's element would not reach its windows.
     AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), WindowCensus.requestTimeLimit)
@@ -78,6 +81,40 @@ package struct LiveMac: Mac {
 
   package func raise(window: UInt32, of app: Int32) async -> RaiseResult {
     await census.raise(window: window, of: app)
+  }
+
+  package func arrangements(of app: Int32) async -> [Arrangement: ArrangementItem]? {
+    await Background.run { windowMenu.read(app: app) }
+  }
+
+  package func arrange(_ arrangement: Arrangement, in app: Int32, window: UInt32) async
+    -> ArrangeResult
+  {
+    await Background.run { windowMenu.perform(arrangement, app: app, window: window) }
+  }
+
+  package func registerHotKeys(_ chords: [Chord]) async -> [Chord: String] {
+    await hotKeys.replace(chords)
+  }
+
+  package func hotKeyPresses() -> AsyncStream<Chord> {
+    hotKeys.presses()
+  }
+
+  /// Previous, next, and Desktops 1 to 16, from macOS's table of its own shortcuts.
+  package func spaceSwitchingChords() async -> [Chord] {
+    await MainActor.run {
+      let codes = KeyCodes()
+      return ([79, 81] + Array(118...133)).compactMap { id -> Chord? in
+        guard let (key, flags) = skyLight.symbolicHotKey(UInt32(id)), let name = codes.name(of: key)
+        else { return nil }
+        return Chord(Chord.Modifiers(CGEventFlags(rawValue: UInt64(flags))), name)
+      }
+    }
+  }
+
+  package func open(_ file: URL) -> Bool {
+    NSWorkspace.shared.open(file)
   }
 
   private enum BridgeResult {

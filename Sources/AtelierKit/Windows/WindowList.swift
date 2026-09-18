@@ -31,7 +31,7 @@ public struct FocusContext: Sendable {
   let focus: Focus
 }
 
-public enum CycleDirection: Sendable {
+public enum CycleDirection: Hashable, Sendable {
   case next, previous
 }
 

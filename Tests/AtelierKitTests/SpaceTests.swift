@@ -190,3 +190,45 @@ import Testing
     #expect(mac.requests.isEmpty)
   }
 }
+
+@Suite struct RelativeSpaceMoveTests {
+  @Test func movesTheCurrentSpaceAndKeepsItCurrent() async throws {
+    let mac = FakeMac.oneDisplay(notDesktops: [2], current: 1)
+    let atelier = Atelier(mac)
+    #expect(try await atelier.spaces.move(by: 1) == .changed)
+    #expect(mac.spaceOrder == [2, 1, 3])
+    #expect(mac.currentSpace == 1)
+    #expect(try await atelier.spaces.move(by: 5) == .changed)
+    #expect(mac.spaceOrder == [2, 3, 1])
+    #expect(try await atelier.spaces.move(by: -1) == .changed)
+    #expect(mac.spaceOrder == [2, 1, 3])
+    #expect(mac.requests == ["move 1 to 1", "move 1 to 2", "move 1 to 1"])
+  }
+
+  @Test func anEndIsNothingToDo() async throws {
+    let mac = FakeMac.oneDisplay(current: 1)
+    let atelier = Atelier(mac)
+    #expect(try await atelier.spaces.move(by: -1) == .unchanged)
+    #expect(try await atelier.spaces.move(by: 0) == .unchanged)
+    #expect(mac.requests.isEmpty)
+    mac.change { $0.show(3) }
+    #expect(try await atelier.spaces.move(by: 1) == .unchanged)
+    #expect(try await atelier.spaces.move(by: .max) == .unchanged)
+    #expect(try await atelier.spaces.move(by: .min) == .changed)
+    #expect(mac.spaceOrder == [3, 1, 2])
+  }
+
+  @Test func aFullScreenSpaceMovesToo() async throws {
+    let mac = FakeMac.oneDisplay(notDesktops: [2], current: 2)
+    #expect(try await Atelier(mac).spaces.move(by: 1) == .changed)
+    #expect(mac.spaceOrder == [1, 3, 2])
+  }
+
+  @Test func needsOneDisplay() async {
+    await #expect(
+      throws: AtelierError.unsupported("Atelier can reorder Spaces only with one display for now.")
+    ) {
+      try await Atelier(FakeMac()).spaces.move(by: 1)
+    }
+  }
+}
