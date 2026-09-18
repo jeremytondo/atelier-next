@@ -36,7 +36,7 @@ struct WindowLists: Equatable, Sendable {
   private(set) var byDesktop: [UInt64: [WindowIdentity]] = [:]
 
   mutating func reconcile(with snapshot: Snapshot, focused: UInt32?) {
-    let open = Self.openWindows(in: snapshot)
+    let open = Self.openWindows(in: snapshot, previously: byDesktop)
     let census = Dictionary(open.map { (WindowIdentity($0), $0) }) { first, _ in first }
     // Apps describe only windows on shown Spaces, so a window already listed
     // anywhere is taken as ordinary wherever it turns up next.
@@ -67,12 +67,20 @@ struct WindowLists: Equatable, Sendable {
     byDesktop = byDesktop.filter { desktops.contains($0.key) && !$0.value.isEmpty }
   }
 
-  /// WindowServer can keep a closed window listed. Its app leaving it out is
-  /// proof only where the app would have listed it: on a Space being shown.
-  private static func openWindows(in snapshot: Snapshot) -> [WindowFacts] {
+  /// WindowServer retains closed windows and inactive native tabs. Its app
+  /// leaving one out is proof only on a shown Space. When membership is empty,
+  /// use its last listed Desktop: inactive tabs lose their Space membership.
+  private static func openWindows(
+    in snapshot: Snapshot, previously lists: [UInt64: [WindowIdentity]]
+  ) -> [WindowFacts] {
     let shown = Set(snapshot.displays.map(\.currentSpace))
-    return snapshot.windows.filter {
-      !($0.report == .missing && !$0.isOnScreen && !shown.isDisjoint(with: $0.spaces))
+    let previouslyShown = Set(lists.filter { shown.contains($0.key) }.values.joined())
+    return snapshot.windows.filter { window in
+      guard window.report == .missing, !window.isOnScreen else { return true }
+      if window.spaces.isEmpty {
+        return !previouslyShown.contains(WindowIdentity(window))
+      }
+      return shown.isDisjoint(with: window.spaces)
     }
   }
 
@@ -83,7 +91,9 @@ struct WindowLists: Equatable, Sendable {
   mutating func restore(
     _ saved: [UInt64: [WindowIdentity]], with snapshot: Snapshot, focused: UInt32?
   ) {
-    let census = Dictionary(Self.openWindows(in: snapshot).map { (WindowIdentity($0), $0) }) {
+    let census = Dictionary(
+      Self.openWindows(in: snapshot, previously: saved).map { (WindowIdentity($0), $0) }
+    ) {
       first, _ in first
     }
     byDesktop = saved.compactMapValues { windows in
