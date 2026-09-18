@@ -91,6 +91,63 @@ import Testing
     #expect(try await atelier.slots() == [1, 3])
   }
 
+  @Test func switchingNativeTabsRemovesTheInactiveTab() async throws {
+    let atelier = Atelier(mac)
+    #expect(try await atelier.slots() == [1, 2, 3])
+    // Ghostty retains the old tab in WindowServer, without Space membership,
+    // while Accessibility lists only the selected tab.
+    mac.change {
+      $0.windows[0] = window(1, on: [], onScreen: false).with(report: .missing)
+      $0.windows.append(window(4).with(app: 1))
+      $0.focusedWindow = 4
+    }
+    #expect(try await atelier.slots() == [2, 3, 4])
+    #expect(try await atelier.windows.select(1) == .changed)
+    #expect(mac.focusedWindow == 2)
+    #expect(try await atelier.windows.cycle(.previous) == .changed)
+    #expect(mac.focusedWindow == 4)
+
+    mac.change {
+      $0.windows[0] = window(1)
+      $0.windows[3] = window(4, on: [], onScreen: false).with(app: 1, report: .missing)
+      $0.focusedWindow = 1
+    }
+    #expect(try await atelier.slots() == [2, 3, 1])
+  }
+
+  @Test(arguments: [WindowFacts.Report.ordinary, .unanswered])
+  func unknownMembershipWithoutEvidenceOfAbsenceKeepsTheSlot(report: WindowFacts.Report)
+    async throws
+  {
+    let atelier = Atelier(mac)
+    _ = try await atelier.slots()
+    mac.change { $0.windows[0] = window(1, on: [], onScreen: false).with(report: report) }
+    #expect(try await atelier.slots() == [1, 2, 3])
+  }
+
+  @Test func missingMembershipOnAnInactiveDesktopProvesNothing() async throws {
+    let atelier = Atelier(mac)
+    _ = try await atelier.slots()
+    mac.change {
+      $0.focusedWindow = nil
+      $0.show(2)
+      $0.windows[0] = window(1, on: [], onScreen: false).with(report: .missing)
+    }
+    _ = try await atelier.slots()
+    mac.change {
+      $0.show(1)
+      $0.windows[0] = window(1)
+    }
+    #expect(try await atelier.slots() == [1, 2, 3])
+  }
+
+  @Test func aVisibleWindowMissingFromAccessibilityKeepsItsSlot() async throws {
+    let atelier = Atelier(mac)
+    _ = try await atelier.slots()
+    mac.change { $0.windows[0] = window(1, on: []).with(report: .missing) }
+    #expect(try await atelier.slots() == [1, 2, 3])
+  }
+
   @Test func anAppLeavingOutAWindowOnAHiddenDesktopProvesNothing() async throws {
     let mac = FakeMac(windows: [window(1), window(2, on: [2])])
     let atelier = Atelier(mac)
@@ -135,6 +192,17 @@ import Testing
       $0.windows = [window(4), window(3), window(1)]
     }
     #expect(try await Atelier(mac, stateFolder: folder).slots() == [3, 1, 4])
+  }
+
+  @Test func restoringDropsAnInactiveTabWithoutSpaceMembership() async throws {
+    let folder = folder()
+    _ = try await Atelier(mac, stateFolder: folder).slots()
+    mac.change {
+      $0.windows[0] = window(1, on: [], onScreen: false).with(report: .missing)
+      $0.windows.append(window(4).with(app: 1))
+      $0.focusedWindow = 4
+    }
+    #expect(try await Atelier(mac, stateFolder: folder).slots() == [2, 3, 4])
   }
 
   @Test func aRecycledWindowNumberDoesNotInheritAPlace() async throws {

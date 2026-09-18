@@ -56,6 +56,16 @@ extension Atelier {
   package func perform(_ command: Command) async throws(AtelierError) -> Outcome {
     try await runner.perform(command)
   }
+
+  /// Runs a command where there is no reply to read, as from a shortcut or a
+  /// menu item: a failure is a notice.
+  package func attempt(_ command: Command) async {
+    do {
+      _ = try await perform(command)
+    } catch {
+      notices.post(error.message)
+    }
+  }
 }
 
 /// Runs a command for whoever holds one: the router for the terminal, a

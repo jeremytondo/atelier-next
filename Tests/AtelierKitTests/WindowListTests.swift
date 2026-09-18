@@ -74,24 +74,6 @@ import Testing
     #expect(try await Atelier(mac).windows.list() == .notDesktop)
   }
 
-  @Test func keepsTheContextFromBeforeAtelierTookFocus() async throws {
-    let mac = FakeMac(
-      focusedWindow: 2, windows: [window(1), window(2, on: [3]), window(3, on: [3])])
-    let atelier = Atelier(mac)
-    let context = await atelier.windows.context()
-    // The popover opens: Atelier is frontmost and the first display is active.
-    mac.change { $0.focusedWindow = nil }
-    #expect(try await atelier.slots() == [1])
-    // The census itself is still fresh.
-    mac.change { $0.windows.append(window(4, on: [3])) }
-    guard case .desktop(let windows, _) = try await atelier.windows.list(in: context) else {
-      Issue.record("Expected a Desktop")
-      return
-    }
-    #expect(windows.map(\.id) == [2, 3, 4])
-    #expect(windows.map(\.isFocused) == [true, false, false])
-  }
-
   @Test func failsWithoutAccessibility() async {
     let mac = FakeMac(hasAccessibility: false, windows: [window(1)])
     await #expect(throws: AtelierError.accessibilityRequired) {

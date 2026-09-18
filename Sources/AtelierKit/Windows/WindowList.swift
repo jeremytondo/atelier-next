@@ -26,12 +26,6 @@ public enum WindowList: Equatable, Sendable {
   case notDesktop
 }
 
-/// Where keyboard input was going at one moment. Atelier's own interface takes
-/// this before it appears, so that showing it does not change the answer.
-public struct FocusContext: Sendable {
-  let focus: Focus
-}
-
 public enum CycleDirection: Hashable, Sendable {
   case next, previous
 }
@@ -65,13 +59,9 @@ public struct Windows: Sendable {
     return stream
   }
 
-  public func context() async -> FocusContext {
-    FocusContext(focus: await workspace.mac.focus())
-  }
-
   /// `windows.list`
-  public func list(in context: FocusContext? = nil) async throws(AtelierError) -> WindowList {
-    try await workspace.windowList(focus: context?.focus)
+  public func list() async throws(AtelierError) -> WindowList {
+    try await workspace.windowList()
   }
 
   /// `windows.select`: shows the window in a one-based slot if it is
@@ -138,8 +128,8 @@ extension Workspace {
     }
   }
 
-  func windowList(focus: Focus?) async throws(AtelierError) -> WindowList {
-    let observation = try await observe(focus: focus)
+  func windowList() async throws(AtelierError) -> WindowList {
+    let observation = try await observe()
     guard observation.space.isDesktop else { return .notDesktop }
     return .desktop(
       Self.windows(

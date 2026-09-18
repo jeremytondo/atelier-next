@@ -18,7 +18,6 @@ package protocol Mac: Sendable {
   func requestAccessibility()
 
   /// Where the keyboard is now, read in the background from the frontmost app.
-  /// Atelier's interface reads it before appearing, since appearing moves it.
   func focus() async -> Focus
 
   /// One census of Spaces and windows, read in the background. Nil when

@@ -42,9 +42,6 @@ final class HUDPanel {
     let margin: CGFloat = 20
     let origin = NSPoint(x: visible.maxX - size.width - margin, y: visible.minY + margin)
     panel.setFrame(NSRect(origin: origin, size: size), display: true)
-    // The menu-bar popover hides the app when it closes; a hidden app shows
-    // no window, so the panel would never appear again without this.
-    if NSApp.isHidden { NSApp.unhideWithoutActivation() }
     if !panel.isVisible { panel.orderFrontRegardless() }
   }
 

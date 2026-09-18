@@ -328,11 +328,11 @@ extension FakeMac.State {
 
 extension WindowFacts {
   func with(
-    spaces: [UInt64]? = nil, isOnScreen: Bool? = nil, report: Report? = nil,
+    app: Int32? = nil, spaces: [UInt64]? = nil, isOnScreen: Bool? = nil, report: Report? = nil,
     appLaunched: Double?? = nil
   ) -> WindowFacts {
     WindowFacts(
-      id: id, app: app, appLaunched: appLaunched ?? self.appLaunched, appName: appName,
+      id: id, app: app ?? self.app, appLaunched: appLaunched ?? self.appLaunched, appName: appName,
       title: title, spaces: spaces ?? self.spaces, isOnScreen: isOnScreen ?? self.isOnScreen,
       report: report ?? self.report)
   }
