@@ -33,43 +33,59 @@ enum Defaults {
   enum Target: Equatable, Sendable {
     case command(String)
     case menu(String)
+    /// A command whose key works without a row in the menu on screen.
+    case hidden(String)
   }
 
-  static let leaderMenu: [(sequence: String, target: Target)] =
+  typealias MenuDefault = (sequence: String, target: Target)
+
+  static let leaderMenu: [MenuDefault] =
     [
       ("s", .menu("Spaces")),
       ("s n", .command("desktops new")),
       ("s d", .command("desktops delete")),
-      ("s shift+left", .command("spaces move by -1")),
-      ("s shift+right", .command("spaces move by 1")),
+    ]
+    + directions("s shift+", h: "spaces move by -1", l: "spaces move by 1")
+    + [
       ("w", .menu("Windows")),
       ("w f", .command("windows arrange fill")),
       ("w c", .command("windows arrange center")),
-      ("w left", .command("windows arrange left")),
-      ("w right", .command("windows arrange right")),
-      ("w up", .command("windows arrange top")),
-      ("w down", .command("windows arrange bottom")),
-      ("w t", .menu("Top")),
-      ("w t l", .command("windows arrange top-left")),
-      ("w t r", .command("windows arrange top-right")),
-      ("w b", .menu("Bottom")),
-      ("w b l", .command("windows arrange bottom-left")),
-      ("w b r", .command("windows arrange bottom-right")),
-      ("w a", .menu("Arrange")),
-      ("w a left", .command("windows arrange left-right")),
-      ("w a right", .command("windows arrange right-left")),
-      ("w a up", .command("windows arrange top-bottom")),
-      ("w a down", .command("windows arrange bottom-top")),
-      ("w a shift+left", .command("windows arrange left-quarters")),
-      ("w a shift+right", .command("windows arrange right-quarters")),
-      ("w a shift+up", .command("windows arrange top-quarters")),
-      ("w a shift+down", .command("windows arrange bottom-quarters")),
+    ]
+    + directions(
+      "w ", h: "windows arrange left", j: "windows arrange bottom", k: "windows arrange top",
+      l: "windows arrange right")
+    + [("w t", .menu("Top"))]
+    + directions("w t ", h: "windows arrange top-left", l: "windows arrange top-right")
+    + [("w b", .menu("Bottom"))]
+    + directions("w b ", h: "windows arrange bottom-left", l: "windows arrange bottom-right")
+    + [("w a", .menu("Arrange"))]
+    + directions(
+      "w a ", h: "windows arrange left-right", j: "windows arrange bottom-top",
+      k: "windows arrange top-bottom", l: "windows arrange right-left")
+    + directions(
+      "w a shift+", h: "windows arrange left-quarters", j: "windows arrange bottom-quarters",
+      k: "windows arrange top-quarters", l: "windows arrange right-quarters")
+    + [
       ("w a q", .command("windows arrange quarters")),
       ("a", .menu("Quick Apps")),
       ("c", .menu("Configuration")),
       ("c o", .command("config open")),
       ("c r", .command("config reload")),
-    ] + (1...10).map { number in ("s \(number % 10)", .command("desktops select \(number)")) }
+    ]
+    + (1...10).map { number in ("s \(number % 10)", .command("desktops select \(number)")) }
+
+  /// Each direction is bound twice after `prefix`: the Vim letter, which the
+  /// menu shows, and the arrow, which works unseen. They are two bindings, so
+  /// changing or unbinding one leaves the other as it was.
+  private static func directions(
+    _ prefix: String, h: String, j: String? = nil, k: String? = nil, l: String
+  ) -> [MenuDefault] {
+    [("h", "left", h), ("j", "down", j), ("k", "up", k), ("l", "right", l)]
+      .flatMap { (letter, arrow, command: String?) -> [MenuDefault] in
+        guard let command else { return [] }
+        return [(prefix + letter, .command(command)), (prefix + arrow, .hidden(command))]
+      }
+  }
 
   /// The file `config open` writes when there is none.
   static let fileTemplate = """

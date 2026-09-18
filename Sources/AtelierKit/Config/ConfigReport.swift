@@ -55,9 +55,10 @@ public struct ConfigReport: Sendable {
   private static func lines(of menu: Menu, indent: String) -> [String] {
     menu.entries.flatMap { entry -> [String] in
       switch entry {
-      case .command(let chord, let command):
+      case .command(let chord, let command, let isHidden):
         [
           "\(indent)\(Self.column(KeyGrammar.describe(chord), 6))  \(command.words)"
+            + (isHidden ? "  (not shown in the menu)" : "")
         ]
       case .submenu(let chord, let submenu):
         [
@@ -98,6 +99,8 @@ public struct ConfigReport: Sendable {
         var key: String
         var command: String?
         var menu: String?
+        /// Present, and true, for a key that works without a row in the menu.
+        var hidden: Bool?
         var entries: [Entry]?
       }
       struct QuickApp: Encodable {
@@ -121,8 +124,9 @@ public struct ConfigReport: Sendable {
     func entries(_ menu: Menu) -> [Payload.Entry] {
       menu.entries.map { entry in
         switch entry {
-        case .command(let chord, let command):
-          Payload.Entry(key: KeyGrammar.text(chord), command: command.words)
+        case .command(let chord, let command, let isHidden):
+          Payload.Entry(
+            key: KeyGrammar.text(chord), command: command.words, hidden: isHidden ? true : nil)
         case .submenu(let chord, let submenu):
           Payload.Entry(key: KeyGrammar.text(chord), menu: submenu.label, entries: entries(submenu))
         }
