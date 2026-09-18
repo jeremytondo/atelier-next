@@ -28,6 +28,21 @@ import Testing
     (["desktops", "new", "--json"], Request(name: "desktops.new", json: true)),
     (["desktops", "select", "1"], Request(name: "desktops.select", arguments: ["1"])),
     (["desktops", "delete"], Request(name: "desktops.delete")),
+    (["spaces", "move", "by", "-1"], Request(name: "spaces.move", arguments: ["by", "-1"])),
+    (
+      ["spaces", "move", "by", "2", "--json"],
+      Request(name: "spaces.move", arguments: ["by", "2"], json: true)
+    ),
+    (["windows", "arrange", "fill"], Request(name: "windows.arrange", arguments: ["fill"])),
+    (
+      ["windows", "arrange", "top-left", "--json"],
+      Request(name: "windows.arrange", arguments: ["top-left"], json: true)
+    ),
+    (["config", "show"], Request(name: "config.show")),
+    (["config", "show", "--json"], Request(name: "config.show", json: true)),
+    (["config", "check"], Request(name: "config.check")),
+    (["config", "open"], Request(name: "config.open")),
+    (["config", "reload"], Request(name: "config.reload")),
   ]
 
   @Test(arguments: commands)
@@ -41,7 +56,9 @@ import Testing
     ["windows", "move", "by"], ["windows", "move", "by", "1", "2"], ["desktops", "move", "later"],
     ["spaces", "move", "1"], ["spaces", "move", "-f", "1", "-t", "2"],
     ["desktops", "new", "now"],
-    ["spaces", "select", "1.5"],
+    ["spaces", "select", "1.5"], ["spaces", "move", "by"], ["spaces", "move", "by", "1", "2"],
+    ["windows", "arrange"], ["windows", "arrange", "fill", "center"], ["config", "show", "now"],
+    ["config", "reset"],
   ])
   func refusesWhatItDoesNotKnow(words: [String]) {
     #expect(throws: (any Error).self) { try AtelierCommand.parseAsRoot(words) }

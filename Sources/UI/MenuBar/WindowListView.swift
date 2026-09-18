@@ -4,10 +4,13 @@ import SwiftUI
 
 struct WindowListView: View {
   let model: WindowListModel
+  let config: ConfigModel
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       content.frame(maxWidth: .infinity, alignment: .leading)
+      Divider()
+      ConfigView(model: config)
       Divider()
       HStack {
         Button("Refresh") { Task { await model.refresh() } }

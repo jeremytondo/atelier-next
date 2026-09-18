@@ -52,6 +52,12 @@ public struct Spaces: Sendable {
     try await workspace.moveSpace(from: from, to: to)
   }
 
+  /// `spaces.move by`: moves the current Space so many positions later, or
+  /// earlier when negative, held within the ends. Nothing to do at an end.
+  public func move(by offset: Int) async throws(AtelierError) -> Outcome {
+    try await workspace.moveCurrentSpace(by: offset)
+  }
+
   /// Yields after Spaces were added, removed, or reordered, or another became current.
   public func changes() async -> AsyncStream<Void> {
     await workspace.changes(to: .spaces)
@@ -94,26 +100,48 @@ extension Workspace {
   /// One display for now, since a position names a Space of one display.
   func moveSpace(from: Int, to: Int) async throws(AtelierError) -> Outcome {
     try await run { observation async throws(AtelierError) in
-      let displays = observation.snapshot.displays
-      guard displays.count == 1, let display = displays.first else {
-        throw .unsupported("Atelier can reorder Spaces only with one display for now.")
-      }
-      var spaces = display.spaces
+      let display = try reorderable(observation)
+      let spaces = display.spaces
       guard from >= 1, to >= 1, spaces.indices.contains(from - 1), spaces.indices.contains(to - 1),
         from != to
       else { return .unchanged }
-      let moved = spaces.remove(at: from - 1)
-      spaces.insert(moved, at: to - 1)
-      let expected = DisplaySpaces(
-        id: display.id, currentSpace: display.currentSpace, spaces: spaces)
-
-      try check(
-        await mac.moveSpace(moved.id, toIndex: to - 1, onDisplay: display.id, expecting: [display]),
-        "moved", of: "Spaces")
-      guard await confirmed(expected) else {
-        throw .uncertain("macOS did not confirm the move. Check Mission Control.")
-      }
+      try await relocate(display, from: from - 1, to: to - 1)
       return .changed
+    }
+  }
+
+  func moveCurrentSpace(by offset: Int) async throws(AtelierError) -> Outcome {
+    try await run { observation async throws(AtelierError) in
+      let display = try reorderable(observation)
+      guard let from = display.spaces.firstIndex(of: observation.space) else { throw .unavailable }
+      // Held within the list before any arithmetic, so no offset is too large.
+      let last = display.spaces.count - 1
+      let to = from + min(max(offset, -from), last - from)
+      guard to != from else { return .unchanged }
+      try await relocate(display, from: from, to: to)
+      return .changed
+    }
+  }
+
+  private func reorderable(_ observation: Observation) throws(AtelierError) -> DisplaySpaces {
+    let displays = observation.snapshot.displays
+    guard displays.count == 1, let display = displays.first else {
+      throw .unsupported("Atelier can reorder Spaces only with one display for now.")
+    }
+    return display
+  }
+
+  /// Moves the Space at one zero-based index to another and confirms it.
+  private func relocate(_ display: DisplaySpaces, from: Int, to: Int) async throws(AtelierError) {
+    var spaces = display.spaces
+    let moved = spaces.remove(at: from)
+    spaces.insert(moved, at: to)
+    let expected = DisplaySpaces(id: display.id, currentSpace: display.currentSpace, spaces: spaces)
+    try check(
+      await mac.moveSpace(moved.id, toIndex: to, onDisplay: display.id, expecting: [display]),
+      "moved", of: "Spaces")
+    guard await confirmed(expected) else {
+      throw .uncertain("macOS did not confirm the move. Check Mission Control.")
     }
   }
 

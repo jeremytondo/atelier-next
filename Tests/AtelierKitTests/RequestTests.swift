@@ -1,6 +1,7 @@
 import AtelierKit
 import Client
 import Foundation
+import MacOS
 import Testing
 
 @Suite struct RequestTests {
@@ -58,6 +59,7 @@ import Testing
     (["spaces.move", "3", "1"], ["move 3 to 0"]),
     (["desktops.new"], ["create", "switch to 100"]),
     (["desktops.delete"], ["switch to 3", "destroy 2"]),
+    (["spaces.move", "by", "1"], ["move 2 to 2"]), (["spaces.move", "by", "-5"], ["move 2 to 0"]),
   ]
 
   @Test(arguments: commands)
@@ -101,12 +103,49 @@ import Testing
   @Test(arguments: [
     ["windows.close"], ["windows.select"], ["windows.select", "two"], ["windows.list", "1"],
     ["windows.cycle", "sideways"], ["windows.move", "3"], ["desktops.move"],
-    ["desktops.new", "now"],
+    ["desktops.new", "now"], ["windows.arrange", "sideways"], ["windows.arrange"],
+    ["spaces.move", "by"], ["spaces.move", "by", "up"], ["config.show", "now"], ["config.fix"],
+    ["quick-apps.toggle"],
   ])
   func refusesWhatItDoesNotKnow(words: [String]) async {
     let reply = await Atelier(mac).reply(
       to: Request(name: words[0], arguments: Array(words.dropFirst())))
     #expect(!reply.ok)
     #expect(mac.requests.isEmpty)
+  }
+}
+
+@Suite struct ConfigRequestTests {
+  @Test func wordsTheConfiguration() async {
+    let atelier = Atelier(FakeMac())
+    await atelier.config.ready()
+    let reply = await atelier.reply(to: Request(name: "config.show"))
+    #expect(reply.ok)
+    #expect(reply.output.contains("Shortcuts:\n"))
+    #expect(
+      await atelier.reply(to: Request(name: "config.check"))
+        == Reply(ok: true, output: "The configuration is valid."))
+    #expect(
+      await atelier.reply(to: Request(name: "config.reload"))
+        == Reply(ok: true, output: "Reloaded; nothing had changed."))
+    let json = await atelier.reply(to: Request(name: "config.reload", json: true))
+    #expect(json.output.contains("\"outcome\" : \"unchanged\""))
+    let open = await atelier.reply(to: Request(name: "config.open"))
+    #expect(open == Reply(ok: false, output: "This Atelier has no configuration file."))
+  }
+
+  @Test func arrangesByName() async {
+    let mac = FakeMac(focusedWindow: 1, windows: [window(1)])
+    mac.change { $0.windowMenus[1] = [.fill: ArrangementItem(isEnabled: true)] }
+    let reply = await Atelier(mac).reply(to: Request(name: "windows.arrange", arguments: ["fill"]))
+    #expect(reply == Reply(ok: true, output: "Done."))
+    #expect(mac.requests == ["arrange fill"])
+  }
+
+  @Test func quickAppsAreNotHereYet() async {
+    let reply = await Atelier(FakeMac()).reply(
+      to: Request(name: "quick-apps.toggle", arguments: ["1Password"]))
+    #expect(
+      reply == Reply(ok: false, output: "Quick Apps are not part of this build of Atelier yet."))
   }
 }

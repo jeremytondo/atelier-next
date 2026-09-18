@@ -15,11 +15,16 @@ let package = Package(
     .executable(name: "atelier", targets: ["CLI"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.6.0")
+    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.6.0"),
+    .package(url: "https://github.com/dduan/TOMLDecoder", from: "0.4.5"),
   ],
   targets: [
     .target(name: "UI", dependencies: ["AtelierKit"]),
-    .target(name: "AtelierKit", dependencies: ["MacOS", "Client"]),
+    .target(
+      name: "AtelierKit",
+      dependencies: [
+        "MacOS", "Client", .product(name: "TOMLDecoder", package: "TOMLDecoder"),
+      ]),
     .target(name: "MacOS", dependencies: ["DesktopBridge"]),
     .target(name: "DesktopBridge"),
     .target(name: "Client"),

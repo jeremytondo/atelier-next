@@ -16,7 +16,7 @@ struct WindowIdentity: Hashable, Codable, Sendable {
   }
 }
 
-public enum WindowMove: Equatable, Sendable {
+public enum WindowMove: Hashable, Sendable {
   /// So many slots later, or earlier when negative.
   case by(Int)
   /// To this one-based slot.

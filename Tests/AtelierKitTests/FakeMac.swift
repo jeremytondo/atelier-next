@@ -1,7 +1,8 @@
-import AtelierKit
 import Foundation
 import MacOS
 import Synchronization
+
+@testable import AtelierKit
 
 /// A Mac that does what it is asked at once, unless told to misbehave. It
 /// starts with two displays: Desktops 1 and 2 on the first, showing 1, and
@@ -41,10 +42,21 @@ final class FakeMac: Mac, Sendable {
     var nextSpace: UInt64 = 100
     /// Everything asked of the Mac that could change it, in order.
     var requests: [String] = []
+    /// The global shortcuts registered now.
+    var hotKeys: [Chord] = []
+    var refusedHotKeys: [Chord: String] = [:]
+    /// macOS's own Space-switching shortcuts: Control with a digit or arrow.
+    var spaceChords: [Chord] =
+      [Chord([.control], "left"), Chord([.control], "right")]
+      + (1...9).map { Chord([.control], "\($0)") }
+    /// Each app's Window menu; an app not listed has no menu bar.
+    var windowMenus: [Int32: [Arrangement: ArrangementItem]] = [:]
+    var openedFiles: [URL] = []
   }
 
   let state: Mutex<State>
   private let hints = AsyncStream.makeStream(of: Void.self)
+  private let hotKeyPressed = AsyncStream.makeStream(of: Chord.self)
 
   init(
     hasAccessibility: Bool = true, displays: [DisplaySpaces]? = nil, activeSpace: UInt64 = 1,
@@ -98,6 +110,12 @@ final class FakeMac: Mac, Sendable {
   var spaceOrder: [UInt64] { state.withLock { $0.displays[0].spaces.map(\.id) } }
   var currentSpace: UInt64 { state.withLock { $0.displays[0].currentSpace } }
   var focusedWindow: UInt32? { state.withLock(\.focusedWindow) }
+  var hotKeys: [Chord] { state.withLock(\.hotKeys) }
+
+  /// The user presses a registered shortcut.
+  func press(_ chord: Chord) {
+    hotKeyPressed.continuation.yield(chord)
+  }
 
   // MARK: - Mac
 
@@ -264,8 +282,8 @@ extension Patience {
 }
 
 extension Atelier {
-  init(_ mac: FakeMac, stateFolder: URL? = nil) {
-    self.init(mac: mac, stateFolder: stateFolder, patience: .short)
+  init(_ mac: FakeMac, stateFolder: URL? = nil, configFile: URL? = nil) {
+    self.init(mac: mac, stateFolder: stateFolder, configFile: configFile, patience: .short)
   }
 
   /// The current Desktop's window numbers in slot order; nil off a Desktop.
@@ -273,4 +291,55 @@ extension Atelier {
     guard case .desktop(let windows) = try await windows.list() else { return nil }
     return windows.map(\.id)
   }
+}
+
+extension FakeMac {
+  func arrangements(of app: Int32) async -> [Arrangement: ArrangementItem]? {
+    state.withLock { state in
+      state.frozenApps.contains(app) ? nil : state.windowMenus[app]
+    }
+  }
+
+  func arrange(_ arrangement: Arrangement, in app: Int32, window: UInt32) async -> ArrangeResult {
+    state.withLock { state in
+      guard !state.frozenApps.contains(app), let menu = state.windowMenus[app] else {
+        return .unanswered
+      }
+      guard let item = menu[arrangement] else { return .missing }
+      guard item.isEnabled else { return .disabled }
+      guard state.focusedWindow == window else { return .windowChanged }
+      state.requests.append("arrange \(arrangement.rawValue)")
+      return .pressed
+    }
+  }
+
+  func registerHotKeys(_ chords: [Chord]) async -> [Chord: String] {
+    state.withLock { state in
+      let refused = state.refusedHotKeys.filter { chords.contains($0.key) }
+      state.hotKeys = chords.filter { refused[$0] == nil }
+      return refused
+    }
+  }
+
+  func hotKeyPresses() -> AsyncStream<Chord> { hotKeyPressed.stream }
+
+  func spaceSwitchingChords() async -> [Chord] { state.withLock(\.spaceChords) }
+
+  func open(_ file: URL) -> Bool {
+    state.withLock { $0.openedFiles.append(file) }
+    return true
+  }
+}
+
+/// True as soon as `condition` holds, within a second; false when it never does.
+func eventually(_ condition: @Sendable () async -> Bool) async -> Bool {
+  for _ in 0..<200 {
+    if await condition() { return true }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  return await condition()
+}
+
+func chord(_ text: String) -> Chord {
+  try! KeyGrammar.chord(text, bare: true)
 }

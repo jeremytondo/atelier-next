@@ -2,21 +2,25 @@ import AppKit
 import AtelierKit
 import SwiftUI
 
-/// Atelier's menu-bar item and its popover. For now the popover lists the
-/// current Desktop's windows in slot order, and follows them while it is open.
+/// Atelier's menu-bar item and its popover. The popover lists the current
+/// Desktop's windows in slot order, following them while it is open, and
+/// shows the configuration's problems with the means to reload or open it.
 @MainActor
 public final class MenuBar: NSObject, NSPopoverDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let popover = NSPopover()
   private var model: WindowListModel!
+  private var configModel: ConfigModel!
   private var isOpening = false
 
   public init(atelier: Atelier) {
     super.init()
     model = WindowListModel(atelier: atelier) { [unowned self] in showState() }
+    configModel = ConfigModel(atelier: atelier) { [unowned self] in showState() }
     popover.behavior = .transient
     popover.delegate = self
-    popover.contentViewController = NSHostingController(rootView: WindowListView(model: model))
+    popover.contentViewController = NSHostingController(
+      rootView: WindowListView(model: model, config: configModel))
     item.button?.target = self
     item.button?.action = #selector(toggle)
     showState()
@@ -54,8 +58,11 @@ public final class MenuBar: NSObject, NSPopoverDelegate {
 
   private func showState() {
     let missing = model.state == .needsAccessibility
+    let troubled = missing || !configModel.problems.isEmpty
     item.button?.image = NSImage(
-      systemSymbolName: missing ? "exclamationmark.triangle" : "macwindow.on.rectangle",
-      accessibilityDescription: missing ? "Atelier needs Accessibility permission" : "Atelier")
+      systemSymbolName: troubled ? "exclamationmark.triangle" : "macwindow.on.rectangle",
+      accessibilityDescription: missing
+        ? "Atelier needs Accessibility permission"
+        : troubled ? "Atelier has configuration problems" : "Atelier")
   }
 }

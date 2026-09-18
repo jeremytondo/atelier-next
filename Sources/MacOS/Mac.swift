@@ -55,6 +55,28 @@ package protocol Mac: Sendable {
   /// Shows a window of `app` if it is minimized or its app is hidden, and asks
   /// for it to come forward. The caller watches `focus()` for the result.
   func raise(window: UInt32, of app: Int32) async -> RaiseResult
+
+  /// The arrangements in `app`'s Window menu, read in the background. Nil
+  /// when the app does not answer; empty when its menus have none.
+  func arrangements(of app: Int32) async -> [Arrangement: ArrangementItem]?
+
+  /// Presses the arrangement's menu item in `app`, provided `window` still has
+  /// the keyboard there. macOS does the arranging.
+  func arrange(_ arrangement: Arrangement, in app: Int32, window: UInt32) async -> ArrangeResult
+
+  /// Makes exactly these chords Atelier's global keyboard shortcuts, releasing
+  /// any registered before. Returns why each refused chord was refused.
+  func registerHotKeys(_ chords: [Chord]) async -> [Chord: String]
+
+  /// Every press of a registered shortcut, once per press however long it is held.
+  func hotKeyPresses() -> AsyncStream<Chord>
+
+  /// macOS's own shortcuts for switching Spaces, on or off, which Atelier
+  /// presses itself and so must not register.
+  func spaceSwitchingChords() async -> [Chord]
+
+  /// Opens a file in the app the user has for it. False when macOS could not.
+  func open(_ file: URL) -> Bool
 }
 
 package struct Focus: Sendable, Equatable {
