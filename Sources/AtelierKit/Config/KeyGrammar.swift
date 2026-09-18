@@ -96,11 +96,10 @@ enum KeyGrammar {
     return modifiers
   }
 
-  /// `⌥⌘1`, `⇧←`, `fn⌃F`: how macOS menus print a shortcut.
+  /// `⌥⌘1`, `⇧←`, `fn⌃f`: a shortcut as macOS menus print it, except that a
+  /// letter stays lowercase, so that `h` and `⇧h` are told apart by Shift alone.
   static func describe(_ chord: Chord) -> String {
-    let key =
-      keySymbols[chord.key]
-      ?? (chord.key.count == 1 ? chord.key.uppercased() : chord.key.capitalized)
+    let key = keySymbols[chord.key] ?? (chord.key.count == 1 ? chord.key : chord.key.capitalized)
     return describe(chord.modifiers) + key
   }
 

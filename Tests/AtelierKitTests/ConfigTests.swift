@@ -195,6 +195,23 @@ import Testing
     #expect(await atelier.config.check().rejection?.location == "line 1")
   }
 
+  @Test func keysWithoutARowInTheMenuAreReportedBeforeAndAfterAReload() async throws {
+    let atelier = await start()
+    let marked = "    ←       windows arrange left  (not shown in the menu)"
+    let listed = "\"hidden\":true,\n\"key\":\"left\""
+    let defaults = await atelier.config.show()
+    #expect(defaults.text.contains(marked))
+    #expect(defaults.json.replacing(" ", with: "").contains(listed))
+    try write("[keymap.leader]\n\"w h\" = \"unbind\"\n\"w down\" = \"windows arrange bottom\"\n")
+    #expect(try await atelier.config.reload().outcome == .changed)
+    let reloaded = await atelier.config.show()
+    #expect(reloaded.text.contains(marked))
+    #expect(reloaded.json.replacing(" ", with: "").contains(listed))
+    #expect(!reloaded.text.contains("\n    h       windows arrange left\n"))
+    // The arrow the file names is an ordinary key now.
+    #expect(reloaded.text.contains("    ↓       windows arrange bottom\n"))
+  }
+
   @Test func withoutAFileNothingCanBeOpened() async {
     let atelier = Atelier(FakeMac())
     await atelier.config.ready()

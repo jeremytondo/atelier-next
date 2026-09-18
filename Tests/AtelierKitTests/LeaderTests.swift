@@ -62,7 +62,7 @@ import Testing
     #expect(mac.type("w") == false)
     let windows = await state(atelier) { $0?.title == "Windows" }
     #expect(windows?.entries.first?.label == "Fill")
-    #expect(windows?.entries.first?.hint == "fn⌃F")
+    #expect(windows?.entries.first?.hint == "fn⌃f")
     #expect(windows?.entries.first?.unavailable == nil)
     #expect(windows?.entries[1].unavailable == "Center is unavailable for the focused window.")
     #expect(windows?.entries.map(\.label).contains("Arrange") == true)
@@ -78,8 +78,8 @@ import Testing
     let atelier = try await start(mac)
     _ = try await atelier.leader.open()
     #expect(mac.type("x") == false)
-    let explained = await state(atelier) { $0?.feedback == "No command for X" }
-    #expect(explained?.feedback == "No command for X")
+    let explained = await state(atelier) { $0?.feedback == "No command for x" }
+    #expect(explained?.feedback == "No command for x")
     #expect(explained?.title == "Atelier")
     #expect(mac.type(.keyDown(Chord([], ""))) == false)
     _ = await state(atelier) { $0?.feedback == "Unknown key" }
@@ -124,8 +124,8 @@ import Testing
     _ = await state(atelier) { $0?.title == "Atelier" }
     mac.type(.flagsChanged([]))
     mac.type(.keyDown(Chord([.option], "w")))
-    let explained = await state(atelier) { $0?.feedback == "No command for ⌥W" }
-    #expect(explained?.feedback == "No command for ⌥W")
+    let explained = await state(atelier) { $0?.feedback == "No command for ⌥w" }
+    #expect(explained?.feedback == "No command for ⌥w")
   }
 
   @Test func desktopsThatDoNotExistAreLeftOutAndTheSequenceRunsTheCommand() async throws {
@@ -142,6 +142,147 @@ import Testing
     mac.type(.keyDown(Chord([.shift], "left")))
     #expect(await eventually { mac.requests == ["move 2 to 0"] })
     #expect(await eventually { await atelier.leader.state() == nil })
+  }
+
+  /// The Mac of `mac()` with every arrangement enabled in its Window menu.
+  private func arrangingMac() -> FakeMac {
+    let mac = mac()
+    mac.change { state in
+      state.windowMenus[1] = Dictionary(
+        uniqueKeysWithValues: Arrangement.allCases.map { ($0, ArrangementItem(isEnabled: true)) })
+    }
+    return mac
+  }
+
+  /// Opens the menu, goes down the submenus of `path`, and returns what is shown there.
+  private func descend(_ atelier: Atelier, _ mac: FakeMac, _ path: String) async throws
+    -> LeaderState?
+  {
+    _ = try await atelier.leader.open()
+    let keys = path.split(separator: " ").map(String.init)
+    for (depth, key) in keys.enumerated() {
+      #expect(mac.type(key) == false)
+      _ = await state(atelier) { $0?.path.count == depth + 1 && $0?.title != "Atelier" }
+    }
+    return await atelier.leader.state()
+  }
+
+  @Test(arguments: ConfigurationTests.directions.indices)
+  func aVimKeyAndItsArrowRunTheSameCommand(_ index: Int) async throws {
+    let direction = ConfigurationTests.directions[index]
+    var requests: [[String]] = []
+    for key in [direction.vim, direction.arrow] {
+      let mac = arrangingMac()
+      let atelier = try await start(mac)
+      _ = try await descend(atelier, mac, direction.menu)
+      // Consumed, and the menu closes once the command has run.
+      #expect(mac.type(key) == false)
+      #expect(await eventually { await atelier.leader.state() == nil })
+      #expect(!mac.isListening)
+      requests.append(mac.requests)
+    }
+    #expect(requests[0] == requests[1])
+    let expected =
+      switch direction.command {
+      case "spaces move by -1": "move 2 to 0"
+      case "spaces move by 1": "move 2 to 2"
+      default: direction.command.replacing("windows ", with: "")
+      }
+    #expect(requests[0] == [expected])
+  }
+
+  @Test func theMenuShowsTheVimKeysAndNoArrows() async throws {
+    let shown = [
+      "w": ["f", "c", "h", "j", "k", "l", "t", "b", "a"],
+      "w a": ["h", "j", "k", "l", "⇧h", "⇧j", "⇧k", "⇧l", "q"],
+      "w t": ["h", "l"],
+      "w b": ["h", "l"],
+      "s": ["n", "d", "⇧h", "⇧l", "1", "2", "3"],
+    ]
+    for (path, keys) in shown {
+      let mac = arrangingMac()
+      let atelier = try await start(mac)
+      let place = try await descend(atelier, mac, path)
+      #expect(place?.entries.map(\.key) == keys, "in \(path)")
+      await atelier.leader.close()
+    }
+  }
+
+  @Test func changingOneKeyOfADirectionLeavesTheOtherAsItWas() async throws {
+    let mac = arrangingMac()
+    let atelier = try await start(
+      mac,
+      config: """
+        [keymap.leader]
+        "w h" = "windows arrange fill"
+        "w j" = "unbind"
+        "w up" = "unbind"
+        "w right" = "windows arrange right"
+        """)
+    let windows = try await descend(atelier, mac, "w")
+    // The arrow the user wrote has a row, even for the command it already ran;
+    // the arrows left alone have none, whatever became of their Vim keys.
+    #expect(windows?.entries.map(\.key) == ["f", "c", "h", "k", "l", "→", "t", "b", "a"])
+    #expect(windows?.entries.first { $0.key == "h" }?.label == "Fill")
+    #expect(windows?.entries.first { $0.key == "→" }?.label == "Right")
+    mac.type("up")
+    let explained = await state(atelier) { $0?.feedback == "No command for ↑" }
+    #expect(explained?.feedback == "No command for ↑")
+    mac.type("j")
+    _ = await state(atelier) { $0?.feedback == "No command for j" }
+    #expect(mac.requests.isEmpty)
+    for (key, request) in [
+      ("left", "arrange left"), ("down", "arrange bottom"), ("k", "arrange top"),
+      ("right", "arrange right"), ("l", "arrange right"),
+    ] {
+      mac.change { $0.requests = [] }
+      _ = try await descend(atelier, mac, "w")
+      mac.type(key)
+      #expect(await eventually { mac.requests == [request] }, "\(key)")
+      #expect(await eventually { await atelier.leader.state() == nil })
+    }
+  }
+
+  @Test func anUnavailableDirectionSaysSoByEitherKey() async throws {
+    let mac = arrangingMac()
+    mac.change { $0.windowMenus[1]?[.left] = ArrangementItem(isEnabled: false) }
+    let atelier = try await start(mac)
+    let windows = try await descend(atelier, mac, "w")
+    #expect(
+      windows?.entries.first { $0.key == "h" }?.unavailable
+        == "Left is unavailable for the focused window.")
+    for (key, listening) in [("h", 3), ("left", 5)] {
+      mac.type(key)
+      // The listener is off while the command is tried and on again after.
+      #expect(await eventually { mac.listening.count == listening && mac.isListening }, "\(key)")
+      let explained = await state(atelier) {
+        $0?.feedback == "Left is unavailable for the focused window." && $0?.isShown == true
+      }
+      #expect(explained?.title == "Windows", "\(key)")
+    }
+    #expect(mac.requests.isEmpty)
+  }
+
+  @Test func aSubmenuNobodyNamedIsTitledByItsLowercaseKey() async throws {
+    let mac = mac()
+    let atelier = try await start(
+      mac,
+      config: "[keymap.leader]\n\"x n\" = \"desktops new\"\n\"x shift+y n\" = \"desktops new\"\n")
+    _ = try await atelier.leader.open()
+    let top = await atelier.leader.state()
+    #expect(top?.path == [LeaderState.Place(label: "Atelier", isKey: false)])
+    #expect(top?.entries.last?.key == "x")
+    #expect(top?.entries.last?.label == "x")
+    mac.type("x")
+    _ = await state(atelier) { $0?.title == "x" }
+    mac.type(.keyDown(Chord([.shift], "y")))
+    let inner = await state(atelier) { $0?.title == "x › ⇧y" }
+    #expect(inner?.path.map(\.isKey) == [true, true])
+    mac.type("delete")
+    mac.type("delete")
+    mac.type("w")
+    let windows = await state(atelier) { $0?.title == "Windows" }
+    #expect(windows?.path == [LeaderState.Place(label: "Windows", isKey: false)])
   }
 
   @Test func theLeaderKeyOpensItAndTheConfigurationShapesIt() async throws {
@@ -195,7 +336,7 @@ import Testing
     #expect(await atelier.leader.state()?.isShown == false)
     mac.type("x")
     let shown = await state(atelier) { $0?.isShown == true }
-    #expect(shown?.feedback == "No command for X")
+    #expect(shown?.feedback == "No command for x")
     await atelier.leader.close()
     #expect(await atelier.leader.state() == nil)
   }

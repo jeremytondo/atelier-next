@@ -36,16 +36,20 @@ public struct QuickAppSettings: Equatable, Sendable {
 /// The leader menu: each key opens a submenu or runs a command.
 struct Menu: Equatable, Sendable {
   var label: String
+  /// True when nobody named the submenu, so its label is its key.
+  var isLabelKey = false
   var entries: [MenuEntry]
 }
 
 enum MenuEntry: Equatable, Sendable {
-  case command(Chord, Command)
+  /// A hidden command runs like any other and has no row in the menu on
+  /// screen. Only a shipped binding is ever hidden; one the user wrote shows.
+  case command(Chord, Command, isHidden: Bool)
   case submenu(Chord, Menu)
 
   var chord: Chord {
     switch self {
-    case .command(let chord, _), .submenu(let chord, _): chord
+    case .command(let chord, _, _), .submenu(let chord, _): chord
     }
   }
 }

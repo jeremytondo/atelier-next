@@ -22,14 +22,16 @@ struct HUDView: View {
       case .empty:
         EmptyView()
       case .leader(let state):
-        header(state.title)
+        // A submenu nobody named is titled by its key, which keeps its case.
+        header(
+          state.path.map { $0.isKey ? $0.label : $0.label.uppercased() }.joined(separator: " › "))
         if state.entries.isEmpty {
           Text("Nothing here").foregroundStyle(.secondary).padding(.horizontal, 12)
         }
         ForEach(state.entries) { LeaderRow(entry: $0) }
         footer(state.feedback ?? "")
       case .windows(let windows):
-        header("Windows")
+        header("WINDOWS")
         ForEach(Array(windows.enumerated()), id: \.element.id) { index, window in
           WindowRow(
             number: index < 10 ? "\((index + 1) % 10)" : "", window: window,
@@ -50,7 +52,7 @@ struct HUDView: View {
   }
 
   private func header(_ title: String) -> some View {
-    Text(title.uppercased())
+    Text(title)
       .font(.caption.weight(.semibold))
       .foregroundStyle(.secondary)
       .padding(.horizontal, 12)

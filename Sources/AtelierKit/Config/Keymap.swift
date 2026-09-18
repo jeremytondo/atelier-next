@@ -163,12 +163,17 @@ enum Keymap {
       let chords: [Chord]
       let target: Target
       let isUser: Bool
+      /// A shipped binding that works without a row in the menu on screen.
+      var isHidden = false
       let location: String
     }
 
     private final class Node {
       var label: String
+      /// Until a mapping names the place, its label is its key.
+      var isLabelKey = true
       var command: Command?
+      var isHidden = false
       var children: [Chord: Node] = [:]
       var order: [Chord] = []
 
@@ -246,12 +251,14 @@ enum Keymap {
       let defaults = Defaults.leaderMenu.map { entry in
         let target: Mapping.Target =
           switch entry.target {
-          case .command(let words): .command(Command(words: words)!)
+          case .command(let words), .hidden(let words): .command(Command(words: words)!)
           case .menu(let label): .menu(label)
           }
+        var isHidden = false
+        if case .hidden = entry.target { isHidden = true }
         return Mapping(
           chords: try! KeyGrammar.sequence(entry.sequence), target: target, isUser: false,
-          location: "")
+          isHidden: isHidden, location: "")
       }
 
       let unbound = users.filter { if case .unbind = $0.target { true } else { false } }
@@ -259,6 +266,7 @@ enum Keymap {
       let replaced = users.filter { if case .command = $0.target { true } else { false } }
         .map(\.chords)
       let root = Node(label: "Atelier")
+      root.isLabelKey = false
       mappings: for mapping in defaults + users {
         var binds = true
         if case .unbind = mapping.target { binds = false }
@@ -304,12 +312,14 @@ enum Keymap {
                 continue mappings
               }
               child.command = command
+              child.isHidden = mapping.isHidden
             case .menu(let label):
               guard child.command == nil else {
                 report(mapping.location, "names a submenu at a key that runs a command")
                 continue mappings
               }
               child.label = label
+              child.isLabelKey = false
             case .unbind: break
             }
           }
@@ -322,10 +332,12 @@ enum Keymap {
     /// A submenu with nothing bound under it is not shown and not a key.
     private func build(_ node: Node) -> Menu {
       Menu(
-        label: node.label,
+        label: node.label, isLabelKey: node.isLabelKey,
         entries: node.order.compactMap { chord in
           let child = node.children[chord]!
-          if let command = child.command { return .command(chord, command) }
+          if let command = child.command {
+            return .command(chord, command, isHidden: child.isHidden)
+          }
           return child.hasBindings ? .submenu(chord, build(child)) : nil
         })
     }

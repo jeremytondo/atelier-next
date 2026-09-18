@@ -23,7 +23,7 @@ Atelier builds for Apple silicon Macs only. Install Xcode and mise, then run `mi
 
 ## Keys
 
-The built-in shortcuts are the ones `atelier config show` lists. Option+Space opens the leader menu in the bottom-right corner of the screen: type a sequence such as `w f` for Fill or `s 3` for Desktop 3, Backspace goes up a level, Escape leaves, and a click or a switch of apps leaves too and lands where it was aimed. Every other key is consumed while the menu is open, so a typo never reaches the app. Holding Cmd+Option shows the current Desktop's numbered windows in the same corner, with Shift allowed for the reorder shortcuts.
+The built-in shortcuts are the ones `atelier config show` lists. Option+Space opens the leader menu in the bottom-right corner of the screen: type a sequence such as `w f` for Fill or `s 3` for Desktop 3, Backspace goes up a level, Escape leaves, and a click or a switch of apps leaves too and lands where it was aimed. Directions are `h`, `j`, `k`, and `l`, as in Vim: `w h` puts the window on the left half and `s shift+l` moves the Space one place right. The arrow keys do the same without a row in the menu; they are bindings of their own, so changing or unbinding `w h` leaves `w left` alone, and an arrow you bind yourself gets its row. Every other key is consumed while the menu is open, so a typo never reaches the app. Holding Cmd+Option shows the current Desktop's numbered windows in the same corner, with Shift allowed for the reorder shortcuts.
 
 ## Configuration
 

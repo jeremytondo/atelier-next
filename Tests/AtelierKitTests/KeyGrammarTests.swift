@@ -39,10 +39,14 @@ import Testing
   @Test func describesAsMenusDo() throws {
     #expect(KeyGrammar.describe(try KeyGrammar.chord("cmd+option+1")) == "⌥⌘1")
     #expect(KeyGrammar.describe(try KeyGrammar.chord("shift+ctrl+left", bare: true)) == "⌃⇧←")
-    #expect(KeyGrammar.describe(try KeyGrammar.chord("fn+ctrl+f")) == "fn⌃F")
+    #expect(KeyGrammar.describe(try KeyGrammar.chord("fn+ctrl+f")) == "fn⌃f")
     #expect(KeyGrammar.describe(try KeyGrammar.chord("option+space")) == "⌥Space")
     #expect(KeyGrammar.describe(try KeyGrammar.chord("cmd+f5")) == "⌘F5")
-    #expect(KeyGrammar.describe(try KeyGrammar.sequence("w a shift+left")) == "W A ⇧←")
+    #expect(KeyGrammar.describe(try KeyGrammar.sequence("w a shift+left")) == "w a ⇧←")
+    // A letter stays lowercase, so Shift shows only as its own symbol.
+    #expect(KeyGrammar.describe(try KeyGrammar.chord("H", bare: true)) == "h")
+    #expect(KeyGrammar.describe(try KeyGrammar.chord("shift+h", bare: true)) == "⇧h")
+    #expect(KeyGrammar.describe(try KeyGrammar.chord("cmd+delete")) == "⌘⌫")
   }
 
   @Test func writesChordsBackInOneForm() throws {

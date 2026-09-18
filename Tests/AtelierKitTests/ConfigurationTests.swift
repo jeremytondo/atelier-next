@@ -26,13 +26,50 @@ import Testing
   }
 
   private func command(_ menu: Menu, _ key: String) -> Command? {
-    for case .command(let chord, let command) in menu.entries where chord == self.chord(key) {
+    for case .command(let chord, let command, _) in menu.entries where chord == self.chord(key) {
       return command
     }
     return nil
   }
 
   private func chord(_ text: String) -> Chord { AtelierKitTests.chord(text) }
+
+  /// The submenu at a sequence of keys, such as `w a`.
+  private func menu(_ configuration: Configuration, at path: String) -> Menu? {
+    path.split(separator: " ").reduce(configuration.menu) { menu, key in
+      menu.flatMap { submenu($0, String(key)) }
+    }
+  }
+
+  /// Nil when nothing is bound at the key.
+  private func isHidden(_ menu: Menu, _ key: String) -> Bool? {
+    for case .command(let chord, _, let isHidden) in menu.entries where chord == self.chord(key) {
+      return isHidden
+    }
+    return nil
+  }
+
+  /// Every direction the leader offers: where, the Vim key, the arrow, the command.
+  static let directions: [(menu: String, vim: String, arrow: String, command: String)] = [
+    ("w", "h", "left", "windows arrange left"),
+    ("w", "j", "down", "windows arrange bottom"),
+    ("w", "k", "up", "windows arrange top"),
+    ("w", "l", "right", "windows arrange right"),
+    ("w a", "h", "left", "windows arrange left-right"),
+    ("w a", "j", "down", "windows arrange bottom-top"),
+    ("w a", "k", "up", "windows arrange top-bottom"),
+    ("w a", "l", "right", "windows arrange right-left"),
+    ("w a", "shift+h", "shift+left", "windows arrange left-quarters"),
+    ("w a", "shift+j", "shift+down", "windows arrange bottom-quarters"),
+    ("w a", "shift+k", "shift+up", "windows arrange top-quarters"),
+    ("w a", "shift+l", "shift+right", "windows arrange right-quarters"),
+    ("w t", "h", "left", "windows arrange top-left"),
+    ("w t", "l", "right", "windows arrange top-right"),
+    ("w b", "h", "left", "windows arrange bottom-left"),
+    ("w b", "l", "right", "windows arrange bottom-right"),
+    ("s", "shift+h", "shift+left", "spaces move by -1"),
+    ("s", "shift+l", "shift+right", "spaces move by 1"),
+  ]
 
   @Test func theDefaultsAreTheEverydayKeysAndNoQuickApps() {
     let configuration = resolve("")
@@ -53,12 +90,104 @@ import Testing
     #expect(keys(of: configuration.menu) == ["s", "w", "c"])
     let windows = submenu(configuration.menu, "w")
     #expect(windows?.label == "Windows")
-    #expect(windows.map(keys) == ["f", "c", "left", "right", "up", "down", "t", "b", "a"])
+    #expect(
+      windows.map(keys) == [
+        "f", "c", "h", "left", "j", "down", "k", "up", "l", "right", "t", "b", "a",
+      ])
     #expect(command(windows!, "f") == .windowsArrange(.fill))
     #expect(command(submenu(windows!, "a")!, "shift+left") == .windowsArrange(.leftQuarters))
     let spaces = submenu(configuration.menu, "s")!
     #expect(command(spaces, "shift+right") == .spacesMoveBy(1))
     #expect(command(spaces, "0") == .desktopsSelect(10))
+  }
+
+  @Test(arguments: ConfigurationTests.directions.indices)
+  func eachDirectionHasAVimKeyShownAndAnArrowHidden(_ index: Int) throws {
+    let direction = Self.directions[index]
+    let place = try #require(menu(resolve(""), at: direction.menu))
+    let expected = try #require(Command(words: direction.command))
+    #expect(command(place, direction.vim) == expected)
+    #expect(command(place, direction.arrow) == expected)
+    #expect(isHidden(place, direction.vim) == false)
+    #expect(isHidden(place, direction.arrow) == true)
+  }
+
+  @Test func cornersGoLeftAndRightByHAndLAndNothingElse() throws {
+    let configuration = resolve("")
+    for corner in ["w t", "w b"] {
+      let place = try #require(menu(configuration, at: corner))
+      #expect(keys(of: place) == ["h", "left", "l", "right"])
+    }
+    // Only the directions are hidden; every other shipped key has its row.
+    func hidden(_ menu: Menu) -> Int {
+      menu.entries.reduce(0) { count, entry in
+        switch entry {
+        case .command(_, _, let isHidden): count + (isHidden ? 1 : 0)
+        case .submenu(_, let submenu): count + hidden(submenu)
+        }
+      }
+    }
+    #expect(hidden(configuration.menu) == Self.directions.count)
+  }
+
+  @Test func aVimKeyAndItsArrowAreChangedOneAtATime() throws {
+    let configuration = resolve(
+      """
+      [keymap.leader]
+      "w h" = "desktops new"
+      "w j" = "unbind"
+      "w up" = "unbind"
+      "w right" = "windows arrange right"
+      "w a shift+left" = "windows arrange fill"
+      "w t l" = "windows arrange top-left"
+      "w t r" = "windows arrange top-right"
+      """)
+    #expect(configuration.problems.isEmpty)
+    let windows = try #require(menu(configuration, at: "w"))
+    // Changing or removing the Vim key leaves its arrow working and unseen.
+    #expect(command(windows, "h") == .desktopsNew)
+    #expect(command(windows, "left") == .windowsArrange(.left))
+    #expect(isHidden(windows, "left") == true)
+    #expect(command(windows, "j") == nil)
+    #expect(command(windows, "down") == .windowsArrange(.bottom))
+    #expect(isHidden(windows, "down") == true)
+    // Removing the arrow leaves its Vim key.
+    #expect(command(windows, "up") == nil)
+    #expect(command(windows, "k") == .windowsArrange(.top))
+    #expect(isHidden(windows, "k") == false)
+    // An arrow the user wrote is shown, even for the command it already ran.
+    #expect(command(windows, "right") == .windowsArrange(.right))
+    #expect(isHidden(windows, "right") == false)
+    #expect(isHidden(windows, "l") == false)
+    let arrange = try #require(menu(configuration, at: "w a"))
+    #expect(command(arrange, "shift+left") == .windowsArrange(.fill))
+    #expect(isHidden(arrange, "shift+left") == false)
+    #expect(command(arrange, "shift+h") == .windowsArrange(.leftQuarters))
+    // The corner keys of an earlier file still win, and keep their places.
+    let top = try #require(menu(configuration, at: "w t"))
+    #expect(keys(of: top) == ["h", "left", "l", "right", "r"])
+    #expect(command(top, "l") == .windowsArrange(.topLeft))
+    #expect(command(top, "r") == .windowsArrange(.topRight))
+    #expect(command(top, "right") == .windowsArrange(.topRight))
+  }
+
+  @Test func aSubmenuNobodyNamedIsLabelledByItsLowercaseKey() throws {
+    let configuration = resolve(
+      """
+      [keymap.leader]
+      "X n" = "desktops new"
+      "shift+y n" = "desktops new"
+      "z" = { menu = "Zed" }
+      "z n" = "desktops new"
+      """)
+    #expect(configuration.problems.isEmpty)
+    #expect(submenu(configuration.menu, "x")?.label == "x")
+    #expect(submenu(configuration.menu, "x")?.isLabelKey == true)
+    #expect(submenu(configuration.menu, "shift+y")?.label == "⇧y")
+    #expect(submenu(configuration.menu, "z")?.label == "Zed")
+    #expect(submenu(configuration.menu, "z")?.isLabelKey == false)
+    #expect(submenu(configuration.menu, "w")?.isLabelKey == false)
+    #expect(configuration.menu.isLabelKey == false)
   }
 
   @Test func anEntryOverridesItsKeyAndUnbindRemovesIt() {
@@ -356,9 +485,20 @@ import Testing
       ConfigReport(file: nil, configuration: wide, rejection: nil).text.contains(
         "  ⌃⌥⇧⌘Space  desktops new"))
     #expect(!text.contains("⌥⌘1 "))
-    #expect(text.contains("  A       Quick Apps\n    P       quick-apps toggle 1Password"))
-    #expect(text.contains("Quick Apps:\n  1Password  leader A P"))
+    #expect(text.contains("  a       Quick Apps\n    p       quick-apps toggle 1Password"))
+    #expect(text.contains("Quick Apps:\n  1Password  leader a p"))
     #expect(report.json.contains("\"key\" : \"option+1\""))
     #expect(report.json.contains("\"windowListModifiers\" : \"option+cmd\""))
+    // Keys without a row in the menu are in effect, so they are listed, and marked.
+    #expect(
+      text.contains(
+        "    h       windows arrange left\n    ←       windows arrange left  (not shown in the menu)"
+      ))
+    #expect(text.contains("      ⇧h      windows arrange left-quarters\n"))
+    #expect(text.contains("    ⇧→      spaces move by 1  (not shown in the menu)"))
+    #expect(report.json.replacing(" ", with: "").contains("\"hidden\":true,\n\"key\":\"left\""))
+    #expect(report.json.contains("\"key\" : \"shift+h\""))
+    #expect(
+      report.json.components(separatedBy: "\"hidden\" : true").count - 1 == Self.directions.count)
   }
 }

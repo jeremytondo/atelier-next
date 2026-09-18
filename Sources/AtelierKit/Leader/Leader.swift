@@ -17,8 +17,18 @@ public struct LeaderEntry: Equatable, Identifiable, Sendable {
 
 /// The open leader menu.
 public struct LeaderState: Equatable, Sendable {
-  /// The submenu path, such as `Windows › Arrange`, or `Atelier` at the top.
-  public let title: String
+  /// One step of the way to the open submenu.
+  public struct Place: Equatable, Sendable {
+    public let label: String
+    /// True when nobody named the submenu, so the label is its key and
+    /// keeps its case wherever it is shown.
+    public let isKey: Bool
+  }
+
+  /// The way to the open submenu, or the top menu alone.
+  public let path: [Place]
+  /// The path in one line, such as `Windows › Arrange`, or `Atelier` at the top.
+  public var title: String { path.map(\.label).joined(separator: " › ") }
   public let entries: [LeaderEntry]
   /// A word about the last key, for a moment.
   public let feedback: String?
@@ -117,7 +127,7 @@ actor LeaderSession {
     var feedbackTimer: Task<Void, Never>?
     var feedback: String?
     var isShown: Bool
-    var title = ""
+    var path: [LeaderState.Place] = []
     var entries: [LeaderEntry] = []
     /// Counts the menu refreshes, so a slow one never overwrites a newer one.
     var refreshes = 0
@@ -323,7 +333,7 @@ actor LeaderSession {
           case .submenu:
             keys.path.append(pressed)
             acts.yield(.render)
-          case .command(_, let command):
+          case .command(_, let command, _):
             acts.yield(.run(command))
           }
           return .consume
@@ -420,8 +430,9 @@ actor LeaderSession {
     self.opening = opening
     let (path, menu) = opening.keys.withLock { ($0.path, $0.menu) }
     let configuration = opening.configuration
+    // Only the rows shown are asked about; a hidden key finds out when it runs.
     let commands = menu.entries.compactMap { entry -> Command? in
-      if case .command(_, let command) = entry { return command }
+      if case .command(_, let command, isHidden: false) = entry { return command }
       return nil
     }
     let arrangements: [String: ArrangementInfo] =
@@ -443,7 +454,9 @@ actor LeaderSession {
         return LeaderEntry(
           key: KeyGrammar.describe(chord), label: submenu.label, isSubmenu: true, hint: nil,
           unavailable: nil)
-      case .command(let chord, let command):
+      case .command(_, _, isHidden: true):
+        return nil
+      case .command(let chord, let command, _):
         var hint = shortcuts[command]?.first
         var unavailable: String?
         var label = command.label
@@ -472,18 +485,18 @@ actor LeaderSession {
           unavailable: unavailable)
       }
     }
-    self.opening?.title =
+    let places =
       path.isEmpty
-      ? configuration.menu.label
-      : path.indices.map { Keys.menu(configuration.menu, at: Array(path[...$0])).label }
-        .joined(separator: " › ")
+      ? [configuration.menu]
+      : path.indices.map { Keys.menu(configuration.menu, at: Array(path[...$0])) }
+    self.opening?.path = places.map { LeaderState.Place(label: $0.label, isKey: $0.isLabelKey) }
     publish()
   }
 
   private func publish() {
     guard let opening else { return }
     state = LeaderState(
-      title: opening.title, entries: opening.entries, feedback: opening.feedback,
+      path: opening.path, entries: opening.entries, feedback: opening.feedback,
       display: opening.display, isShown: opening.isShown)
     announce()
   }

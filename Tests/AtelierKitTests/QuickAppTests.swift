@@ -81,8 +81,8 @@ import Testing
     #expect(
       list[2].problem
         == "No app named \"Missing\" was found. Give a name, bundle identifier, or path.")
-    #expect(list[0].leader == "A P")
-    #expect(list[0].shortcut == "⌃⌥P")
+    #expect(list[0].leader == "a p")
+    #expect(list[0].shortcut == "⌃⌥p")
     // Its window is not in the Desktop's list.
     #expect(try await atelier.slots() == [1])
   }
@@ -267,7 +267,7 @@ import Testing
     _ = await eventually { await atelier.leader.state()?.title == "Quick Apps" }
     let entries = await atelier.leader.state()?.entries
     #expect(entries?.map(\.label) == ["1Password"])
-    #expect(entries?.first?.hint == "⌃⌥P")
+    #expect(entries?.first?.hint == "⌃⌥p")
     #expect(entries?.first?.unavailable == nil)
     // The same key from the menu hides it, and the menu closes.
     mac.type("p")
