@@ -17,6 +17,19 @@ package protocol Mac: Sendable {
   /// Asks macOS to list Atelier under Accessibility and opens that settings pane.
   func requestAccessibility()
 
+  /// True when this app runs from an Applications folder, as an installed
+  /// copy does and a build in a source checkout does not.
+  var isInstalled: Bool { get }
+
+  var loginItemStatus: LoginItemStatus { get }
+
+  /// Asks macOS to open this app at login. Nil when macOS took the request,
+  /// and otherwise why not. The caller reads `loginItemStatus` for the result.
+  func registerLoginItem() -> String?
+
+  /// Opens Login Items in System Settings.
+  func openLoginItemSettings()
+
   /// Where the keyboard is now, read in the background from the frontmost app.
   func focus() async -> Focus
 

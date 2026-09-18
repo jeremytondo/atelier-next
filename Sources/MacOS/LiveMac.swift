@@ -26,6 +26,18 @@ package struct LiveMac: Mac {
     Accessibility.request()
   }
 
+  package var isInstalled: Bool { LoginItem.isInstalled }
+
+  package var loginItemStatus: LoginItemStatus { LoginItem.status }
+
+  package func registerLoginItem() -> String? {
+    LoginItem.register()
+  }
+
+  package func openLoginItemSettings() {
+    LoginItem.openSettings()
+  }
+
   package func focus() async -> Focus {
     let app = NSWorkspace.shared.frontmostApplication?.processIdentifier
     return await census.focus(of: app == getpid() ? nil : app)
