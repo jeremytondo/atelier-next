@@ -17,7 +17,6 @@ struct SkyLight: Sendable {
       UnsafeMutablePointer<UInt32>
     ) -> CGError
   private typealias IsSymbolicHotKeyEnabled = @convention(c) (UInt32) -> Bool
-  private typealias SetSymbolicHotKeyEnabled = @convention(c) (UInt32, Bool) -> CGError
   private typealias GetWorkspacesCount =
     @convention(c) (UnsafeMutablePointer<UInt32>, UnsafeMutablePointer<UInt32>) -> Int32
 
@@ -28,7 +27,6 @@ struct SkyLight: Sendable {
   private let getWindow: GetWindow
   private let getSymbolicHotKeyValue: GetSymbolicHotKeyValue
   private let hotKeyIsEnabled: IsSymbolicHotKeyEnabled
-  private let enableHotKey: SetSymbolicHotKeyEnabled
   private let getWorkspacesCount: GetWorkspacesCount
 
   init() throws {
@@ -46,7 +44,6 @@ struct SkyLight: Sendable {
       let window = dlsym(hiServices, "_AXUIElementGetWindow"),
       let hotKeyValue = dlsym(skyLight, "CGSGetSymbolicHotKeyValue"),
       let hotKeyEnabled = dlsym(skyLight, "CGSIsSymbolicHotKeyEnabled"),
-      let enableHotKey = dlsym(skyLight, "CGSSetSymbolicHotKeyEnabled"),
       let workspaces = dlsym(hiServices, "CoreDockGetWorkspacesCount")
     else { throw MacError("The Space, shortcut, and window identity symbols are unavailable") }
     connection = unsafeBitCast(main, to: MainConnection.self)()
@@ -56,7 +53,6 @@ struct SkyLight: Sendable {
     getWindow = unsafeBitCast(window, to: GetWindow.self)
     getSymbolicHotKeyValue = unsafeBitCast(hotKeyValue, to: GetSymbolicHotKeyValue.self)
     hotKeyIsEnabled = unsafeBitCast(hotKeyEnabled, to: IsSymbolicHotKeyEnabled.self)
-    self.enableHotKey = unsafeBitCast(enableHotKey, to: SetSymbolicHotKeyEnabled.self)
     getWorkspacesCount = unsafeBitCast(workspaces, to: GetWorkspacesCount.self)
   }
 
@@ -91,14 +87,11 @@ struct SkyLight: Sendable {
     return (key, flags)
   }
 
+  /// Whether the shortcut is switched on in Keyboard settings. One that is off
+  /// can be switched on for the login session, after which this says true and
+  /// pressing the shortcut still does nothing, so Atelier does not.
   func isSymbolicHotKeyEnabled(_ id: UInt32) -> Bool {
     hotKeyIsEnabled(id)
-  }
-
-  /// Turns a shortcut on or off for this login session only; the user's saved
-  /// setting is untouched.
-  func setSymbolicHotKey(_ id: UInt32, enabled: Bool) -> Bool {
-    enableHotKey(id, enabled) == .success
   }
 
   /// Dock's own count of Desktops, kept apart from WindowServer's census.

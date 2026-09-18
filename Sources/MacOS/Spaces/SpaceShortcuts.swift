@@ -1,26 +1,23 @@
 import CoreGraphics
 import Foundation
-import Synchronization
 
 /// Switches Spaces by pressing macOS's own shortcuts, so Dock switches exactly
 /// as it does for the user. Asking WindowServer to change Space directly
 /// leaves Dock behind: the old Space's windows and menu bar stay on screen.
 ///
-/// A shortcut the user has turned off is turned on for this login session
-/// just long enough for macOS to match the key press, then off again. The
-/// user's saved setting is never written. Should Atelier die in that moment
-/// the shortcut stays on until logout.
+/// Only a shortcut that is switched on in Keyboard settings is pressed. One
+/// that is off can be switched on for the login session, and macOS says it
+/// is on, yet pressing it then does nothing, so there is no borrowing: a
+/// route uses the shortcuts the user has, and with "Switch to Desktop N" off
+/// a far Desktop is reached a step at a time.
 final class SpaceShortcuts: Sendable {
-  /// macOS matches a press within a few milliseconds; the switch that follows
-  /// takes longer, and does not need the shortcut.
-  static let borrowTime: TimeInterval = 0.3
-
   /// How long one press may take to show, animation included.
   static let pressTimeLimit: Duration = .seconds(3)
 
+  /// How long a press waits for the user to let go of the keys that called for it.
+  static let releaseTimeLimit: Duration = .seconds(2)
+
   private let skyLight: SkyLight
-  /// Shortcuts to turn off again, and how many presses are still borrowing them.
-  private let borrowed = Mutex<[UInt32: Int]>([:])
 
   init(skyLight: SkyLight) {
     self.skyLight = skyLight
@@ -33,12 +30,24 @@ final class SpaceShortcuts: Sendable {
     guard DisplaySpaces.decode(skyLight.managedDisplaySpaces()) == expecting else {
       return .changed
     }
-    guard let plan = SpaceRoute.plan(to: space, on: display, in: expecting) else {
-      return .refused("macOS has no keyboard shortcut that reaches that Space from here.")
+    let plan = SpaceRoute.plan(to: space, on: display, in: expecting) { [skyLight] press in
+      skyLight.isSymbolicHotKeyEnabled(Self.id(of: press))
+    }
+    guard let plan else {
+      return .refused(
+        "macOS has no keyboard shortcut switched on that reaches that Space from here. Turn on Mission Control's shortcuts in Keyboard settings."
+      )
     }
     for (press, arrivesAt) in plan {
-      guard self.press(press) else {
+      guard let (key, table) = skyLight.symbolicHotKey(Self.id(of: press)) else {
         return .refused("macOS has no keyboard shortcut for switching Spaces.")
+      }
+      let flags = CGEventFlags(rawValue: UInt64(table))
+      guard await fingersAreOff(allBut: flags) else {
+        return .refused("Let go of the modifier keys, and Atelier will switch Spaces.")
+      }
+      guard self.press(key, flags) else {
+        return .refused("macOS would not take a key press from Atelier.")
       }
       let deadline = ContinuousClock.now + Self.pressTimeLimit
       while currentSpace(of: display) != arrivesAt {
@@ -56,50 +65,65 @@ final class SpaceShortcuts: Sendable {
       .currentSpace
   }
 
-  private func press(_ press: SpaceRoute.Press) -> Bool {
-    // Numbers in macOS's table of its own keyboard shortcuts.
-    let id: UInt32 =
-      switch press {
-      case .previous: 79
-      case .next: 81
-      case .desktop(let number): UInt32(117 + number)
-      }
-    guard let (key, flags) = skyLight.symbolicHotKey(id),
-      let down = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: true),
-      let up = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: false),
-      borrow(id)
-    else { return false }
-    down.flags = CGEventFlags(rawValue: UInt64(flags))
-    up.flags = []
-    // Marked as Atelier's own, so its key listener lets them through.
-    PostedKeys.mark(down)
-    PostedKeys.mark(up)
-    down.post(tap: .cghidEventTap)
-    up.post(tap: .cghidEventTap)
+  /// The press's number in macOS's table of its own keyboard shortcuts.
+  private static func id(of press: SpaceRoute.Press) -> UInt32 {
+    switch press {
+    case .previous: 79
+    case .next: 81
+    case .desktop(let number): UInt32(117 + number)
+    }
+  }
+
+  /// Waits for every modifier key the shortcut does not use to come up. macOS
+  /// adds whatever modifiers are down to a press, so Control+Right pressed
+  /// while the user still holds Option, as after Option+2, is Control+Option+
+  /// Right: no Space shortcut, and one of Atelier's own. A key posted as
+  /// released stays down while a finger holds it, so there is only waiting.
+  /// False when they are still down after `releaseTimeLimit`.
+  private func fingersAreOff(allBut flags: CGEventFlags) async -> Bool {
+    let others = Self.modifierKeys.reduce(into: CGEventFlags()) { $0.insert($1.flag) }
+      .subtracting(flags)
+    let deadline = ContinuousClock.now + Self.releaseTimeLimit
+    while !CGEventSource.flagsState(.combinedSessionState).intersection(others).isEmpty {
+      guard ContinuousClock.now < deadline else { return false }
+      try? await Task.sleep(for: .milliseconds(5))
+    }
     return true
   }
 
-  /// False when a shortcut that is off could not be turned on.
-  private func borrow(_ id: UInt32) -> Bool {
-    let mustReturn: Bool? = borrowed.withLock { borrowed in
-      if let presses = borrowed[id] {
-        borrowed[id] = presses + 1
-        return true
-      }
-      if skyLight.isSymbolicHotKeyEnabled(id) { return false }
-      guard skyLight.setSymbolicHotKey(id, enabled: true) else { return nil }
-      borrowed[id] = 1
-      return true
+  private func press(_ key: CGKeyCode, _ flags: CGEventFlags) -> Bool {
+    // macOS matches its own shortcuts against the keyboard's live modifier
+    // state, which only a modifier key's own event changes. A key press that
+    // merely carries the flags is ignored whenever that state lacks them, so
+    // each modifier key goes down first and comes up afterwards, as it would
+    // under a finger.
+    let modifiers = Self.modifierKeys.filter { flags.contains($0.flag) }
+    var held: CGEventFlags = []
+    var presses: [(CGKeyCode, Bool, CGEventFlags)] = modifiers.map {
+      held.insert($0.flag)
+      return ($0.key, true, held)
     }
-    guard let mustReturn else { return false }
-    guard mustReturn else { return true }
-    DispatchQueue.global().asyncAfter(deadline: .now() + Self.borrowTime) { [self] in
-      borrowed.withLock { borrowed in
-        guard let presses = borrowed[id] else { return }
-        borrowed[id] = presses > 1 ? presses - 1 : nil
-        if presses == 1 { _ = skyLight.setSymbolicHotKey(id, enabled: false) }
-      }
+    presses += [(key, true, flags), (key, false, flags)]
+    presses += modifiers.reversed().map {
+      held.remove($0.flag)
+      return ($0.key, false, held)
+    }
+    let events = presses.compactMap { key, isDown, flags -> CGEvent? in
+      let event = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: isDown)
+      event?.flags = flags
+      return event
+    }
+    guard events.count == presses.count else { return false }
+    for event in events {
+      // Marked as Atelier's own, so its key listener lets them through.
+      PostedKeys.mark(event)
+      event.post(tap: .cghidEventTap)
     }
     return true
   }
+
+  /// The modifier keys a shortcut can need, by the left-hand key of each.
+  private static let modifierKeys: [(flag: CGEventFlags, key: CGKeyCode)] = [
+    (.maskControl, 59), (.maskAlternate, 58), (.maskShift, 56), (.maskCommand, 55),
+  ]
 }
