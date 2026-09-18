@@ -54,9 +54,15 @@ enum MenuEntry: Equatable, Sendable {
   }
 }
 
+/// How Atelier's interface looks: forced light or dark, or whatever macOS is.
+public enum Theme: String, Sendable {
+  case light, dark, system
+}
+
 /// What Atelier goes by: the built-in defaults with the user's file applied
 /// over them, and the problems found on the way.
 struct Configuration: Equatable, Sendable {
+  var theme: Theme
   var leader: LeaderSettings
   var windowListModifiers: Chord.Modifiers
   /// Every global shortcut and its command; an unbound key is simply absent.

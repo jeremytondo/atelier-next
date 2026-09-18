@@ -4,6 +4,8 @@ import MacOS
 /// write it, so the two are checked the same way; the tests confirm that every
 /// line here parses.
 enum Defaults {
+  static let theme = Theme.system
+
   static let leader = LeaderSettings(
     chord: Chord([.option], "space"), delay: .zero, timeout: .seconds(10))
 
@@ -92,6 +94,8 @@ enum Defaults {
     # Atelier configuration. Atelier runs with built-in defaults; this file
     # overrides them. `atelier config show` prints what is in effect, and
     # `atelier config reload` applies your edits.
+    #
+    # theme = "system"  # or "light" or "dark"
     #
     # [leader]
     # key = "option+space"

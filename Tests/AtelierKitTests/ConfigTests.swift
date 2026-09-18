@@ -121,6 +121,26 @@ import Testing
     #expect(await atelier.config.problems().isEmpty)
   }
 
+  @Test func theThemeAppliesAtStartupAndOnReloadAndARejectedFileKeepsIt() async throws {
+    try write("theme = \"dark\"\n")
+    let atelier = await start()
+    #expect(await atelier.config.theme() == .dark)
+    // Saving the file alone changes nothing.
+    try write("theme = \"light\"\n")
+    #expect(await atelier.config.theme() == .dark)
+    #expect(try await atelier.config.reload().outcome == .changed)
+    #expect(await atelier.config.theme() == .light)
+    // A file that cannot be parsed is refused whole, and the theme stays.
+    try write("theme = \"dark\n")
+    await #expect(throws: AtelierError.self) { try await atelier.config.reload() }
+    #expect(await atelier.config.theme() == .light)
+    // A theme with a problem is left out, which means the default.
+    try write("theme = \"sepia\"\n")
+    let result = try await atelier.config.reload()
+    #expect(result.problems.map(\.location) == ["theme"])
+    #expect(await atelier.config.theme() == .system)
+  }
+
   @Test func aRejectedFileAtStartupMeansTheDefaultsWithTheProblemOnRecord() async throws {
     try write("this is not toml")
     let mac = FakeMac()
@@ -128,6 +148,7 @@ import Testing
     #expect(Set(mac.hotKeys).count == Defaults.global.count + 1)
     let problems = await atelier.config.problems()
     #expect(problems.map(\.location) == ["line 1"])
+    #expect(await atelier.config.theme() == .system)
   }
 
   @Test func problemsWithSettingsLeaveTheRestInEffect() async throws {
