@@ -191,12 +191,18 @@ actor ConfigStore {
     isApplying = true
     defer { isApplying = false }
     current = configuration
-    let refused = await mac.registerHotKeys(Array(configuration.global.keys))
+    let chords = Array(configuration.global.keys) + (configuration.leader.chord.map { [$0] } ?? [])
+    let refused = await mac.registerHotKeys(chords)
     for (chord, reason) in refused.sorted(by: { KeyGrammar.text($0.key) < KeyGrammar.text($1.key) })
     {
-      current.problems.append(
-        Problem(location: "shortcut \(KeyGrammar.describe(chord))", message: reason))
-      current.global[chord] = nil
+      if chord == current.leader.chord {
+        current.problems.append(Problem(location: "leader key", message: reason))
+        current.leader.chord = nil
+      } else {
+        current.problems.append(
+          Problem(location: "shortcut \(KeyGrammar.describe(chord))", message: reason))
+        current.global[chord] = nil
+      }
     }
     announce()
   }

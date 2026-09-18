@@ -1,6 +1,6 @@
 // Atelier.app: the one running Atelier. It starts AtelierKit and puts the
-// interface in the menu bar. All behavior is in AtelierKit and everything
-// visible is in UI.
+// interface in the menu bar and the HUD. All behavior is in AtelierKit and
+// everything visible is in UI.
 import AppKit
 import AtelierKit
 import UI
@@ -17,10 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private static let shared = AppDelegate()
   private let log = Logger(subsystem: "com.elevenideas.Atelier", category: "app")
   private var menuBar: MenuBar?
+  private var hud: HUD?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     do {
-      menuBar = MenuBar(atelier: try Atelier.live())
+      let atelier = try Atelier.live()
+      menuBar = MenuBar(atelier: atelier)
+      hud = HUD(atelier: atelier)
     } catch Server.StartError.alreadyRunning {
       log.notice("Another Atelier is already running; leaving it in charge.")
       NSApp.terminate(nil)

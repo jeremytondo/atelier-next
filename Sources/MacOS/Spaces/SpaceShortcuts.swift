@@ -71,6 +71,9 @@ final class SpaceShortcuts: Sendable {
     else { return false }
     down.flags = CGEventFlags(rawValue: UInt64(flags))
     up.flags = []
+    // Marked as Atelier's own, so its key listener lets them through.
+    PostedKeys.mark(down)
+    PostedKeys.mark(up)
     down.post(tap: .cghidEventTap)
     up.post(tap: .cghidEventTap)
     return true
