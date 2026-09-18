@@ -18,8 +18,8 @@ import Testing
   }
 
   @Test func answersTheSameQueryAsTheInterface() async throws {
-    let session = Session(FakeMac(windows: [window(1)]))
-    try Server.start(path: path) { await session.reply(to: $0) }
+    let atelier = Atelier(FakeMac(windows: [window(1)]))
+    try Server.start(path: path) { await atelier.reply(to: $0) }
     let reply = try Request(name: "windows.list").send(to: path)
     #expect(reply == Reply(ok: true, output: "  1  App 1 — Window 1"))
   }

@@ -11,7 +11,7 @@ import Testing
   }
 
   @Test func listsEveryKindOfSpaceInOrder() async throws {
-    let list = try await Session(mac(current: 3)).spaces.list()
+    let list = try await Atelier(mac(current: 3)).spaces.list()
     #expect(list.display == "only")
     #expect(list.spaces.map(\.id) == [1, 2, 3, 4, 5])
     #expect(list.spaces.map(\.desktopNumber) == [1, nil, 2, 3, nil])
@@ -20,62 +20,62 @@ import Testing
 
   @Test func nextAndPreviousStepThroughEveryKind() async throws {
     let mac = mac(current: 1)
-    let session = Session(mac)
+    let atelier = Atelier(mac)
     for expected in [2, 3, 4, 5] as [UInt64] {
-      #expect(try await session.spaces.next() == .done)
+      #expect(try await atelier.spaces.next() == .changed)
       #expect(mac.currentSpace == expected)
     }
     for expected in [4, 3, 2, 1] as [UInt64] {
-      #expect(try await session.spaces.previous() == .done)
+      #expect(try await atelier.spaces.previous() == .changed)
       #expect(mac.currentSpace == expected)
     }
   }
 
   @Test func nextWrapsFromTheLastSpaceToTheFirst() async throws {
     let mac = mac(current: 5)
-    #expect(try await Session(mac).spaces.next() == .done)
+    #expect(try await Atelier(mac).spaces.next() == .changed)
     #expect(mac.currentSpace == 1)
   }
 
   @Test func previousWrapsToALastSpaceThatIsNotADesktop() async throws {
     let mac = mac(current: 1)
-    #expect(try await Session(mac).spaces.previous() == .done)
+    #expect(try await Atelier(mac).spaces.previous() == .changed)
     #expect(mac.currentSpace == 5)
   }
 
   @Test func withOneSpaceNextIsNothingToDo() async throws {
     let mac = FakeMac.oneDisplay(spaces: 1...1)
-    #expect(try await Session(mac).spaces.next() == .noop)
+    #expect(try await Atelier(mac).spaces.next() == .unchanged)
     #expect(mac.requests.isEmpty)
   }
 
   @Test func selectsAnyKindOfSpaceByPosition() async throws {
     let mac = mac(current: 4)
-    let session = Session(mac)
-    #expect(try await session.spaces.select(position: 2) == .done)
+    let atelier = Atelier(mac)
+    #expect(try await atelier.spaces.select(position: 2) == .changed)
     #expect(mac.currentSpace == 2)
-    #expect(try await session.spaces.select(position: 5) == .done)
+    #expect(try await atelier.spaces.select(position: 5) == .changed)
     #expect(mac.currentSpace == 5)
   }
 
   @Test func aPositionIsNeverTakenForADesktopNumber() async throws {
     let mac = mac(current: 1)
-    let session = Session(mac)
-    #expect(try await session.spaces.select(position: 3) == .done)
+    let atelier = Atelier(mac)
+    #expect(try await atelier.spaces.select(position: 3) == .changed)
     #expect(mac.currentSpace == 3)
-    #expect(try await session.desktops.select(number: 3) == .done)
+    #expect(try await atelier.desktops.select(number: 3) == .changed)
     #expect(mac.currentSpace == 4)
   }
 
   @Test func outOfRangeAndCurrentSelectionsAreNothingToDo() async throws {
     let mac = mac(current: 3)
-    let session = Session(mac)
-    #expect(try await session.spaces.select(position: 6) == .noop)
-    #expect(try await session.spaces.select(position: 0) == .noop)
-    #expect(try await session.spaces.select(position: 3) == .noop)
-    #expect(try await session.desktops.select(number: 4) == .noop)
-    #expect(try await session.desktops.select(number: 0) == .noop)
-    #expect(try await session.desktops.select(number: 2) == .noop)
+    let atelier = Atelier(mac)
+    #expect(try await atelier.spaces.select(position: 6) == .unchanged)
+    #expect(try await atelier.spaces.select(position: 0) == .unchanged)
+    #expect(try await atelier.spaces.select(position: 3) == .unchanged)
+    #expect(try await atelier.desktops.select(number: 4) == .unchanged)
+    #expect(try await atelier.desktops.select(number: 0) == .unchanged)
+    #expect(try await atelier.desktops.select(number: 2) == .unchanged)
     #expect(mac.requests.isEmpty)
   }
 
@@ -85,7 +85,7 @@ import Testing
     await #expect(
       throws: AtelierError.failed("macOS did not switch to the Space Atelier asked for.")
     ) {
-      try await Session(mac).spaces.next()
+      try await Atelier(mac).spaces.next()
     }
   }
 
@@ -97,7 +97,7 @@ import Testing
     await #expect(
       throws: AtelierError.targetChanged("The Spaces changed before Atelier could switch.")
     ) {
-      try await Session(mac).spaces.next()
+      try await Atelier(mac).spaces.next()
     }
     #expect(mac.requests.isEmpty)
   }
@@ -106,16 +106,16 @@ import Testing
     let mac = mac(current: 1)
     mac.change { $0.switchResult = .refused("No shortcut reaches that Space.") }
     await #expect(throws: AtelierError.unsupported("No shortcut reaches that Space.")) {
-      try await Session(mac).spaces.next()
+      try await Atelier(mac).spaces.next()
     }
   }
 
   @Test func extremeNumbersAreNothingToDo() async throws {
-    let session = Session(mac(current: 1))
+    let atelier = Atelier(mac(current: 1))
     for number in [Int.min, -1, Int.max] {
-      #expect(try await session.spaces.select(position: number) == .noop)
-      #expect(try await session.desktops.select(number: number) == .noop)
-      #expect(try await session.windows.select(number) == .noop)
+      #expect(try await atelier.spaces.select(position: number) == .unchanged)
+      #expect(try await atelier.desktops.select(number: number) == .unchanged)
+      #expect(try await atelier.windows.select(number) == .unchanged)
     }
   }
 
@@ -123,7 +123,7 @@ import Testing
 
   @Test func movesASpaceToAPositionLikeMissionControl() async throws {
     let mac = mac(current: 3)
-    #expect(try await Session(mac).spaces.move(from: 1, to: 3) == .done)
+    #expect(try await Atelier(mac).spaces.move(from: 1, to: 3) == .changed)
     #expect(mac.spaceOrder == [2, 3, 1, 4, 5])
     #expect(mac.currentSpace == 3)
     #expect(mac.requests == ["move 1 to 2"])
@@ -131,29 +131,29 @@ import Testing
 
   @Test func movesAFullScreenSpaceAndTheCurrentSpace() async throws {
     let mac = mac(current: 4)
-    let session = Session(mac)
-    #expect(try await session.spaces.move(from: 2, to: 5) == .done)
+    let atelier = Atelier(mac)
+    #expect(try await atelier.spaces.move(from: 2, to: 5) == .changed)
     #expect(mac.spaceOrder == [1, 3, 4, 5, 2])
-    #expect(try await session.spaces.move(from: 3, to: 1) == .done)
+    #expect(try await atelier.spaces.move(from: 3, to: 1) == .changed)
     #expect(mac.spaceOrder == [4, 1, 3, 5, 2])
     #expect(mac.currentSpace == 4)
   }
 
   @Test func movesWhileAFullScreenSpaceIsCurrent() async throws {
     let mac = mac(current: 2)
-    #expect(try await Session(mac).spaces.move(from: 4, to: 1) == .done)
+    #expect(try await Atelier(mac).spaces.move(from: 4, to: 1) == .changed)
     #expect(mac.spaceOrder == [4, 1, 2, 3, 5])
     #expect(mac.currentSpace == 2)
   }
 
   @Test func movesOutOfRangeOrInPlaceAreNothingToDo() async throws {
     let mac = mac(current: 1)
-    let session = Session(mac)
-    #expect(try await session.spaces.move(from: 6, to: 1) == .noop)
-    #expect(try await session.spaces.move(from: 1, to: 6) == .noop)
-    #expect(try await session.spaces.move(from: 0, to: 1) == .noop)
-    #expect(try await session.spaces.move(from: 3, to: 3) == .noop)
-    #expect(try await session.spaces.move(from: Int.min, to: Int.max) == .noop)
+    let atelier = Atelier(mac)
+    #expect(try await atelier.spaces.move(from: 6, to: 1) == .unchanged)
+    #expect(try await atelier.spaces.move(from: 1, to: 6) == .unchanged)
+    #expect(try await atelier.spaces.move(from: 0, to: 1) == .unchanged)
+    #expect(try await atelier.spaces.move(from: 3, to: 3) == .unchanged)
+    #expect(try await atelier.spaces.move(from: Int.min, to: Int.max) == .unchanged)
     #expect(mac.requests.isEmpty)
   }
 
@@ -162,7 +162,7 @@ import Testing
     mac.change { $0.ignoresSpaceChanges = true }
     await #expect(
       throws: AtelierError.uncertain("macOS did not confirm the move. Check Mission Control.")
-    ) { try await Session(mac).spaces.move(from: 1, to: 2) }
+    ) { try await Atelier(mac).spaces.move(from: 1, to: 2) }
     #expect(mac.requests == ["move 1 to 1"])
   }
 
@@ -170,7 +170,7 @@ import Testing
     let mac = mac(current: 1)
     mac.change { $0.moveResult = .refused("Moving a Space is unavailable on this macOS") }
     await #expect(throws: AtelierError.unsupported("Moving a Space is unavailable on this macOS")) {
-      try await Session(mac).spaces.move(from: 1, to: 2)
+      try await Atelier(mac).spaces.move(from: 1, to: 2)
     }
     #expect(mac.spaceOrder == [1, 2, 3, 4, 5])
   }
@@ -180,13 +180,13 @@ import Testing
     mac.change { state in
       state.afterSnapshot = { $0.replaceSpaces { $0.reversed() } }
     }
-    await #expect(throws: AtelierError.self) { try await Session(mac).spaces.move(from: 1, to: 2) }
+    await #expect(throws: AtelierError.self) { try await Atelier(mac).spaces.move(from: 1, to: 2) }
     #expect(mac.requests.isEmpty)
   }
 
   @Test func spacesAreMovedOnOneDisplayOnly() async throws {
     let mac = FakeMac()
-    await #expect(throws: AtelierError.self) { try await Session(mac).spaces.move(from: 1, to: 2) }
+    await #expect(throws: AtelierError.self) { try await Atelier(mac).spaces.move(from: 1, to: 2) }
     #expect(mac.requests.isEmpty)
   }
 }

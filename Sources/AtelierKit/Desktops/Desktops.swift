@@ -73,11 +73,11 @@ extension Workspace {
       let desktops = observation.display.desktops
       guard number >= 1, desktops.indices.contains(number - 1),
         desktops[number - 1] != observation.space
-      else { return .noop }
+      else { return .unchanged }
       try await go(
         to: desktops[number - 1].id, on: observation.display.id,
         in: observation.snapshot.displays)
-      return .done
+      return .changed
     }
   }
 
@@ -112,7 +112,7 @@ extension Workspace {
         throw .desktopCreated(
           created, then: "The new Desktop was made, but Atelier could not switch to it.")
       }
-      return .done
+      return .changed
     }
   }
 
@@ -137,7 +137,7 @@ extension Workspace {
         throw .uncertain("macOS did not confirm the deletion. Check Mission Control.")
       }
       forgetList(of: doomed.id)
-      return .done
+      return .changed
     }
   }
 }

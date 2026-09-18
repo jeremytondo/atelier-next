@@ -263,7 +263,7 @@ extension Patience {
   }
 }
 
-extension Session {
+extension Atelier {
   init(_ mac: FakeMac, stateFolder: URL? = nil) {
     self.init(mac: mac, stateFolder: stateFolder, patience: .short)
   }
