@@ -81,15 +81,17 @@ extension Workspace {
     try await run { observation async throws(AtelierError) in
       guard slot >= 1, let list = lists.byDesktop[observation.space.id],
         list.indices.contains(slot - 1)
-      else { return .noop }
+      else { return .unchanged }
       try await focus(list[slot - 1], from: observation)
-      return .done
+      return .changed
     }
   }
 
   func cycleWindow(_ direction: CycleDirection) async throws(AtelierError) -> Outcome {
     try await run { observation async throws(AtelierError) in
-      guard let list = lists.byDesktop[observation.space.id], !list.isEmpty else { return .noop }
+      guard let list = lists.byDesktop[observation.space.id], !list.isEmpty else {
+        return .unchanged
+      }
       let focused = observation.focusedWindow(in: list).flatMap(list.firstIndex)
       let index =
         switch direction {
@@ -97,7 +99,7 @@ extension Workspace {
         case .previous: focused.map { ($0 + list.count - 1) % list.count } ?? list.count - 1
         }
       try await focus(list[index], from: observation)
-      return .done
+      return .changed
     }
   }
 
@@ -106,8 +108,8 @@ extension Workspace {
       let desktop = observation.space.id
       guard let window = observation.focusedWindow(in: lists.byDesktop[desktop] ?? []),
         moveWindow(window, on: desktop, move)
-      else { return .noop }
-      return .done
+      else { return .unchanged }
+      return .changed
     }
   }
 

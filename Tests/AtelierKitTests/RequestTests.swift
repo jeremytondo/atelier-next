@@ -8,11 +8,11 @@ import Testing
     focusedWindow: 2, windows: [window(1, onScreen: false), window(2)])
 
   private func reply(_ name: String, _ arguments: [String] = [], on mac: FakeMac) async -> Reply {
-    await Session(mac).reply(to: Request(name: name, arguments: arguments))
+    await Atelier(mac).reply(to: Request(name: name, arguments: arguments))
   }
 
   @Test func wordsTheWindowList() async {
-    let reply = await Session(mac).reply(to: Request(name: "windows.list"))
+    let reply = await Atelier(mac).reply(to: Request(name: "windows.list"))
     #expect(
       reply
         == Reply(
@@ -24,7 +24,7 @@ import Testing
   }
 
   @Test func answersInJSONWhenAsked() async throws {
-    let reply = await Session(mac).reply(to: Request(name: "windows.list", json: true))
+    let reply = await Atelier(mac).reply(to: Request(name: "windows.list", json: true))
     let json = try JSONSerialization.jsonObject(with: Data(reply.output.utf8)) as? [String: Any]
     let windows = json?["windows"] as? [[String: Any]]
     #expect(reply.ok)
@@ -35,17 +35,17 @@ import Testing
   }
 
   @Test func saysWhenTheCurrentSpaceIsNotADesktop() async throws {
-    let session = Session(FakeMac(activeSpace: 4, shownOnSecondDisplay: 4))
-    let text = await session.reply(to: Request(name: "windows.list"))
+    let atelier = Atelier(FakeMac(activeSpace: 4, shownOnSecondDisplay: 4))
+    let text = await atelier.reply(to: Request(name: "windows.list"))
     #expect(text == Reply(ok: true, output: WindowList.notDesktopMessage))
-    let reply = await session.reply(to: Request(name: "windows.list", json: true))
+    let reply = await atelier.reply(to: Request(name: "windows.list", json: true))
     let json = try JSONSerialization.jsonObject(with: Data(reply.output.utf8)) as? [String: Any]
     #expect(json?["space"] as? String == "notDesktop")
   }
 
   @Test func refusesWithoutAccessibility() async {
-    let session = Session(FakeMac(hasAccessibility: false))
-    let reply = await session.reply(to: Request(name: "windows.list"))
+    let atelier = Atelier(FakeMac(hasAccessibility: false))
+    let reply = await atelier.reply(to: Request(name: "windows.list"))
     #expect(reply == Reply(ok: false, output: AtelierError.accessibilityRequired.message))
   }
 
@@ -72,12 +72,12 @@ import Testing
 
   @Test func renumbersWindowsByNameAndArguments() async throws {
     let mac = FakeMac(focusedWindow: 1, windows: [window(1), window(2), window(3)])
-    let session = Session(mac)
-    #expect(await session.reply(to: Request(name: "windows.move", arguments: ["by", "1"])).ok)
-    #expect(try await session.slots() == [2, 1, 3])
-    #expect(await session.reply(to: Request(name: "windows.move", arguments: ["to", "3"])).ok)
-    #expect(try await session.slots() == [2, 3, 1])
-    let reply = await session.reply(to: Request(name: "windows.select", arguments: ["7"]))
+    let atelier = Atelier(mac)
+    #expect(await atelier.reply(to: Request(name: "windows.move", arguments: ["by", "1"])).ok)
+    #expect(try await atelier.slots() == [2, 1, 3])
+    #expect(await atelier.reply(to: Request(name: "windows.move", arguments: ["to", "3"])).ok)
+    #expect(try await atelier.slots() == [2, 3, 1])
+    let reply = await atelier.reply(to: Request(name: "windows.select", arguments: ["7"]))
     #expect(reply == Reply(ok: true, output: "Nothing to do."))
   }
 
@@ -104,7 +104,7 @@ import Testing
     ["desktops.new", "now"],
   ])
   func refusesWhatItDoesNotKnow(words: [String]) async {
-    let reply = await Session(mac).reply(
+    let reply = await Atelier(mac).reply(
       to: Request(name: words[0], arguments: Array(words.dropFirst())))
     #expect(!reply.ok)
     #expect(mac.requests.isEmpty)

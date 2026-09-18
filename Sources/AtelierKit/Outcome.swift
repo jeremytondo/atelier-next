@@ -1,8 +1,9 @@
-/// How a command ended when nothing went wrong.
+/// How a command ended when nothing went wrong: it changed something, or
+/// there was nothing to do. Nothing to do is a success, as with `mkdir -p`.
 public enum Outcome: Equatable, Sendable {
-  case done
-  /// There was nothing to do: no such slot, already there, or already at the end.
-  case noop
+  case changed
+  /// No such slot, already there, or already at the end.
+  case unchanged
 }
 
 public enum AtelierError: Error, Equatable, Sendable {

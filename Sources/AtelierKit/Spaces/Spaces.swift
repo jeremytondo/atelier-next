@@ -40,7 +40,7 @@ public struct Spaces: Sendable {
   /// Space. Nothing to do for a position past the end. For Desktop numbers,
   /// which skip full-screen and Split View Spaces, see `desktops.select`.
   public func select(position: Int) async throws(AtelierError) -> Outcome {
-    guard position >= 1 else { return .noop }
+    guard position >= 1 else { return .unchanged }
     return try await workspace.goToSpace { _, _ in position - 1 }
   }
 
@@ -84,10 +84,10 @@ extension Workspace {
       let spaces = observation.display.spaces
       guard let current = spaces.firstIndex(of: observation.space) else { throw .unavailable }
       let target = choose(current, spaces.count)
-      guard spaces.indices.contains(target), target != current else { return .noop }
+      guard spaces.indices.contains(target), target != current else { return .unchanged }
       try await go(
         to: spaces[target].id, on: observation.display.id, in: observation.snapshot.displays)
-      return .done
+      return .changed
     }
   }
 
@@ -101,7 +101,7 @@ extension Workspace {
       var spaces = display.spaces
       guard from >= 1, to >= 1, spaces.indices.contains(from - 1), spaces.indices.contains(to - 1),
         from != to
-      else { return .noop }
+      else { return .unchanged }
       let moved = spaces.remove(at: from - 1)
       spaces.insert(moved, at: to - 1)
       let expected = DisplaySpaces(
@@ -113,7 +113,7 @@ extension Workspace {
       guard await confirmed(expected) else {
         throw .uncertain("macOS did not confirm the move. Check Mission Control.")
       }
-      return .done
+      return .changed
     }
   }
 

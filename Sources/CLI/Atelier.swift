@@ -6,7 +6,7 @@ import Foundation
 /// about what the app does: each subcommand is one AtelierKit request, worded
 /// for the terminal, and the app does the work and words the reply.
 @main
-struct Atelier: ParsableCommand {
+struct AtelierCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "atelier",
     abstract: "Talk to the running Atelier app.",

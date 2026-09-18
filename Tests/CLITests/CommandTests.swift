@@ -6,7 +6,7 @@ import Testing
 
 @Suite struct CommandTests {
   private func request(_ words: [String]) throws -> Request? {
-    (try Atelier.parseAsRoot(words) as? any Asking)?.request
+    (try AtelierCommand.parseAsRoot(words) as? any Asking)?.request
   }
 
   /// Every command and the request it stands for.
@@ -44,6 +44,6 @@ import Testing
     ["spaces", "select", "1.5"],
   ])
   func refusesWhatItDoesNotKnow(words: [String]) {
-    #expect(throws: (any Error).self) { try Atelier.parseAsRoot(words) }
+    #expect(throws: (any Error).self) { try AtelierCommand.parseAsRoot(words) }
   }
 }

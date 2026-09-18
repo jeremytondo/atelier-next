@@ -11,9 +11,9 @@ public final class MenuBar: NSObject, NSPopoverDelegate {
   private var model: WindowListModel!
   private var isOpening = false
 
-  public init(session: Session) {
+  public init(atelier: Atelier) {
     super.init()
-    model = WindowListModel(session: session) { [unowned self] in showState() }
+    model = WindowListModel(atelier: atelier) { [unowned self] in showState() }
     popover.behavior = .transient
     popover.delegate = self
     popover.contentViewController = NSHostingController(rootView: WindowListView(model: model))
@@ -21,7 +21,7 @@ public final class MenuBar: NSObject, NSPopoverDelegate {
     item.button?.action = #selector(toggle)
     showState()
     // A missing permission should not wait to be discovered.
-    if !session.permissions.hasAccessibility { open() }
+    if !atelier.permissions.hasAccessibility { open() }
   }
 
   @objc private func toggle() {

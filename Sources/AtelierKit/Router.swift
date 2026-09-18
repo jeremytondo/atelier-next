@@ -1,9 +1,10 @@
 import Client
 import Foundation
 
-/// Answers requests from outside the app with the same queries the interface
-/// uses, and words the answers, so every client says the same thing.
-extension Session {
+/// Routes each request from outside the app, by its name and arguments, to
+/// the same command or query the interface uses, and words the answer, so
+/// every client says the same thing.
+extension Atelier {
   package func reply(to request: Request) async -> Reply {
     do {
       guard let output = try await answer(request) else {
@@ -55,7 +56,7 @@ extension Session {
     default: return nil
     }
     return request.json
-      ? #"{"outcome": "\#(outcome)"}"# : outcome == .done ? "Done." : "Nothing to do."
+      ? #"{"outcome": "\#(outcome)"}"# : outcome == .changed ? "Done." : "Nothing to do."
   }
 }
 

@@ -18,11 +18,11 @@ final class WindowListModel {
   private var refreshes = 0
   private var following: Task<Void, Never>?
 
-  private let session: Session
+  private let atelier: Atelier
   private let changed: @MainActor () -> Void
 
-  init(session: Session, changed: @escaping @MainActor () -> Void) {
-    self.session = session
+  init(atelier: Atelier, changed: @escaping @MainActor () -> Void) {
+    self.atelier = atelier
     self.changed = changed
   }
 
@@ -30,7 +30,7 @@ final class WindowListModel {
   func captureContext() async {
     // An answer still on its way belongs to the previous opening.
     refreshes += 1
-    context = await session.windows.context()
+    context = await atelier.windows.context()
     state = .loading
   }
 
@@ -39,7 +39,7 @@ final class WindowListModel {
     let refresh = refreshes
     let result: State
     do {
-      result = .loaded(try await session.windows.list(in: context))
+      result = .loaded(try await atelier.windows.list(in: context))
     } catch .accessibilityRequired {
       result = .needsAccessibility
     } catch {
@@ -55,7 +55,7 @@ final class WindowListModel {
   func follow() {
     following?.cancel()
     following = Task {
-      for await _ in await session.windows.changes() { await refresh() }
+      for await _ in await atelier.windows.changes() { await refresh() }
     }
   }
 
@@ -65,6 +65,6 @@ final class WindowListModel {
   }
 
   func requestAccessibility() {
-    session.permissions.requestAccessibility()
+    atelier.permissions.requestAccessibility()
   }
 }

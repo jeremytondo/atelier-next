@@ -1,4 +1,4 @@
-// Atelier.app: the one running Atelier. It starts the session and puts the
+// Atelier.app: the one running Atelier. It starts AtelierKit and puts the
 // interface in the menu bar. All behavior is in AtelierKit and everything
 // visible is in UI.
 import AppKit
@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     do {
-      menuBar = MenuBar(session: try Session.live())
+      menuBar = MenuBar(atelier: try Atelier.live())
     } catch Server.StartError.alreadyRunning {
       log.notice("Another Atelier is already running; leaving it in charge.")
       NSApp.terminate(nil)

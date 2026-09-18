@@ -2,9 +2,11 @@ import Client
 import Foundation
 import MacOS
 
-/// Everything Atelier knows and does, with nothing visible. The app makes one
-/// session; its interface and the `atelier` command both work through it.
-public struct Session: Sendable {
+/// Everything Atelier knows and does, with nothing visible: the root the app
+/// makes once, holding one subject per group of commands. Its interface and
+/// the `atelier` command both work through it, so `atelier.windows.select(2)`
+/// here is `atelier windows select 2` in the terminal.
+public struct Atelier: Sendable {
   public let windows: Windows
   public let spaces: Spaces
   public let desktops: Desktops
@@ -21,13 +23,13 @@ public struct Session: Sendable {
     Task { await workspace.watch() }
   }
 
-  /// The session on the real Mac, answering the `atelier` command from now on.
+  /// Atelier on the real Mac, answering the `atelier` command from now on.
   /// Throws `Server.StartError.alreadyRunning` when another Atelier has the job.
-  public static func live() throws -> Session {
-    let session = Session(
+  public static func live() throws -> Atelier {
+    let atelier = Atelier(
       mac: try LiveMac(),
       stateFolder: URL(filePath: Socket.defaultPath).deletingLastPathComponent())
-    try Server.start { await session.reply(to: $0) }
-    return session
+    try Server.start { await atelier.reply(to: $0) }
+    return atelier
   }
 }
