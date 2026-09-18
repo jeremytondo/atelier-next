@@ -117,6 +117,16 @@ package struct LiveMac: Mac {
     NSWorkspace.shared.open(file)
   }
 
+  package func listenToKeys(_ decide: @escaping @Sendable (KeyEvent) -> KeyDecision) async
+    -> (any KeyListening)?
+  {
+    await MainActor.run { KeyTap.start(codes: KeyCodes(), decide: decide) }
+  }
+
+  package func modifierChanges() async -> AsyncStream<Chord.Modifiers> {
+    await MainActor.run { ModifierWatcher.changes() }
+  }
+
   private enum BridgeResult {
     case sent(UInt64)
     case changed

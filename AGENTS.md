@@ -34,7 +34,9 @@ in `AtelierKit`; if it is about what appears on screen, it belongs in `UI`.
 Only `MacOS` touches Accessibility or private macOS calls, and workarounds for
 macOS stay inside it. Requests to other apps run in the background with a short
 time limit, so a frozen app holds up nothing else. The key-listening used by
-the leader runs only while the leader is open and does almost no work itself.
+the leader runs only while the leader is open and does almost no work itself;
+the only listening that is always on is a modifier monitor for the window-list
+hold.
 Each piece of `UI` stands alone: pieces share only `Design` and get their
 information from `AtelierKit`'s queries and events, never from a timer. The
 core defaults are built in; `~/.config/atelier/config-next.toml` overrides them

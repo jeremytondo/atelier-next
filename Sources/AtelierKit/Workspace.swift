@@ -97,14 +97,8 @@ actor Workspace {
       }
       guard census > censusApplied else { continue }
 
-      // The focused window says which Space has the keyboard, which matters
-      // when several displays each show one. The active Space answers when no
-      // window has focus or the focused window is on every Space.
-      let shown = Set(snapshot.displays.map(\.currentSpace))
-      let focusedSpaces = shown.intersection(focus.windowSpaces)
-      let current = focusedSpaces.count == 1 ? focusedSpaces.first! : focus.activeSpace
-      guard let display = snapshot.displays.first(where: { $0.currentSpace == current }),
-        let space = display.spaces.first(where: { $0.id == current })
+      guard let display = Self.keyboardDisplay(in: snapshot.displays, focus: focus),
+        let space = display.spaces.first(where: { $0.id == display.currentSpace })
       else { continue }
 
       censusApplied = census
@@ -113,6 +107,22 @@ actor Workspace {
       return Observation(snapshot: snapshot, focus: focus, display: display, space: space)
     }
     throw .unavailable
+  }
+
+  /// The display receiving keyboard input, read without a census.
+  func keyboardDisplay() async -> DisplaySpaces? {
+    let displays = mac.spaces()
+    return Self.keyboardDisplay(in: displays, focus: await mac.focus())
+  }
+
+  /// The focused window says which Space has the keyboard, which matters
+  /// when several displays each show one. The active Space answers when no
+  /// window has focus or the focused window is on every Space.
+  static func keyboardDisplay(in displays: [DisplaySpaces], focus: Focus) -> DisplaySpaces? {
+    let shown = Set(displays.map(\.currentSpace))
+    let focusedSpaces = shown.intersection(focus.windowSpaces)
+    let current = focusedSpaces.count == 1 ? focusedSpaces.first! : focus.activeSpace
+    return displays.first { $0.currentSpace == current }
   }
 
   private func apply(_ snapshot: Snapshot, focused: UInt32?, announcing: Bool) {

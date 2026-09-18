@@ -77,6 +77,15 @@ package protocol Mac: Sendable {
 
   /// Opens a file in the app the user has for it. False when macOS could not.
   func open(_ file: URL) -> Bool
+
+  /// Starts listening to the keyboard and mouse, consuming what `decide`
+  /// says to, until the listener is stopped. `decide` runs at once for each
+  /// event, off the main thread, and must be quick. Nil when macOS refuses.
+  func listenToKeys(_ decide: @escaping @Sendable (KeyEvent) -> KeyDecision) async
+    -> (any KeyListening)?
+
+  /// The modifier keys held, whenever that changes.
+  func modifierChanges() async -> AsyncStream<Chord.Modifiers>
 }
 
 package struct Focus: Sendable, Equatable {

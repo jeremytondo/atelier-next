@@ -52,11 +52,34 @@ final class FakeMac: Mac, Sendable {
     /// Each app's Window menu; an app not listed has no menu bar.
     var windowMenus: [Int32: [Arrangement: ArrangementItem]] = [:]
     var openedFiles: [URL] = []
+    /// The key listener now, if one is on.
+    var listener: FakeListener?
+    var refusesListening = false
+    /// Every start and stop of a key listener, in order.
+    var listening: [String] = []
+  }
+
+  /// A key listener the test drives.
+  final class FakeListener: KeyListening, Sendable {
+    let decide: @Sendable (KeyEvent) -> KeyDecision
+    let onStop: @Sendable () -> Void
+
+    init(
+      decide: @escaping @Sendable (KeyEvent) -> KeyDecision, onStop: @escaping @Sendable () -> Void
+    ) {
+      self.decide = decide
+      self.onStop = onStop
+    }
+
+    func stop() {
+      onStop()
+    }
   }
 
   let state: Mutex<State>
   private let hints = AsyncStream.makeStream(of: Void.self)
   private let hotKeyPressed = AsyncStream.makeStream(of: Chord.self)
+  private let modifiers = AsyncStream.makeStream(of: Chord.Modifiers.self)
 
   init(
     hasAccessibility: Bool = true, displays: [DisplaySpaces]? = nil, activeSpace: UInt64 = 1,
@@ -115,6 +138,27 @@ final class FakeMac: Mac, Sendable {
   /// The user presses a registered shortcut.
   func press(_ chord: Chord) {
     hotKeyPressed.continuation.yield(chord)
+  }
+
+  /// The user holds these modifiers.
+  func hold(_ modifiers: Chord.Modifiers) {
+    self.modifiers.continuation.yield(modifiers)
+  }
+
+  var isListening: Bool { state.withLock { $0.listener != nil } }
+  var listening: [String] { state.withLock(\.listening) }
+
+  /// A key event while a listener is on; nil when none is. Returns whether
+  /// the event went on to apps.
+  @discardableResult
+  func type(_ event: KeyEvent) -> Bool? {
+    guard let listener = state.withLock(\.listener) else { return nil }
+    return listener.decide(event) == .pass
+  }
+
+  @discardableResult
+  func type(_ text: String) -> Bool? {
+    type(.keyDown(chord(text)))
   }
 
   // MARK: - Mac
@@ -288,7 +332,7 @@ extension Atelier {
 
   /// The current Desktop's window numbers in slot order; nil off a Desktop.
   func slots() async throws -> [UInt32]? {
-    guard case .desktop(let windows) = try await windows.list() else { return nil }
+    guard case .desktop(let windows, _) = try await windows.list() else { return nil }
     return windows.map(\.id)
   }
 }
@@ -329,6 +373,25 @@ extension FakeMac {
     state.withLock { $0.openedFiles.append(file) }
     return true
   }
+
+  func listenToKeys(_ decide: @escaping @Sendable (KeyEvent) -> KeyDecision) async
+    -> (any KeyListening)?
+  {
+    state.withLock { state in
+      guard !state.refusesListening else { return nil }
+      let listener = FakeListener(decide: decide) { [self] in
+        self.state.withLock { state in
+          state.listener = nil
+          state.listening.append("stop")
+        }
+      }
+      state.listener = listener
+      state.listening.append("start")
+      return listener
+    }
+  }
+
+  func modifierChanges() async -> AsyncStream<Chord.Modifiers> { modifiers.stream }
 }
 
 /// True as soon as `condition` holds, within a second; false when it never does.

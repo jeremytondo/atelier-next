@@ -26,9 +26,9 @@ struct WindowListView: View {
     switch model.state {
     case .loading:
       ProgressView()
-    case .loaded(.desktop(let windows)) where windows.isEmpty:
+    case .loaded(.desktop(let windows, _)) where windows.isEmpty:
       Text("No windows on this Desktop.").foregroundStyle(.secondary)
-    case .loaded(.desktop(let windows)):
+    case .loaded(.desktop(let windows, _)):
       VStack(alignment: .leading, spacing: 6) {
         Text("Current Desktop").font(.headline)
         ForEach(windows) { WindowRow(window: $0) }

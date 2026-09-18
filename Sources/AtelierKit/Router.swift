@@ -51,24 +51,46 @@ extension Atelier {
   /// Runs a command for a key. A query has nothing to show a key, so it is
   /// nothing to do.
   package func perform(_ command: Command) async throws(AtelierError) -> Outcome {
+    try await runner.perform(command)
+  }
+}
+
+/// Runs a command for whoever holds one: the router for the terminal, a
+/// shortcut, or the leader menu.
+struct CommandRunner: Sendable {
+  let windows: Windows
+  let spaces: Spaces
+  let desktops: Desktops
+  let config: Config
+  let notices: Notices
+
+  func perform(_ command: Command) async throws(AtelierError) -> Outcome {
     switch command {
-    case .windowsSelect(let slot): try await windows.select(slot)
-    case .windowsCycle(let direction): try await windows.cycle(direction)
-    case .windowsMove(let move): try await windows.move(move)
-    case .windowsArrange(let arrangement): try await windows.arrange(arrangement)
-    case .spacesNext: try await spaces.next()
-    case .spacesPrevious: try await spaces.previous()
-    case .spacesSelect(let position): try await spaces.select(position: position)
-    case .spacesMove(let from, let to): try await spaces.move(from: from, to: to)
-    case .spacesMoveBy(let offset): try await spaces.move(by: offset)
-    case .desktopsNew: try await desktops.new()
-    case .desktopsSelect(let number): try await desktops.select(number: number)
-    case .desktopsDelete: try await desktops.delete()
+    case .windowsSelect(let slot): return try await windows.select(slot)
+    case .windowsCycle(let direction): return try await windows.cycle(direction)
+    case .windowsMove(let move): return try await windows.move(move)
+    case .windowsArrange(let arrangement): return try await windows.arrange(arrangement)
+    case .spacesNext: return try await spaces.next()
+    case .spacesPrevious: return try await spaces.previous()
+    case .spacesSelect(let position): return try await spaces.select(position: position)
+    case .spacesMove(let from, let to): return try await spaces.move(from: from, to: to)
+    case .spacesMoveBy(let offset): return try await spaces.move(by: offset)
+    case .desktopsNew: return try await desktops.new()
+    case .desktopsSelect(let number): return try await desktops.select(number: number)
+    case .desktopsDelete: return try await desktops.delete()
     case .quickAppsToggle:
       throw .unsupported("Quick Apps are not part of this build of Atelier yet.")
-    case .configOpen: try await config.open()
-    case .configReload: try await config.reload().outcome
-    case .windowsList, .spacesList, .quickAppsList, .configShow, .configCheck: .unchanged
+    case .configOpen: return try await config.open()
+    case .configReload:
+      // From a key there is no reply to read, so problems become a notice.
+      let result = try await config.reload()
+      if !result.problems.isEmpty {
+        notices.post(
+          "Reloaded with \(result.problems.count) problem\(result.problems.count == 1 ? "" : "s"); see atelier config show."
+        )
+      }
+      return result.outcome
+    case .windowsList, .spacesList, .quickAppsList, .configShow, .configCheck: return .unchanged
     }
   }
 }
@@ -108,7 +130,7 @@ extension WindowList {
     "The current Space is a full-screen or Split View Space, not a Desktop."
 
   var text: String {
-    guard case .desktop(let windows) = self else { return Self.notDesktopMessage }
+    guard case .desktop(let windows, _) = self else { return Self.notDesktopMessage }
     guard !windows.isEmpty else { return "No windows on this Desktop." }
     return windows.map { window in
       let mark = window.isFocused ? "*" : " "
@@ -131,7 +153,7 @@ extension WindowList {
     }
     let payload =
       switch self {
-      case .desktop(let windows):
+      case .desktop(let windows, _):
         Payload(
           space: "desktop",
           windows: windows.map {

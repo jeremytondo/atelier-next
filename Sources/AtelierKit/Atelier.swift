@@ -13,7 +13,9 @@ public struct Atelier: Sendable {
   public let desktops: Desktops
   public let permissions: Permissions
   public let config: Config
+  public let leader: Leader
   public let notices: Notices
+  let runner: CommandRunner
 
   /// `stateFolder` is where the window lists are kept between runs; without
   /// one they are not kept. `configFile` is the user's file; without one the
@@ -22,13 +24,17 @@ public struct Atelier: Sendable {
     mac: any Mac, stateFolder: URL? = nil, configFile: URL? = nil, patience: Patience = Patience()
   ) {
     let workspace = Workspace(mac: mac, stateFolder: stateFolder, patience: patience)
-    windows = Windows(workspace: workspace)
+    let store = ConfigStore(mac: mac, file: configFile)
+    windows = Windows(workspace: workspace, config: store)
     spaces = Spaces(workspace: workspace)
     desktops = Desktops(workspace: workspace)
     permissions = Permissions(mac: mac)
-    let store = ConfigStore(mac: mac, file: configFile)
     config = Config(store: store, installation: Task { await store.start() })
     notices = Notices()
+    runner = CommandRunner(
+      windows: windows, spaces: spaces, desktops: desktops, config: config, notices: notices)
+    leader = Leader(
+      session: LeaderSession(mac: mac, workspace: workspace, store: store, runner: runner))
     Task { await workspace.watch() }
     let atelier = self
     Task {
@@ -55,11 +61,16 @@ public struct Atelier: Sendable {
     return atelier
   }
 
-  /// A global shortcut was pressed: its command runs, and a failure is a notice.
+  /// A global shortcut was pressed: its command runs, or the leader opens,
+  /// and a failure is a notice.
   private func pressed(_ chord: Chord) async {
-    guard let command = await config.store.current.global[chord] else { return }
+    let current = await config.store.current
     do {
-      _ = try await perform(command)
+      if chord == current.leader.chord {
+        _ = try await leader.open()
+      } else if let command = current.global[chord] {
+        _ = try await perform(command)
+      }
     } catch {
       notices.post(error.message)
     }

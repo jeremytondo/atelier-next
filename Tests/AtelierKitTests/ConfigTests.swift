@@ -25,7 +25,7 @@ import Testing
   @Test func withNoFileTheDefaultShortcutsAreRegistered() async {
     let mac = FakeMac()
     let atelier = await start(mac)
-    #expect(Set(mac.hotKeys).count == Defaults.global.count)
+    #expect(Set(mac.hotKeys).count == Defaults.global.count + 1)
     #expect(mac.hotKeys.contains(chord("cmd+option+1")))
     #expect(await atelier.config.problems().isEmpty)
     let report = await atelier.config.show()
@@ -118,7 +118,7 @@ import Testing
     try write("this is not toml")
     let mac = FakeMac()
     let atelier = await start(mac)
-    #expect(Set(mac.hotKeys).count == Defaults.global.count)
+    #expect(Set(mac.hotKeys).count == Defaults.global.count + 1)
     let problems = await atelier.config.problems()
     #expect(problems.map(\.location) == ["line 1"])
   }

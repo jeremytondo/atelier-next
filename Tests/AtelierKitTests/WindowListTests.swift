@@ -17,10 +17,11 @@ import Testing
     let list = try await Atelier(mac).windows.list()
     #expect(
       list
-        == .desktop([
-          Window(id: 2, app: "App 2", title: "Window 2", isFocused: false, isVisible: true),
-          Window(id: 1, app: "App 1", title: "Window 1", isFocused: false, isVisible: false),
-        ]))
+        == .desktop(
+          [
+            Window(id: 2, app: "App 2", title: "Window 2", isFocused: false, isVisible: true),
+            Window(id: 1, app: "App 1", title: "Window 1", isFocused: false, isVisible: false),
+          ], display: "first"))
   }
 
   @Test func startsWithTheFocusedThenVisibleFrontToBackThenTheRest() async throws {
@@ -31,7 +32,7 @@ import Testing
       ])
     let atelier = Atelier(mac)
     #expect(try await atelier.slots() == [4, 2, 3, 1, 5])
-    guard case .desktop(let windows) = try await atelier.windows.list() else { return }
+    guard case .desktop(let windows, _) = try await atelier.windows.list() else { return }
     #expect(windows.map(\.isFocused) == [true, false, false, false, false])
   }
 
@@ -83,7 +84,7 @@ import Testing
     #expect(try await atelier.slots() == [1])
     // The census itself is still fresh.
     mac.change { $0.windows.append(window(4, on: [3])) }
-    guard case .desktop(let windows) = try await atelier.windows.list(in: context) else {
+    guard case .desktop(let windows, _) = try await atelier.windows.list(in: context) else {
       Issue.record("Expected a Desktop")
       return
     }
@@ -108,5 +109,39 @@ import Testing
     await #expect(throws: AtelierError.unavailable) {
       try await Atelier(FakeMac(activeSpace: 99)).windows.list()
     }
+  }
+}
+
+@Suite struct WindowListHoldTests {
+  @Test func reportsWhenTheModifiersAreHeldShiftTolerated() async throws {
+    let mac = FakeMac()
+    let atelier = Atelier(mac)
+    await atelier.config.ready()
+    let held = await atelier.windows.held()
+    var iterator = held.makeAsyncIterator()
+    mac.hold([.command])
+    mac.hold([.command, .option])
+    #expect(await iterator.next() == true)
+    mac.hold([.command, .option, .shift])
+    mac.hold([.command, .option, .control])
+    #expect(await iterator.next() == false)
+    mac.hold([.command, .option])
+    #expect(await iterator.next() == true)
+    mac.hold([.command, .option, .function])
+    #expect(await iterator.next() == false)
+    mac.hold([.command, .option])
+    #expect(await iterator.next() == true)
+    mac.hold([])
+    #expect(await iterator.next() == false)
+  }
+
+  @Test func theWindowListNamesItsDisplay() async throws {
+    let atelier = Atelier(FakeMac(windows: [window(1)]))
+    guard case .desktop(let windows, let display) = try await atelier.windows.list() else {
+      Issue.record("No list")
+      return
+    }
+    #expect(windows.map(\.id) == [1])
+    #expect(display == "first")
   }
 }

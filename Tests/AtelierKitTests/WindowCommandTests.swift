@@ -18,7 +18,7 @@ import Testing
     let atelier = Atelier(mac)
     #expect(try await atelier.windows.select(3) == .changed)
     #expect(mac.focusedWindow == 3)
-    guard case .desktop(let windows) = try await atelier.windows.list() else { return }
+    guard case .desktop(let windows, _) = try await atelier.windows.list() else { return }
     #expect(windows.map(\.isVisible) == [true, true, true])
   }
 
