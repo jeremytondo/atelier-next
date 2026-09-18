@@ -79,6 +79,16 @@ package struct LiveMac: Mac {
     await bridge(expecting: expecting) { DesktopBridge.destroySpace(id) }.dispatch
   }
 
+  package func moveWindow(_ id: UInt32, toSpace space: UInt64, expecting: [DisplaySpaces]) async
+    -> SpaceDispatch
+  {
+    await bridge(expecting: expecting) { DesktopBridge.moveWindow(id, toSpace: space) }.dispatch
+  }
+
+  package func spaces(ofWindow id: UInt32) -> [UInt64] {
+    skyLight.spaces(ofWindow: id)
+  }
+
   package func raise(window: UInt32, of app: Int32) async -> RaiseResult {
     await census.raise(window: window, of: app)
   }
@@ -127,6 +137,42 @@ package struct LiveMac: Mac {
     await MainActor.run { ModifierWatcher.changes() }
   }
 
+  package func findApp(_ reference: String) -> AppReference? {
+    Apps.find(reference)
+  }
+
+  package func runningApp(_ app: AppReference) -> Int32? {
+    Apps.running(app)?.processIdentifier
+  }
+
+  package func launch(_ app: AppReference) async -> Int32? {
+    await Apps.launch(app)
+  }
+
+  package func isAppHidden(_ pid: Int32) -> Bool? {
+    NSRunningApplication(processIdentifier: pid)?.isHidden
+  }
+
+  /// AppKit's answer says whether it believed the app already so, from a
+  /// state it keeps up to date a moment late; the app hides all the same.
+  package func setAppHidden(_ pid: Int32, _ hidden: Bool) -> Bool {
+    guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
+    _ = hidden ? app.hide() : app.unhide()
+    return true
+  }
+
+  package func frame(ofWindow id: UInt32, in app: Int32) async -> CGRect? {
+    await census.frame(ofWindow: id, in: app)
+  }
+
+  package func setFrame(_ frame: CGRect, ofWindow id: UInt32, in app: Int32) async -> Bool {
+    await census.setFrame(frame, ofWindow: id, in: app)
+  }
+
+  package func usableFrame(ofDisplay id: String) async -> CGRect? {
+    await MainActor.run { NSScreen.named(id)?.usableFrame }
+  }
+
   private enum BridgeResult {
     case sent(UInt64)
     case changed
@@ -161,7 +207,7 @@ package struct LiveMac: Mac {
     expecting: [DisplaySpaces], _ operation: @MainActor @Sendable () -> DesktopBridgeResult
   ) async -> BridgeResult {
     guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
-      return .refused("Changing Desktops needs macOS 27.")
+      return .refused("This needs macOS 27.")
     }
     return await MainActor.run {
       guard spaces() == expecting else { return .changed }

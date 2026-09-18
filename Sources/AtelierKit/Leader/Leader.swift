@@ -446,6 +446,7 @@ actor LeaderSession {
       case .command(let chord, let command):
         var hint = shortcuts[command]?.first
         var unavailable: String?
+        var label = command.label
         switch command {
         case .windowsArrange(let arrangement):
           if let info = arrangements[arrangement.rawValue] {
@@ -457,12 +458,17 @@ actor LeaderSession {
         case .desktopsSelect(let number):
           // A Desktop that does not exist is left out rather than dimmed.
           guard number <= desktops else { return nil }
-        case .quickAppsToggle:
-          unavailable = "Quick Apps are not part of this build of Atelier yet."
+        case .quickAppsToggle(let app):
+          // By the name on disk, not the bundle identifier or path configured.
+          if let found = mac.findApp(app) {
+            label = found.name
+          } else {
+            unavailable = QuickApps.notFound(app)
+          }
         default: break
         }
         return LeaderEntry(
-          key: KeyGrammar.describe(chord), label: command.label, isSubmenu: false, hint: hint,
+          key: KeyGrammar.describe(chord), label: label, isSubmenu: false, hint: hint,
           unavailable: unavailable)
       }
     }

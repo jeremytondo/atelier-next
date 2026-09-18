@@ -11,6 +11,8 @@ package struct Patience: Sendable {
   package var confirmation = Duration.seconds(1)
   /// For a raised window to take the keyboard.
   package var focus = Duration.seconds(1)
+  /// For a launched app to show a window.
+  package var launch = Duration.seconds(4)
 
   package init() {}
 }
@@ -41,6 +43,7 @@ actor Workspace {
   let mac: any Mac
   let patience: Patience
   private(set) var lists = WindowLists()
+  var quickApp = QuickAppState()
   private var file: WindowListFile?
   private var hasRestored = false
   private var isBusy = false
@@ -55,10 +58,12 @@ actor Workspace {
     file = stateFolder.map(WindowListFile.init)
   }
 
-  /// Keeps the lists current between commands, for as long as the Mac sends hints.
+  /// Keeps the lists current between commands, for as long as the Mac sends
+  /// hints, and the shown Quick App in step with the keyboard at all times.
   func watch() async {
-    for await _ in mac.changes() where !isBusy {
-      _ = try? await observe()
+    for await _ in mac.changes() {
+      await followQuickApps()
+      if !isBusy { _ = try? await observe() }
     }
   }
 
@@ -125,7 +130,11 @@ actor Workspace {
     return displays.first { $0.currentSpace == current }
   }
 
-  private func apply(_ snapshot: Snapshot, focused: UInt32?, announcing: Bool) {
+  private func apply(_ census: Snapshot, focused: UInt32?, announcing: Bool) {
+    // Windows of apps under Quick App behavior are not for the lists.
+    let snapshot = Snapshot(
+      displays: census.displays,
+      windows: census.windows.filter { !quickApp.summoned.contains($0.app) })
     if hasRestored {
       lists.reconcile(with: snapshot, focused: focused)
     } else {

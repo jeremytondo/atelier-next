@@ -110,6 +110,23 @@ static DesktopBridgeResult *unavailable(NSString *what) {
   });
 }
 
++ (DesktopBridgeResult *)moveWindow:(uint32_t)windowID toSpace:(uint64_t)spaceID {
+  NSArray<NSNumber *> *windows = @[ @(windowID) ];
+  return run(@"Moving a window", ^DesktopBridgeResult *(BOOL *sent) {
+    NSString *initializer = @"initWithWindows:spaceID:";
+    Class cls = operationClass(@"SLSBridgedMoveWindowsToManagedSpaceOperation", initializer,
+                               @[ @"@", @"Q" ], @"v");
+    if (!cls) return unavailable(@"Moving a window");
+    CFTypeRef allocated = (__bridge_retained CFTypeRef)[cls alloc];
+    id operation = CFBridgingRelease(((CFTypeRef(*)(CFTypeRef, SEL, id, uint64_t))objc_msgSend)(
+        allocated, NSSelectorFromString(initializer), windows, spaceID));
+    if (!operation) return unavailable(@"Moving a window");
+    *sent = YES;
+    ((void (*)(id, SEL))objc_msgSend)(operation, NSSelectorFromString(performName));
+    return result(DesktopBridgeStatusSent, nil, 0);
+  });
+}
+
 + (DesktopBridgeResult *)destroySpace:(uint64_t)spaceID {
   return run(@"Deleting a Desktop", ^DesktopBridgeResult *(BOOL *sent) {
     Class cls =

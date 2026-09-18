@@ -142,10 +142,18 @@ import Testing
     #expect(mac.requests == ["arrange fill"])
   }
 
-  @Test func quickAppsAreNotHereYet() async {
-    let reply = await Atelier(FakeMac()).reply(
+  @Test func quickAppsAreListedAndToggledByTheirConfiguredName() async {
+    let atelier = Atelier(FakeMac())
+    await atelier.config.ready()
+    #expect(
+      await atelier.reply(to: Request(name: "quick-apps.list"))
+        == Reply(ok: true, output: "No Quick Apps are configured. Add one under [[quick-apps]]."))
+    let reply = await atelier.reply(
       to: Request(name: "quick-apps.toggle", arguments: ["1Password"]))
     #expect(
-      reply == Reply(ok: false, output: "Quick Apps are not part of this build of Atelier yet."))
+      reply
+        == Reply(
+          ok: false,
+          output: "No Quick App is configured as \"1Password\". Add it under [[quick-apps]]."))
   }
 }

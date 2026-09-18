@@ -52,6 +52,14 @@ package protocol Mac: Sendable {
   /// Removes a Space. macOS moves its windows to the Space being shown.
   func destroySpace(_ id: UInt64, expecting: [DisplaySpaces]) async -> SpaceDispatch
 
+  /// Moves a window to a Space, leaving every other. The caller confirms
+  /// with `spaces(ofWindow:)`; a sent request proves nothing.
+  func moveWindow(_ id: UInt32, toSpace space: UInt64, expecting: [DisplaySpaces]) async
+    -> SpaceDispatch
+
+  /// The Spaces a window belongs to now; empty when WindowServer reports none.
+  func spaces(ofWindow id: UInt32) -> [UInt64]
+
   /// Shows a window of `app` if it is minimized or its app is hidden, and asks
   /// for it to come forward. The caller watches `focus()` for the result.
   func raise(window: UInt32, of app: Int32) async -> RaiseResult
@@ -86,6 +94,37 @@ package protocol Mac: Sendable {
 
   /// The modifier keys held, whenever that changes.
   func modifierChanges() async -> AsyncStream<Chord.Modifiers>
+
+  /// An app on disk from a name, bundle identifier, or path. Nil when none.
+  func findApp(_ reference: String) -> AppReference?
+
+  /// The process number of the app when it is running.
+  func runningApp(_ app: AppReference) -> Int32?
+
+  /// Launches the app, or reopens it when running, without activating it.
+  /// The process number once macOS reports it; nil when it would not launch.
+  func launch(_ app: AppReference) async -> Int32?
+
+  /// Nil when there is no such process.
+  func isAppHidden(_ pid: Int32) -> Bool?
+
+  /// Asks macOS to hide or show every window of the app, without activating
+  /// it. False when there is no such process. Asking proves nothing: the
+  /// caller watches `isAppHidden`.
+  func setAppHidden(_ pid: Int32, _ hidden: Bool) -> Bool
+
+  /// The window's frame in Accessibility's coordinates: points from the
+  /// top-left of the primary display, y growing downwards. Nil when the app
+  /// does not answer or has no such window.
+  func frame(ofWindow id: UInt32, in app: Int32) async -> CGRect?
+
+  /// Asks the app for a frame; it may keep the window larger. False when the
+  /// window cannot be found. The caller reads the frame back for the result.
+  func setFrame(_ frame: CGRect, ofWindow id: UInt32, in app: Int32) async -> Bool
+
+  /// The display's area free of the menu bar and Dock, in Accessibility's
+  /// coordinates. Nil when the display is gone.
+  func usableFrame(ofDisplay id: String) async -> CGRect?
 }
 
 package struct Focus: Sendable, Equatable {
