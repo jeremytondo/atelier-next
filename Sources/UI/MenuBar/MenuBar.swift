@@ -1,68 +1,88 @@
 import AppKit
 import AtelierKit
-import SwiftUI
 
-/// Atelier's menu-bar item and its popover. The popover lists the current
-/// Desktop's windows in slot order, following them while it is open, and
-/// shows the configuration's problems with the means to reload or open it.
+/// Atelier's menu-bar item and its menu: what is wrong, if anything, with the
+/// means to put it right, and reloading or opening the configuration. The
+/// icon says when there is something to read.
 @MainActor
-public final class MenuBar: NSObject, NSPopoverDelegate {
+public final class MenuBar: NSObject, NSMenuDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-  private let popover = NSPopover()
-  private var model: WindowListModel!
-  private var configModel: ConfigModel!
-  private var isOpening = false
+  private let menu = NSMenu()
+  private let atelier: Atelier
+  private var config: ConfigModel!
 
   public init(atelier: Atelier) {
+    self.atelier = atelier
     super.init()
-    model = WindowListModel(atelier: atelier) { [unowned self] in showState() }
-    configModel = ConfigModel(atelier: atelier) { [unowned self] in showState() }
-    popover.behavior = .transient
-    popover.delegate = self
-    popover.contentViewController = NSHostingController(
-      rootView: WindowListView(model: model, config: configModel))
-    item.button?.target = self
-    item.button?.action = #selector(toggle)
-    showState()
-    // A missing permission should not wait to be discovered.
-    if !atelier.permissions.hasAccessibility { open() }
+    config = ConfigModel(atelier: atelier) { [unowned self] in render() }
+    menu.delegate = self
+    item.menu = menu
+    render()
+    // A missing permission should not wait to be discovered. The menu cannot
+    // be opened to say so: at launch the item has no place in the menu bar yet.
+    if !atelier.permissions.hasAccessibility { requestAccessibility() }
   }
 
-  @objc private func toggle() {
-    if popover.isShown { popover.close() } else { open() }
+  /// macOS does not say when the permission is granted, so each opening asks.
+  public func menuNeedsUpdate(_ menu: NSMenu) {
+    render()
   }
 
-  private func open() {
-    // A second click while the first is still opening would note Atelier's
-    // own focus.
-    guard !isOpening else { return }
-    isOpening = true
-    Task {
-      // Showing the popover moves the keyboard to Atelier, so first note
-      // where it was. The frontmost app has a moment to answer.
-      await model.captureContext()
-      isOpening = false
-      guard let button = item.button, !popover.isShown else { return }
-      NSApp.activate()
-      popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-      model.follow()
-      await model.refresh()
-    }
-  }
-
-  /// Hands the keyboard back to the app that had it.
-  public func popoverDidClose(_ notification: Notification) {
-    model.stopFollowing()
-    NSApp.hide(nil)
-  }
-
-  private func showState() {
-    let missing = model.state == .needsAccessibility
-    let troubled = missing || !configModel.problems.isEmpty
+  private func render() {
+    let missing = !atelier.permissions.hasAccessibility
+    let troubled = missing || !config.problems.isEmpty
     item.button?.image = NSImage(
       systemSymbolName: troubled ? "exclamationmark.triangle" : "macwindow.on.rectangle",
       accessibilityDescription: missing
         ? "Atelier needs Accessibility permission"
         : troubled ? "Atelier has configuration problems" : "Atelier")
+    menu.items =
+      (missing ? accessibilityItems + [.separator()] : []) + configItems + [
+        .separator(),
+        NSMenuItem(
+          title: "Quit Atelier", action: #selector(NSApplication.terminate), keyEquivalent: "q"),
+      ]
+  }
+
+  private var accessibilityItems: [NSMenuItem] {
+    let open = NSMenuItem(
+      title: "Open Accessibility Settings…", action: #selector(requestAccessibility),
+      keyEquivalent: "")
+    open.target = self
+    open.subtitle = "Atelier reads other apps' windows through Accessibility."
+    return [.sectionHeader(title: "Accessibility Permission Needed"), open]
+  }
+
+  private var configItems: [NSMenuItem] {
+    // Choosing a problem opens the file it is in.
+    let problems = config.problems.map { problem in
+      let row = item(problem.location, .configOpen)
+      row.subtitle = problem.message
+      row.toolTip = problem.text
+      return row
+    }
+    return (problems.isEmpty ? [] : [.sectionHeader(title: "Configuration Problems")] + problems)
+      + [item(.configReload), item(.configOpen)]
+  }
+
+  private func item(_ command: Command) -> NSMenuItem {
+    item(command.label, command)
+  }
+
+  private func item(_ title: String, _ command: Command) -> NSMenuItem {
+    let item = NSMenuItem(title: title, action: #selector(run), keyEquivalent: "")
+    item.target = self
+    item.representedObject = command
+    return item
+  }
+
+  /// The menu has closed by now, so a failure is a notice.
+  @objc private func run(_ sender: NSMenuItem) {
+    guard let command = sender.representedObject as? Command else { return }
+    Task { await atelier.attempt(command) }
+  }
+
+  @objc private func requestAccessibility() {
+    atelier.permissions.requestAccessibility()
   }
 }

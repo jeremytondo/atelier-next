@@ -67,6 +67,13 @@ import Testing
     #expect(await iterator.next() == Notice(text: "The only Desktop cannot be deleted."))
   }
 
+  @Test func anAttemptThatFailsIsANotice() async {
+    let atelier = await start(FakeMac.oneDisplay(spaces: 1...1))
+    var iterator = atelier.notices.changes().makeAsyncIterator()
+    await atelier.attempt(.desktopsDelete)
+    #expect(await iterator.next() == Notice(text: "The only Desktop cannot be deleted."))
+  }
+
   @Test func theFileAppliesAtStartupAndThenOnlyOnReload() async throws {
     try write(
       """

@@ -85,9 +85,8 @@ actor Workspace {
   // MARK: - Observing
 
   /// Takes a census, brings the lists up to date with it, and says where the
-  /// keyboard is. `focus` stands in for the present focus when the caller
-  /// noted it earlier, before taking the keyboard itself.
-  func observe(focus noted: Focus? = nil) async throws(AtelierError) -> Observation {
+  /// keyboard is.
+  func observe() async throws(AtelierError) -> Observation {
     guard mac.hasAccessibility else { throw .accessibilityRequired }
     // A census overtaken by a later one is thrown away, since the lists have
     // moved on from it; so is one whose focus and Spaces were read either
@@ -96,7 +95,7 @@ actor Workspace {
       censusesStarted += 1
       let census = censusesStarted
       async let snapshotNow = mac.snapshot()
-      let focus = if let noted { noted } else { await mac.focus() }
+      let focus = await mac.focus()
       guard let snapshot = await snapshotNow, !snapshot.displays.isEmpty else {
         throw .unavailable
       }
@@ -107,8 +106,7 @@ actor Workspace {
       else { continue }
 
       censusApplied = census
-      // A focus noted earlier is not news about the present one.
-      apply(snapshot, focused: focus.window, announcing: noted == nil)
+      apply(snapshot, focused: focus.window)
       return Observation(snapshot: snapshot, focus: focus, display: display, space: space)
     }
     throw .unavailable
@@ -130,7 +128,7 @@ actor Workspace {
     return displays.first { $0.currentSpace == current }
   }
 
-  private func apply(_ census: Snapshot, focused: UInt32?, announcing: Bool) {
+  private func apply(_ census: Snapshot, focused: UInt32?) {
     // Windows of apps under Quick App behavior are not for the lists.
     let snapshot = Snapshot(
       displays: census.displays,
@@ -143,7 +141,6 @@ actor Workspace {
       hasRestored = true
     }
     save()
-    guard announcing else { return }
     let windows = lists.byDesktop.mapValues { Self.windows($0, in: snapshot, focused: focused) }
     if let lastSeen {
       if lastSeen.displays != snapshot.displays { announce(.spaces) }
