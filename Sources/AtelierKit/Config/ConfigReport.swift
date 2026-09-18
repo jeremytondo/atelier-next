@@ -23,6 +23,7 @@ public struct ConfigReport: Sendable {
       lines.append("Problems:")
       lines += problems.map { "  \($0.text)" }
     }
+    lines.append("Theme: \(configuration.theme.rawValue)")
     let leader = configuration.leader
     let shows =
       leader.delay == .zero ? "appears at once" : "appears after \(Self.seconds(leader.delay))"
@@ -115,6 +116,7 @@ public struct ConfigReport: Sendable {
       }
       var file: String?
       var problems: [ProblemItem]
+      var theme: String
       var leader: Leader
       var windowListModifiers: String
       var shortcuts: [Shortcut]
@@ -137,6 +139,7 @@ public struct ConfigReport: Sendable {
       Payload(
         file: file?.path,
         problems: problems.map { Payload.ProblemItem(location: $0.location, message: $0.message) },
+        theme: configuration.theme.rawValue,
         leader: Payload.Leader(
           key: leader.chord.map(KeyGrammar.text), delay: Self.number(leader.delay),
           timeout: leader.timeout.map(Self.number)),

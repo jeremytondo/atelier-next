@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     do {
       let atelier = try Atelier.live()
+      Appearance.follow(atelier)
       menuBar = MenuBar(atelier: atelier)
       hud = HUD(atelier: atelier)
     } catch Server.StartError.alreadyRunning {

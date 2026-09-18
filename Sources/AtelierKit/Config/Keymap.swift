@@ -11,13 +11,14 @@ enum Keymap {
     let spaceShortcuts = Set(
       spaceShortcuts.map { Chord($0.modifiers.subtracting(.function), $0.key) })
     var resolver = Resolver(problems: overrides.problems, spaceShortcuts: spaceShortcuts)
+    let theme = resolver.theme(overrides)
     let leader = resolver.leader(overrides)
     let windowList = resolver.windowListModifiers(overrides)
     var (global, quickApps) = resolver.global(overrides, leader: leader.chord)
     let menu = resolver.menu(overrides, quickApps: &quickApps)
     return Configuration(
-      leader: leader, windowListModifiers: windowList, global: global, menu: menu,
-      quickApps: quickApps, problems: resolver.problems)
+      theme: theme, leader: leader, windowListModifiers: windowList, global: global,
+      menu: menu, quickApps: quickApps, problems: resolver.problems)
   }
 
   private struct Resolver {
@@ -26,6 +27,15 @@ enum Keymap {
 
     mutating func report(_ location: String, _ message: String) {
       problems.append(Problem(location: location, message: message))
+    }
+
+    mutating func theme(_ overrides: Overrides) -> Theme {
+      guard let text = overrides.theme else { return Defaults.theme }
+      guard let theme = Theme(rawValue: text) else {
+        report("theme", "must be \"light\", \"dark\", or \"system\"")
+        return Defaults.theme
+      }
+      return theme
     }
 
     mutating func leader(_ overrides: Overrides) -> LeaderSettings {

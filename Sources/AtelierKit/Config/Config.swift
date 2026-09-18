@@ -43,6 +43,12 @@ public struct Config: Sendable {
     return try await store.reload()
   }
 
+  /// The theme in effect.
+  public func theme() async -> Theme {
+    await installation.value
+    return await store.current.theme
+  }
+
   /// The problems in effect, until a reload without them.
   public func problems() async -> [Problem] {
     await installation.value

@@ -25,6 +25,7 @@ struct Overrides: Equatable, Sendable {
     var location: String
   }
 
+  var theme: String?
   var leaderKey: String?
   var leaderDelay: Double?
   /// `.some(nil)` for a leader that never times out.
@@ -45,6 +46,7 @@ struct Overrides: Equatable, Sendable {
     var overrides = Overrides()
     for key in root.keys {
       switch key {
+      case "theme": overrides.theme = overrides.string(root, key, at: key)
       case "leader": overrides.readLeader(root, key)
       case "window-list": overrides.readWindowList(root, key)
       case "keymap": overrides.readKeymap(root, key)

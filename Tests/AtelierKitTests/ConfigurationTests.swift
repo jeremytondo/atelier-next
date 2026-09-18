@@ -447,6 +447,33 @@ import Testing
     #expect(configuration.quickApps[1].leader == nil)
   }
 
+  @Test func theThemeIsSystemUnlessTheFileNamesAnother() {
+    #expect(resolve("").theme == .system)
+    for theme in [Theme.light, .dark, .system] {
+      let configuration = resolve("theme = \"\(theme.rawValue)\"")
+      #expect(configuration.theme == theme)
+      #expect(configuration.problems.isEmpty)
+    }
+  }
+
+  @Test(arguments: [
+    ("\"Dark\"", "must be \"light\", \"dark\", or \"system\""),
+    ("\"\"", "must be \"light\", \"dark\", or \"system\""), ("true", "must be text in quotes"),
+  ])
+  func aThemeThatIsNotOneOfTheThreeIsLeftOutAndTheRestApplies(value: String, message: String) {
+    let configuration = resolve(
+      """
+      theme = \(value)
+
+      [leader]
+      delay = 1
+      """)
+    #expect(configuration.theme == .system)
+    #expect(
+      configuration.problems == [Problem(location: "theme", message: message)])
+    #expect(configuration.leader.delay == .seconds(1))
+  }
+
   @Test func aFileThatCannotBeParsedIsRejectedWithItsLine() {
     let result = Overrides.parse(
       """
@@ -476,7 +503,10 @@ import Testing
     let report = ConfigReport(file: nil, configuration: configuration, rejection: nil)
     let text = report.text
     #expect(text.contains("Problems:\n  keymap.global \"bad\": \"bad\" in \"bad\" is not a key"))
-    #expect(text.contains("Leader: ⌥Space; appears at once; closes after 10 s of inactivity"))
+    #expect(
+      text.contains(
+        "\nTheme: system\nLeader: ⌥Space; appears at once; closes after 10 s of inactivity"))
+    #expect(report.json.contains("\"theme\" : \"system\""))
     #expect(text.contains("Window list: hold ⌥⌘"))
     #expect(text.contains("  ⌥1        desktops select 1"))
     // A label longer than its column is never cut short.
