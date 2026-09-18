@@ -4,9 +4,12 @@
 # only one is installed at a time; they differ in name, in where the download
 # is, and in what the other is called.
 #
-# The cask runs nothing of Atelier's. Homebrew runs a cask's steps in a sandbox
-# without the network, which counts Atelier's socket, so a step could not ask
-# the running app anything.
+# The cask runs nothing of Atelier's. It does remove quarantine from the CLI
+# executable: invoking a quarantined executable nested inside an app can leave
+# macOS waiting for an app-launch confirmation that does not reliably surface
+# from a terminal command. The app stays quarantined for its normal first launch.
+# Homebrew runs a cask's steps in a sandbox without the network, which counts
+# Atelier's socket, so a step could not ask the running app anything.
 #
 # usage: scripts/cask.sh dev|stable VERSION BUILD SHA256
 set -euo pipefail
@@ -44,6 +47,11 @@ cask "$token" do
 
   app "Atelier.app"
   binary "#{appdir}/Atelier.app/Contents/Helpers/atelier"
+
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args: ["-dr", "com.apple.quarantine", "{{appdir}}/Atelier.app/Contents/Helpers/atelier"]
+  end
 
   # On an upgrade Homebrew quits a running Atelier with this and opens the new
   # one afterwards; one that was closed stays closed. Atelier finishes a command
