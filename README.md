@@ -2,7 +2,11 @@
 
 Atelier is a keyboard-driven workspace for macOS: Desktops, ordered window lists, Quick Apps, and a leader menu. It is one native Mac app and an `atelier` command.
 
-This is a clean slate. The design is in [ATE-57](https://linear.app/elevenideas/issue/ATE-57/research-native-atelier-architecture-without-hammerspoon-2), and the code arrives ticket by ticket.
+The design is in [ATE-57](https://linear.app/elevenideas/issue/ATE-57/research-native-atelier-architecture-without-hammerspoon-2).
+
+## Install
+
+Atelier needs macOS 27 on Apple silicon. `brew install --cask jeremytondo/tap/atelier` installs the stable app with the `atelier` command, and `jeremytondo/tap/atelier@dev` the newest development build instead; afterwards `atelier doctor` checks the installation. [Installing and releasing](docs/releases.md) covers updating, switching channels, coming from the Hammerspoon version, and how a release is made.
 
 ## The Hammerspoon version
 

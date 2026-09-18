@@ -23,7 +23,9 @@ run = "open .build/xcode/Build/Products/Debug/Atelier.app"
 
 [tasks.test]
 description = "Run the Swift tests"
-run = "xcodebuildmcp swift-package test --package-path . --configuration debug"
+# Raw, since the summary alone gives only how many tests failed when what
+# failed was an expectation: not which, nor what it found.
+run = "xcodebuildmcp swift-package test --package-path . --configuration debug --output raw"
 
 [tasks.lint]
 description = "Lint scripts and workflows; check Swift formatting and lint"
@@ -40,3 +42,17 @@ run = "xcrun swift-format format --in-place --recursive {{vars.swift_sources}}"
 [tasks.check]
 description = "Run the complete gate"
 depends = ["lint", "test", "build"]
+
+[tasks.package]
+description = "Build the signed Atelier.app that ships into dist/, without notarizing or publishing it"
+run = "scripts/package.sh 0.0.0 $(date -u +%Y%m%d%H%M%S) --skip-notarization"
+
+[tasks.release]
+description = "Start a release on GitHub of a branch as it is there; nothing local is pushed"
+usage = '''
+arg "<bump>" help="A development build, or the next stable version" {
+  choices "dev" "patch" "minor" "major"
+}
+arg "[branch]" help="The branch to release" default="main"
+'''
+run = 'gh workflow run release.yml --repo jeremytondo/atelier-next --ref "$usage_branch" -f bump="$usage_bump"'
