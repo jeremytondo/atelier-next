@@ -49,6 +49,29 @@ import Testing
     #expect(KeyGrammar.describe(try KeyGrammar.chord("cmd+delete")) == "⌘⌫")
   }
 
+  /// One piece for each modifier, in the order menus show them, and one for
+  /// the key, which stays whole when it has a name.
+  @Test(arguments: [
+    ("h", ["h"]),
+    ("shift+left", ["⇧", "←"]),
+    ("space", ["Space"]),
+    ("esc", ["Esc"]),
+    ("cmd+f10", ["⌘", "F10"]),
+    ("fn+ctrl+f", ["fn", "⌃", "f"]),
+    ("cmd+shift+option+ctrl+fn+space", ["fn", "⌃", "⌥", "⇧", "⌘", "Space"]),
+  ])
+  func takesAChordApartForKeycaps(text: String, expected: [String]) throws {
+    let chord = try KeyGrammar.chord(text, bare: true)
+    #expect(KeyGrammar.pieces(chord) == expected)
+    #expect(KeyGrammar.describe(chord) == expected.joined())
+  }
+
+  @Test func takesModifiersApartForKeycaps() throws {
+    let modifiers = try KeyGrammar.modifiers("cmd+option")
+    #expect(KeyGrammar.pieces(modifiers) == ["⌥", "⌘"])
+    #expect(KeyGrammar.describe(modifiers) == "⌥⌘")
+  }
+
   @Test func writesChordsBackInOneForm() throws {
     #expect(KeyGrammar.text(try KeyGrammar.chord("alt+command+1")) == "option+cmd+1")
     #expect(KeyGrammar.text(try KeyGrammar.sequence("W Shift+Left")) == "w shift+left")

@@ -14,11 +14,16 @@ public struct ConfigReport: Sendable {
   }
 
   /// The leader key as the HUD writes keys, such as ⌥Space; nil when unbound.
-  public var leaderKey: String? { configuration.leader.chord.map(KeyGrammar.describe) }
+  public var leaderKey: String? { leaderKeyPieces?.joined() }
+
+  /// The same key as `KeyGrammar` takes it apart, for drawing as keycaps: `⌥`, `Space`.
+  public var leaderKeyPieces: [String]? { configuration.leader.chord.map(KeyGrammar.pieces) }
 
   /// The modifiers that show the window list while held, such as ⌥⌘.
-  public var windowListModifiers: String {
-    KeyGrammar.describe(configuration.windowListModifiers)
+  public var windowListModifiers: String { windowListModifierPieces.joined() }
+
+  public var windowListModifierPieces: [String] {
+    KeyGrammar.pieces(configuration.windowListModifiers)
   }
 
   /// The file as a person would write it, with `~` for the home folder.
@@ -45,8 +50,8 @@ public struct ConfigReport: Sendable {
       leader.timeout.map { "closes after \(Self.seconds($0)) of inactivity" }
       ?? "never closes on its own"
     lines.append(
-      "Leader: \(leader.chord.map(KeyGrammar.describe) ?? "unbound"); \(shows); \(closes)")
-    lines.append("Window list: hold \(KeyGrammar.describe(configuration.windowListModifiers))")
+      "Leader: \(leaderKey ?? "unbound"); \(shows); \(closes)")
+    lines.append("Window list: hold \(windowListModifiers)")
     lines.append("Shortcuts:")
     lines += configuration.global.map { (KeyGrammar.describe($0.key), $0.value.words) }
       .sorted { $0.0 < $1.0 }.map { "  \(Self.column($0.0, 8))  \($0.1)" }

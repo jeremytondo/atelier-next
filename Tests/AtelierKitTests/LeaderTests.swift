@@ -57,12 +57,18 @@ import Testing
     #expect(top?.display == "only")
     #expect(top?.entries.map(\.label) == ["Spaces", "Windows", "Configuration"])
     #expect(top?.entries.map(\.isSubmenu) == [true, true, true])
+    // A submenu's key comes in pieces for keycaps, as a command's does.
+    #expect(top?.entries.map(\.keyPieces) == [["s"], ["w"], ["c"]])
+    #expect(top?.entries.map(\.key) == ["s", "w", "c"])
+    #expect(top?.entries.map(\.id) == ["s", "w", "c"])
     #expect(top?.feedback == nil)
     // Consumed, so the app never sees the W.
     #expect(mac.type("w") == false)
     let windows = await state(atelier) { $0?.title == "Windows" }
     #expect(windows?.entries.first?.label == "Fill")
+    #expect(windows?.entries.first?.keyPieces == ["f"])
     #expect(windows?.entries.first?.hint == "fn⌃f")
+    #expect(windows?.entries.first?.hintPieces == ["fn", "⌃", "f"])
     #expect(windows?.entries.first?.unavailable == nil)
     #expect(windows?.entries[1].unavailable == "Center is unavailable for the focused window.")
     #expect(windows?.entries.map(\.label).contains("Arrange") == true)
@@ -139,6 +145,12 @@ import Testing
         "Desktop 1", "Desktop 2", "Desktop 3",
       ])
     #expect(spaces?.entries.first { $0.label == "New Desktop" }?.hint == "⌥`")
+    #expect(spaces?.entries.first { $0.label == "New Desktop" }?.hintPieces == ["⌥", "`"])
+    // A key with a modifier is a piece for each, and so is the hint beside it.
+    let left = spaces?.entries.first { $0.key == "⇧h" }
+    #expect(left?.keyPieces == ["⇧", "h"])
+    #expect(left?.hint == "⌃⌥←")
+    #expect(left?.hintPieces == ["⌃", "⌥", "←"])
     mac.type(.keyDown(Chord([.shift], "left")))
     #expect(await eventually { mac.requests == ["move 2 to 0"] })
     #expect(await eventually { await atelier.leader.state() == nil })

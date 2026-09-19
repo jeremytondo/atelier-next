@@ -21,10 +21,13 @@ import Testing
     #expect(arrangements.map(\.id) == Arrangement.allCases.map(\.rawValue))
     #expect(
       arrangements[0]
-        == ArrangementInfo(id: "fill", label: "Fill", unavailable: nil, shortcut: "fn⌃f"))
+        == ArrangementInfo(
+          id: "fill", label: "Fill", unavailable: nil, shortcutPieces: ["fn", "⌃", "f"]))
+    #expect(arrangements[0].shortcut == "fn⌃f")
     #expect(arrangements[1].unavailable == "Center is unavailable for the focused window.")
     #expect(arrangements[2].unavailable == "Left is not in the app's Window menu.")
     #expect(arrangements[2].shortcut == nil)
+    #expect(arrangements[2].shortcutPieces == nil)
   }
 
   @Test func arrangingPressesTheMenuItem() async throws {

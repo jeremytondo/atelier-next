@@ -69,8 +69,8 @@ public final class Setup: NSObject, NSWindowDelegate {
     model.hasAccessibility = atelier.permissions.hasAccessibility
     model.login = atelier.login.status()
     model.canAddLoginItem = atelier.login.isInstalled
-    model.leaderKey = report.leaderKey
-    model.windowListModifiers = report.windowListModifiers
+    model.leaderKeyPieces = report.leaderKeyPieces
+    model.windowListModifierPieces = report.windowListModifierPieces
     model.configurationFile = report.filePath
     model.rejection = report.rejection
     model.problems = report.problems.filter { $0 != report.rejection }
@@ -82,8 +82,8 @@ final class SetupModel {
   var hasAccessibility = true
   var login: LoginStatus?
   var canAddLoginItem = false
-  var leaderKey: String?
-  var windowListModifiers = ""
+  var leaderKeyPieces: [String]?
+  var windowListModifierPieces: [String] = []
   var configurationFile: String?
   /// Why the file was refused whole, if it was; then none of it applies.
   var rejection: Problem?

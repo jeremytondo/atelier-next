@@ -1,9 +1,10 @@
 import AtelierKit
 import SwiftUI
 
-/// What the HUD draws: a title, rows of key and label, and a footer whose
-/// height never changes so feedback cannot move the rows. System type,
-/// colors, and glass; nothing drawn by hand.
+/// What the HUD draws: a title and rows of key and label, and under the leader
+/// menu a footer whose height never changes so feedback cannot move the rows.
+/// System type, colors, and glass; the one thing drawn by hand is `Design`'s
+/// keycaps.
 struct HUDView: View {
   enum Content: Equatable {
     case empty
@@ -13,8 +14,6 @@ struct HUDView: View {
   }
 
   let content: Content
-
-  static let width: CGFloat = 320
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -26,27 +25,33 @@ struct HUDView: View {
         header(
           state.path.map { $0.isKey ? $0.label : $0.label.uppercased() }.joined(separator: " › "))
         if state.entries.isEmpty {
-          Text("Nothing here").foregroundStyle(.secondary).padding(.horizontal, 12)
+          Text("Nothing here").foregroundStyle(.secondary)
+            .padding(.horizontal, HUDMetrics.rowPadding)
+        } else {
+          HUDRows(spacing: HUDMetrics.leaderRowSpacing) {
+            ForEach(state.entries) { LeaderRow(entry: $0) }
+          }
         }
-        ForEach(state.entries) { LeaderRow(entry: $0) }
         footer(state.feedback ?? "")
       case .windows(let windows):
         header("WINDOWS")
-        ForEach(Array(windows.enumerated()), id: \.element.id) { index, window in
-          WindowRow(
-            number: index < 10 ? "\((index + 1) % 10)" : "", window: window,
-            showsTitle: windows.filter { $0.app == window.app }.count > 1)
+        HUDRows(spacing: 0) {
+          ForEach(Array(windows.enumerated()), id: \.element.id) { index, window in
+            WindowRow(
+              // The tenth window is on the 0 key, and later ones have no key.
+              keyPieces: index < 10 ? ["\((index + 1) % 10)"] : [], window: window,
+              showsTitle: windows.filter { $0.app == window.app }.count > 1)
+          }
         }
-        footer("Release to hide")
       case .notice(let text):
         Label(text, systemImage: "exclamationmark.circle")
           .font(.callout)
-          .padding(.horizontal, 12)
+          .padding(.horizontal, HUDMetrics.rowPadding)
           .padding(.vertical, 10)
       }
     }
     .padding(.vertical, 8)
-    .frame(width: Self.width, alignment: .leading)
+    .frame(width: HUDMetrics.width, alignment: .leading)
     .glassEffect(.regular, in: .rect(cornerRadius: 20))
     .padding(8)
   }
@@ -55,7 +60,7 @@ struct HUDView: View {
     Text(title)
       .font(.caption.weight(.semibold))
       .foregroundStyle(.secondary)
-      .padding(.horizontal, 12)
+      .padding(.horizontal, HUDMetrics.rowPadding)
       .padding(.bottom, 4)
       .lineLimit(1)
   }
@@ -64,7 +69,7 @@ struct HUDView: View {
     Text(text.isEmpty ? " " : text)
       .font(.caption)
       .foregroundStyle(.secondary)
-      .padding(.horizontal, 12)
+      .padding(.horizontal, HUDMetrics.rowPadding)
       .padding(.top, 6)
       .lineLimit(1)
       .accessibilityHidden(text.isEmpty)
@@ -75,39 +80,33 @@ private struct LeaderRow: View {
   let entry: LeaderEntry
 
   var body: some View {
-    HStack(spacing: 8) {
-      Text(entry.key)
-        .font(.body.weight(.semibold).monospacedDigit())
-        .frame(width: 44, alignment: .leading)
+    HUDRow(keyPieces: entry.keyPieces, height: HUDMetrics.leaderRowHeight) {
       Text(entry.label)
         .strikethrough(entry.unavailable != nil)
         .lineLimit(1)
-      Spacer(minLength: 8)
-      if let hint = entry.hint {
-        Text(hint).font(.callout).foregroundStyle(.tertiary).lineLimit(1)
+      Spacer(minLength: HUDMetrics.columnGap)
+      if let hintPieces = entry.hintPieces {
+        Keycaps(pieces: hintPieces, style: .quiet)
       }
       if entry.isSubmenu {
         Image(systemName: "chevron.right").imageScale(.small).foregroundStyle(.secondary)
       }
     }
     .foregroundStyle(entry.unavailable == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-    .padding(.horizontal, 12)
-    .padding(.vertical, 3)
     .accessibilityElement(children: .combine)
     .accessibilityHint(entry.unavailable ?? "")
   }
 }
 
 private struct WindowRow: View {
-  let number: String
+  let keyPieces: [String]
   let window: AtelierKit.Window
   let showsTitle: Bool
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(number)
-        .font(.body.weight(.semibold).monospacedDigit())
-        .frame(width: 24, alignment: .leading)
+    HUDRow(
+      keyPieces: keyPieces, height: HUDMetrics.windowRowHeight, isHighlighted: window.isFocused
+    ) {
       VStack(alignment: .leading, spacing: 0) {
         Text(window.app).fontWeight(window.isFocused ? .semibold : .regular).lineLimit(1)
         if showsTitle {
@@ -115,7 +114,7 @@ private struct WindowRow: View {
             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
       }
-      Spacer(minLength: 8)
+      Spacer(minLength: HUDMetrics.columnGap)
       if !window.isVisible {
         Image(systemName: "eye.slash").imageScale(.small).foregroundStyle(.secondary)
           .accessibilityLabel("Hidden or minimized")
@@ -126,12 +125,6 @@ private struct WindowRow: View {
       }
     }
     .foregroundStyle(window.isVisible ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-    .padding(.horizontal, 12)
-    .padding(.vertical, 3)
-    .background(
-      window.isFocused
-        ? RoundedRectangle(cornerRadius: 8).fill(.selection).padding(.horizontal, 6) : nil
-    )
     .accessibilityElement(children: .combine)
   }
 }

@@ -323,6 +323,12 @@ import Testing
       modifiers = "ctrl+shift"
       """)
     #expect(configuration.leader.chord == nil)
+    // The setup page draws these as keycaps, and says so when there is no leader key.
+    let report = ConfigReport(file: nil, configuration: configuration, rejection: nil)
+    #expect(report.leaderKey == nil)
+    #expect(report.leaderKeyPieces == nil)
+    #expect(report.windowListModifiers == "⌃⇧")
+    #expect(report.windowListModifierPieces == ["⌃", "⇧"])
     #expect(configuration.leader.delay == .zero)
     #expect(configuration.leader.timeout == .seconds(10))
     #expect(configuration.windowListModifiers == [.control, .shift])
@@ -508,6 +514,10 @@ import Testing
         "\nTheme: system\nLeader: ⌥Space; appears at once; closes after 10 s of inactivity"))
     #expect(report.json.contains("\"theme\" : \"system\""))
     #expect(text.contains("Window list: hold ⌥⌘"))
+    #expect(report.leaderKey == "⌥Space")
+    #expect(report.leaderKeyPieces == ["⌥", "Space"])
+    #expect(report.windowListModifiers == "⌥⌘")
+    #expect(report.windowListModifierPieces == ["⌥", "⌘"])
     #expect(text.contains("  ⌥1        desktops select 1"))
     // A label longer than its column is never cut short.
     let wide = resolve("[keymap.global]\n\"ctrl+option+shift+cmd+space\" = \"desktops new\"")
