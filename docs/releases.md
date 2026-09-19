@@ -59,6 +59,7 @@ It releases the branch as it is on GitHub; nothing local is pushed. `.github/wor
 - The app, the command inside it, and the release's metadata name the same build, or nothing is produced. A development build's number is the UTC time, so it always advances, which is how Homebrew sees an upgrade.
 - The tap changes only after the published download has been fetched back and its checksum matches, and only that channel's cask changes. A failure before then takes back what the run put on GitHub, so what people can install is as it was; stable is the fallback for a bad development build.
 - Stable releases are never overwritten. The development channel is one GitHub prerelease, tagged `dev`, holding the newest build alone.
+- Release titles are `Atelier Dev 0.0.1-dev.20260918214704` for development builds and `Atelier 0.0.1` for stable versions. Each release includes Homebrew install and upgrade instructions and a list of the PRs included since the latest stable version in its history. Until the first stable release, the list covers the full history. Rolling Dev notes therefore keep all changes awaiting a stable release.
 
 `scripts/publish.sh … --dry-run` changes nothing and says what a real run would do; it cannot tell whether the tap's token works. `mise run package` makes the signed app locally without notarizing, for looking at, and the publisher refuses it.
 
