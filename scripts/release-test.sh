@@ -5,6 +5,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/atelier-release-tests.XXXXXX")
+temporary=$(cd "$temporary" && pwd -P)
 trap 'rm -rf "$temporary"' EXIT
 fail() {
   echo "release-test.sh: $*" >&2
@@ -50,16 +51,28 @@ fakebin="$temporary/bin"
 events="$temporary/events"
 mkdir -p "$fakebin"
 export FAKE_RELEASE_EVENTS="$events"
+export FAKE_RELEASE_NOTES="$temporary/notes.md"
 cat >"$fakebin/gh" <<'FAKE_GH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh %s\n' "$*" >>"$FAKE_RELEASE_EVENTS"
+args=("$@")
+for ((i = 0; i < $#; i++)); do
+  if [[ ${args[i]} == --notes-file ]]; then
+    cp "${args[i + 1]}" "$FAKE_RELEASE_NOTES"
+  fi
+done
 if [[ $1 == workflow && $2 == run ]]; then
   exit 0
 fi
 if [[ $1 == release && $2 == view ]]; then
   [[ ${FAKE_RELEASE_EXISTS:-false} == true ]] || exit 1
   printf '%s\n' "${FAKE_RELEASE_ASSETS:-}"
+  exit 0
+fi
+if [[ $1 == api && $2 == *'/pulls?'* ]]; then
+  [[ ${FAKE_NOTES_FAIL:-false} != true ]] || exit 1
+  cat "$FAKE_PULLS"
   exit 0
 fi
 if [[ $1 == api && "$*" == *'/git/ref/tags/'* && "$*" != *'--method PATCH'* ]]; then
@@ -71,6 +84,9 @@ cat >"$fakebin/git" <<'FAKE_GIT'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ $1 == check-ref-format ]]; then
+  exec /usr/bin/git "$@"
+fi
+if [[ $1 == -C && $2 == "$FAKE_REAL_REPO" ]]; then
   exec /usr/bin/git "$@"
 fi
 printf 'git %s\n' "$*" >>"$FAKE_RELEASE_EVENTS"
@@ -86,6 +102,12 @@ elif [[ $args == *' rev-parse --abbrev-ref HEAD '* ]]; then
 elif [[ $args == *' ls-remote '* ]]; then
   printf '0000000000000000000000000000000000000000\trefs/heads/main\n'
 elif [[ $args == *' rev-parse HEAD '* ]]; then
+  echo 1111111111111111111111111111111111111111
+elif [[ $args == *' rev-parse --is-shallow-repository '* ]]; then
+  echo false
+elif [[ $args == *' tag --merged '* ]]; then
+  printf '%s\n' "${FAKE_STABLE_TAGS:-}"
+elif [[ $args == *' rev-list '* ]]; then
   echo 1111111111111111111111111111111111111111
 fi
 FAKE_GIT
@@ -107,6 +129,30 @@ cp "$FAKE_RELEASE_ARCHIVE" "$output"
 FAKE_CURL
 chmod +x "$fakebin/gh" "$fakebin/git" "$fakebin/curl"
 export PATH="$fakebin:$PATH"
+export FAKE_REAL_REPO="$plan" FAKE_PULLS="$temporary/pulls.tsv"
+
+# Notes use actual ancestry, not merge dates or PR titles. Include two PRs
+# sharing a merge commit, and exclude an old PR and a PR from another branch.
+cp "$root/scripts/release-notes.sh" "$plan/scripts/"
+base=$(git -C "$plan" rev-parse HEAD)
+git -C "$plan" commit -q --allow-empty -m 'A change without a PR number'
+head=$(git -C "$plan" rev-parse HEAD)
+{
+  printf '%s\t10\tFirst change\thttps://example.invalid/pull/10\n' "$head"
+  printf '%s\t11\tSecond change\thttps://example.invalid/pull/11\n' "$head"
+  printf '%s\t9\tAlready released\thttps://example.invalid/pull/9\n' "$base"
+  printf '%s\t12\tAnother branch\thttps://example.invalid/pull/12\n' other
+} >"$FAKE_PULLS"
+"$plan/scripts/release-notes.sh" dev "$head" "$base" >"$temporary/range-notes"
+grep -Fq -- '- First change ([#10](https://example.invalid/pull/10))' "$temporary/range-notes" || fail 'notes missed a PR'
+grep -Fq -- '- Second change ([#11](https://example.invalid/pull/11))' "$temporary/range-notes" || fail 'notes lost a PR sharing a commit'
+! grep -Eq 'Already released|Another branch' "$temporary/range-notes" || fail 'notes included a PR outside the range'
+"$plan/scripts/release-notes.sh" stable "$head" >"$temporary/first-notes"
+grep -Fq 'Already released' "$temporary/first-notes" || fail 'first release omitted earlier history'
+"$plan/scripts/release-notes.sh" dev "$head" "$head" >"$temporary/empty-notes"
+grep -Fq 'No pull requests in this build' "$temporary/empty-notes" || fail 'empty range was not explained'
+printf '%s\t45\tMake the CLI runnable\thttps://example.invalid/pull/45\n' \
+  1111111111111111111111111111111111111111 >"$FAKE_PULLS"
 
 # Both the established task names and the argument-based task dispatch an
 # explicit branch ref and do not silently accept a tag of the same name.
@@ -146,8 +192,37 @@ upload_line=$(grep -nF "gh release upload dev --repo jeremytondo/atelier-next $d
 push_line=$(grep -n 'git .* push ' "$events" | cut -d: -f1)
 delete_line=$(grep -nF 'gh release delete-asset dev Atelier-macos-arm64.zip' "$events" | cut -d: -f1)
 [[ $upload_line -lt $push_line && $push_line -lt $delete_line ]] || fail 'legacy assets moved before the tap'
-grep -Fq "gh release edit dev --repo jeremytondo/atelier-next --title Atelier development build --prerelease --latest=false" "$events" ||
+grep -Fq "gh release edit dev --repo jeremytondo/atelier-next --title Atelier Dev 0.0.1-dev.20260918201812 --prerelease --latest=false" "$events" ||
   fail 'rolling release metadata was not normalized'
+grep -Fxq 'brew install --cask jeremytondo/tap/atelier@dev' "$FAKE_RELEASE_NOTES" || fail 'dev install command missing'
+grep -Fxq 'brew upgrade --cask atelier@dev' "$FAKE_RELEASE_NOTES" || fail 'dev upgrade command missing'
+grep -Fxq "## What's Changed" "$FAKE_RELEASE_NOTES" || fail 'changes heading missing'
+grep -Fq 'Make the CLI runnable ([#45]' "$FAKE_RELEASE_NOTES" || fail 'published notes omitted the PR'
+
+# Updating a rolling release uses stable history, regardless of the dev tag.
+: >"$events"
+export FAKE_STABLE_TAGS=$'v0.0.0\nv0.0.1-dev.123'
+export FAKE_RELEASE_ASSETS="$asset"
+publish dev dev >"$temporary/retry.out"
+grep -Fq 'rev-list 1111111111111111111111111111111111111111 ^v0.0.0' "$events" ||
+  fail 'rolling release did not use the stable baseline'
+unset FAKE_STABLE_TAGS
+export FAKE_RELEASE_ASSETS="$legacy_assets"
+
+# A failed PR lookup stops publication before any external state changes.
+: >"$events"
+export FAKE_NOTES_FAIL=true
+expect_failure publish dev dev
+! grep -Eq '^gh release (create|upload|edit|delete)' "$events" || fail 'failed notes lookup mutated a release'
+! grep -Eq '^git .* push ' "$events" || fail 'failed notes lookup reached the tap'
+unset FAKE_NOTES_FAIL
+
+# Dry runs preview the full title and notes without writing to GitHub.
+: >"$events"
+publish dev dev --dry-run >"$temporary/dry.out"
+grep -Fxq 'Title: Atelier Dev 0.0.1-dev.20260918201812' "$temporary/dry.out" || fail 'dry run omitted the title'
+grep -Fxq "## What's Changed" "$temporary/dry.out" || fail 'dry run omitted the notes'
+! grep -Eq '^gh release (create|upload|edit|delete)' "$events" || fail 'dry run mutated a release'
 
 # A failed tap push removes only the native upload and retains the legacy set,
 # so the old published state remains usable and the next run can retry.
@@ -173,8 +248,23 @@ expect_failure publish dev dev
 : >"$events"
 export FAKE_RELEASE_EXISTS=false FAKE_TAG_EXISTS=false FAKE_RELEASE_ASSETS=''
 publish stable v0.0.1 >"$temporary/stable-publish.out"
-grep -Fq "gh release create v0.0.1 --repo jeremytondo/atelier-next --target 1111111111111111111111111111111111111111 --title Atelier 0.0.1 --notes Atelier 0.0.1, build 20260918201812. --draft $dist/$asset" "$events" ||
+grep -Eq "^gh release create v0.0.1 .* --title Atelier 0.0.1 --notes-file .* --draft $dist/$asset$" "$events" ||
   fail 'stable release was not created as a draft'
 ! grep -Eq '^gh release delete-asset dev ' "$events" || fail 'stable publication touched dev assets'
+grep -Fxq 'brew install --cask jeremytondo/tap/atelier' "$FAKE_RELEASE_NOTES" || fail 'stable install command missing'
+grep -Fxq 'brew upgrade --cask atelier' "$FAKE_RELEASE_NOTES" || fail 'stable upgrade command missing'
+
+# Stable boundaries ignore dev tags and choose the greatest final version.
+: >"$events"
+export FAKE_STABLE_TAGS=$'v0.0.0\nv0.0.1\nv0.0.1-dev.123\nv00.1.0'
+publish stable v0.0.1 >"$temporary/stable-range.out"
+grep -Fq 'rev-list 1111111111111111111111111111111111111111 ^v0.0.0' "$events" || fail 'stable range used the wrong tag'
+
+# Creating a new rolling release uses the same title and notes as updating it.
+: >"$events"
+export FAKE_STABLE_TAGS=v0.0.0
+publish dev dev >"$temporary/first-dev.out"
+grep -Fq -- '--title Atelier Dev 0.0.1-dev.20260918201812 --notes-file' "$events" || fail 'first dev release used the wrong title'
+grep -Fq 'rev-list 1111111111111111111111111111111111111111 ^v0.0.0' "$events" || fail 'first dev did not fall back to stable'
 
 echo 'Release behavior tests passed.'

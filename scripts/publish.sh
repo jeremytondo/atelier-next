@@ -94,11 +94,19 @@ if [[ -n $others ]]; then
 fi
 
 case $channel in
-  dev) token='atelier@dev' ;;
-  stable) token='atelier' ;;
+  dev) token='atelier@dev' title="Atelier Dev $version-dev.$build" ;;
+  stable) token='atelier' title="Atelier $version" ;;
 esac
 url="https://github.com/$repository/releases/download/$tag/$asset"
 commit=$(git -C "$root" rev-parse HEAD)
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/atelier-publish.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+# Both channels list everything since the latest stable version in this
+# build's history. Moving the rolling dev tag cannot erase unreleased changes.
+tags=$(git -C "$root" tag --merged "$commit" --list 'v*')
+base=$(grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' <<<"$tags" | grep -vxF "$tag" | sort -V | tail -n 1 || true)
+"$root/scripts/release-notes.sh" "$channel" "$commit" "$base" >"$work/notes.md"
 
 if $dry; then
   $refused && echo 'A real run stops at the warnings above. With those put right, it would do this:'
@@ -108,6 +116,8 @@ if $dry; then
   else
     echo "Would create the release $tag."
   fi
+  echo "Title: $title"
+  cat "$work/notes.md"
   echo "Would fetch $url back and compare it with $sha256."
   echo "Would write Casks/$token.rb in $tap and no other file:"
   "$root/scripts/cask.sh" "$channel" "$version" "$build" "$sha256" | sed 's/^/    /'
@@ -117,7 +127,6 @@ if $dry; then
   exit 0
 fi
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/atelier-publish.XXXXXX")
 created=false
 uploaded=false
 tap_moved=false
@@ -150,8 +159,8 @@ trap finish EXIT
 
 if [[ $channel == stable ]]; then
   # A draft until the archive is up, so nobody sees a release with nothing in it.
-  gh release create "$tag" --repo "$repository" --target "$commit" --title "Atelier $version" \
-    --notes "Atelier $version, build $build." --draft "$dist/$asset"
+  gh release create "$tag" --repo "$repository" --target "$commit" --title "$title" \
+    --notes-file "$work/notes.md" --draft "$dist/$asset"
   created=true
   gh release edit "$tag" --repo "$repository" --draft=false
 elif $exists; then
@@ -161,8 +170,8 @@ elif $exists; then
     uploaded=true
   fi
 else
-  gh release create "$tag" --repo "$repository" --target "$commit" --title 'Atelier development build' \
-    --notes "Atelier $version, build $build. This release always holds the newest development build." \
+  gh release create "$tag" --repo "$repository" --target "$commit" --title "$title" \
+    --notes-file "$work/notes.md" \
     --prerelease "$dist/$asset"
   created=true
 fi
@@ -220,7 +229,6 @@ if [[ $channel == dev ]]; then
   done <<<"$retired"
   gh api --method PATCH "repos/$repository/git/refs/tags/$tag" -f sha="$commit" -F force=true >/dev/null
   gh release edit "$tag" --repo "$repository" \
-    --title 'Atelier development build' --prerelease --latest=false \
-    --notes "Atelier $version, build $build. This release always holds the newest development build."
+    --title "$title" --prerelease --latest=false --notes-file "$work/notes.md"
 fi
 echo "Published $token $version,$build"
