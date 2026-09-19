@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import Synchronization
 
-/// Switches Spaces by pressing macOS's own shortcuts, so Dock switches exactly
+/// Switches to Desktops by pressing macOS's own shortcuts, so Dock switches exactly
 /// as it does for the user. Asking WindowServer to change Space directly
 /// leaves Dock behind: the old Space's windows and menu bar stay on screen.
 ///

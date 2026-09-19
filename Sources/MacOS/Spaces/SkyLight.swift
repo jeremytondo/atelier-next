@@ -30,6 +30,9 @@ struct SkyLight: Sendable {
   private let hotKeyIsEnabled: IsSymbolicHotKeyEnabled
   private let enableHotKey: SetSymbolicHotKeyEnabled
   private let getWorkspacesCount: GetWorkspacesCount
+  let windowActivation: WindowActivation?
+  private typealias CreateRemoteElement = @convention(c) (CFData) -> Unmanaged<AXUIElement>?
+  private let createRemoteElement: CreateRemoteElement?
 
   init() throws {
     guard
@@ -58,6 +61,12 @@ struct SkyLight: Sendable {
     hotKeyIsEnabled = unsafeBitCast(hotKeyEnabled, to: IsSymbolicHotKeyEnabled.self)
     self.enableHotKey = unsafeBitCast(enableHotKey, to: SetSymbolicHotKeyEnabled.self)
     getWorkspacesCount = unsafeBitCast(workspaces, to: GetWorkspacesCount.self)
+    // Optional: losing direct full-screen focus must not disable Desktops or
+    // make us fall back to a route through some other Space.
+    windowActivation = WindowActivation(skyLight: skyLight, hiServices: hiServices)
+    createRemoteElement = dlsym(hiServices, "_AXUIElementCreateWithRemoteToken").map {
+      unsafeBitCast($0, to: CreateRemoteElement.self)
+    }
   }
 
   /// The undocumented per-display dictionaries behind `DisplaySpaces.decode`.
@@ -80,6 +89,26 @@ struct SkyLight: Sendable {
   func windowID(of element: AXUIElement) -> UInt32? {
     var id: CGWindowID = 0
     return getWindow(element, &id) == .success && id != 0 ? id : nil
+  }
+
+  /// An app-local Accessibility element number, not a WindowServer window ID.
+  /// Off-Space windows are omitted from AXWindows but can still have live
+  /// elements. Callers must verify both the window ID and the AXWindow role:
+  /// descendants report the same window ID as their containing window.
+  func remoteElement(in app: pid_t, number: UInt64) -> AXUIElement? {
+    guard let createRemoteElement else { return nil }
+    var token = Data()
+    withUnsafeBytes(of: app) { token.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt32(0)) { token.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt32(0x636f_636f)) { token.append(contentsOf: $0) }
+    withUnsafeBytes(of: number) { token.append(contentsOf: $0) }
+    return createRemoteElement(token as CFData)?.takeRetainedValue()
+  }
+
+  var canResolveRemoteElements: Bool { createRemoteElement != nil }
+
+  func restoreFront(_ process: WindowActivation.Process, space: UInt64) -> Bool {
+    windowActivation?.restoreFront(process, space: space, connection: connection) == true
   }
 
   /// The keys of one of macOS's own keyboard shortcuts, by its number in the

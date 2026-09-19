@@ -7,6 +7,7 @@ package struct LiveMac: Mac {
   private let skyLight: SkyLight
   private let census: WindowCensus
   private let shortcuts: SpaceShortcuts
+  private let fullScreen: FullScreenSwitch
   private let windowMenu: WindowMenu
   private let hotKeys = HotKeys()
 
@@ -14,6 +15,7 @@ package struct LiveMac: Mac {
     skyLight = try SkyLight()
     census = WindowCensus(skyLight: skyLight)
     shortcuts = SpaceShortcuts(skyLight: skyLight)
+    fullScreen = FullScreenSwitch(skyLight: skyLight)
     windowMenu = WindowMenu(skyLight: skyLight)
     // The system-wide element sets the limit for every request this process
     // makes; a limit set on an app's element would not reach its windows.
@@ -74,7 +76,14 @@ package struct LiveMac: Mac {
   package func switchSpace(to space: UInt64, on display: String, expecting: [DisplaySpaces]) async
     -> SpaceDispatch
   {
-    await shortcuts.switchSpace(to: space, on: display, expecting: expecting)
+    guard
+      let target = expecting.first(where: { $0.id == display })?
+        .spaces.first(where: { $0.id == space })
+    else { return .changed }
+    if target.isDesktop {
+      return await shortcuts.switchSpace(to: space, on: display, expecting: expecting)
+    }
+    return await fullScreen.switchSpace(to: space, on: display, expecting: expecting)
   }
 
   /// Dock keeps its own list of Desktops, and its shortcuts reach a new one

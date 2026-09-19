@@ -16,6 +16,7 @@ import Testing
     while mac.requests.isEmpty { try await Task.sleep(for: .milliseconds(1)) }
     await #expect(throws: AtelierError.busy) { try await atelier.windows.select(2) }
     await #expect(throws: AtelierError.busy) { try await atelier.desktops.delete() }
+    await #expect(throws: AtelierError.busy) { try await atelier.spaces.select(position: 3) }
     // A query is not a command.
     #expect(try await atelier.slots() == [1, 2])
     #expect(mac.requests == ["switch to 2"])
