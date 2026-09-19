@@ -1,7 +1,8 @@
 import AtelierKit
 import SwiftUI
 
-/// What the HUD draws: a title and rows of key and label, and under the leader
+/// What the HUD draws: a title and rows of key and label, the row of the
+/// focused window or current Space on a highlight, and under the leader
 /// menu a footer whose height never changes so feedback cannot move the rows.
 /// System type, colors, and glass; the one thing drawn by hand is `Design`'s
 /// keycaps.
@@ -10,6 +11,7 @@ struct HUDView: View {
     case empty
     case leader(LeaderState)
     case windows([AtelierKit.Window])
+    case spaces([SpaceInfo])
     case notice(String)
   }
 
@@ -38,9 +40,17 @@ struct HUDView: View {
         HUDRows(spacing: 0) {
           ForEach(Array(windows.enumerated()), id: \.element.id) { index, window in
             WindowRow(
-              // The tenth window is on the 0 key, and later ones have no key.
-              keyPieces: index < 10 ? ["\((index + 1) % 10)"] : [], window: window,
+              keyPieces: Self.numberKey(index), window: window,
               showsTitle: windows.filter { $0.app == window.app }.count > 1)
+          }
+        }
+      case .spaces(let spaces):
+        header("SPACES")
+        HUDRows(spacing: 0) {
+          // A Space is named by its place, whatever its kind: the number its key goes by.
+          ForEach(Array(spaces.enumerated()), id: \.element.id) { index, space in
+            SpaceRow(
+              keyPieces: Self.numberKey(index), position: index + 1, isCurrent: space.isCurrent)
           }
         }
       case .notice(let text):
@@ -54,6 +64,11 @@ struct HUDView: View {
     .frame(width: HUDMetrics.width, alignment: .leading)
     .glassEffect(.regular, in: .rect(cornerRadius: 20))
     .padding(8)
+  }
+
+  /// The tenth row of a list is on the 0 key, and later ones have no key.
+  private static func numberKey(_ index: Int) -> [String] {
+    index < 10 ? ["\((index + 1) % 10)"] : []
   }
 
   private func header(_ title: String) -> some View {
@@ -119,12 +134,24 @@ private struct WindowRow: View {
         Image(systemName: "eye.slash").imageScale(.small).foregroundStyle(.secondary)
           .accessibilityLabel("Hidden or minimized")
       }
-      if window.isFocused {
-        Image(systemName: "checkmark").imageScale(.small).fontWeight(.semibold)
-          .accessibilityLabel("Focused")
-      }
     }
     .foregroundStyle(window.isVisible ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
     .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(window.isFocused ? .isSelected : [])
+  }
+}
+
+private struct SpaceRow: View {
+  let keyPieces: [String]
+  let position: Int
+  let isCurrent: Bool
+
+  var body: some View {
+    HUDRow(keyPieces: keyPieces, height: HUDMetrics.spaceRowHeight, isHighlighted: isCurrent) {
+      Text("Space \(position)").fontWeight(isCurrent ? .semibold : .regular).lineLimit(1)
+      Spacer(minLength: 0)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(isCurrent ? .isSelected : [])
   }
 }

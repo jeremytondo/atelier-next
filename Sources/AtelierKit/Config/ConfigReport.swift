@@ -26,6 +26,12 @@ public struct ConfigReport: Sendable {
     KeyGrammar.pieces(configuration.windowListModifiers)
   }
 
+  /// The modifiers that show the list of Spaces while held, such as ⌥, for
+  /// drawing as keycaps; nil when that list is turned off.
+  public var spaceListModifierPieces: [String]? {
+    configuration.spaceList.isEnabled ? KeyGrammar.pieces(configuration.spaceList.modifiers) : nil
+  }
+
   /// The file as a person would write it, with `~` for the home folder.
   public var filePath: String? {
     file.map { ($0.path as NSString).abbreviatingWithTildeInPath }
@@ -44,14 +50,18 @@ public struct ConfigReport: Sendable {
     }
     lines.append("Theme: \(configuration.theme.rawValue)")
     let leader = configuration.leader
-    let shows =
-      leader.delay == .zero ? "appears at once" : "appears after \(Self.seconds(leader.delay))"
     let closes =
       leader.timeout.map { "closes after \(Self.seconds($0)) of inactivity" }
       ?? "never closes on its own"
     lines.append(
-      "Leader: \(leaderKey ?? "unbound"); \(shows); \(closes)")
+      "Leader: \(leaderKey ?? "unbound"); \(Self.appears(after: leader.delay)); \(closes)")
     lines.append("Window list: hold \(windowListModifiers)")
+    let spaceList = configuration.spaceList
+    lines.append(
+      spaceList.isEnabled
+        ? "Space list: hold \(KeyGrammar.describe(spaceList.modifiers)); "
+          + Self.appears(after: spaceList.delay)
+        : "Space list: off")
     lines.append("Shortcuts:")
     lines += configuration.global.map { (KeyGrammar.describe($0.key), $0.value.words) }
       .sorted { $0.0 < $1.0 }.map { "  \(Self.column($0.0, 8))  \($0.1)" }
@@ -94,6 +104,10 @@ public struct ConfigReport: Sendable {
     text.padding(toLength: max(width, text.count), withPad: " ", startingAt: 0)
   }
 
+  private static func appears(after delay: Duration) -> String {
+    delay == .zero ? "appears at once" : "appears after \(seconds(delay))"
+  }
+
   private static func seconds(_ duration: Duration) -> String {
     let seconds =
       Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
@@ -110,6 +124,11 @@ public struct ConfigReport: Sendable {
         var key: String?
         var delay: Double
         var timeout: Double?
+      }
+      struct SpaceList: Encodable {
+        var modifiers: String
+        var delay: Double
+        var enabled: Bool
       }
       struct Shortcut: Encodable {
         var key: String
@@ -138,6 +157,7 @@ public struct ConfigReport: Sendable {
       var theme: String
       var leader: Leader
       var windowListModifiers: String
+      var spaceList: SpaceList
       var shortcuts: [Shortcut]
       var menu: [Entry]
       var quickApps: [QuickApp]
@@ -163,6 +183,10 @@ public struct ConfigReport: Sendable {
           key: leader.chord.map(KeyGrammar.text), delay: Self.number(leader.delay),
           timeout: leader.timeout.map(Self.number)),
         windowListModifiers: KeyGrammar.text(configuration.windowListModifiers),
+        spaceList: Payload.SpaceList(
+          modifiers: KeyGrammar.text(configuration.spaceList.modifiers),
+          delay: Self.number(configuration.spaceList.delay),
+          enabled: configuration.spaceList.isEnabled),
         shortcuts: configuration.global.map {
           Payload.Shortcut(key: KeyGrammar.text($0.key), command: $0.value.words)
         }.sorted { $0.key < $1.key },

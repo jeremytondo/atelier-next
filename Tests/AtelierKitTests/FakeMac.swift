@@ -46,6 +46,8 @@ final class FakeMac: Mac, Sendable {
     var afterSnapshot: (@Sendable (inout State) -> Void)?
     /// Runs once, just after the next switch of Spaces.
     var afterSwitch: (@Sendable (inout State) -> Void)?
+    /// Runs once, just after the next move of a Space.
+    var afterMove: (@Sendable (inout State) -> Void)?
     var nextSpace: UInt64 = 100
     /// Everything asked of the Mac that could change it, in order.
     var requests: [String] = []
@@ -288,6 +290,9 @@ final class FakeMac: Mac, Sendable {
         spaces.insert(spaces.remove(at: from), at: index)
         return spaces
       }
+      let afterMove = state.afterMove
+      state.afterMove = nil
+      afterMove?(&state)
       return .sent
     }
   }

@@ -31,6 +31,9 @@ struct Overrides: Equatable, Sendable {
   /// `.some(nil)` for a leader that never times out.
   var leaderTimeout: Double??
   var windowListModifiers: String?
+  var spaceListModifiers: String?
+  var spaceListDelay: Double?
+  var spaceListEnabled: Bool?
   var global: [Entry<String>] = []
   var leader: [Entry<LeaderTarget>] = []
   var quickApps: [QuickApp] = []
@@ -49,6 +52,7 @@ struct Overrides: Equatable, Sendable {
       case "theme": overrides.theme = overrides.string(root, key, at: key)
       case "leader": overrides.readLeader(root, key)
       case "window-list": overrides.readWindowList(root, key)
+      case "space-list": overrides.readSpaceList(root, key)
       case "keymap": overrides.readKeymap(root, key)
       case "quick-apps": overrides.readQuickApps(root, key)
       default: overrides.report(key, "is not a setting Atelier knows")
@@ -96,6 +100,23 @@ struct Overrides: Equatable, Sendable {
       switch name {
       case "modifiers": windowListModifiers = string(table, name, at: location)
       default: report(location, "is not a window-list setting; the setting is modifiers")
+      }
+    }
+  }
+
+  private mutating func readSpaceList(_ root: TOMLTable, _ key: String) {
+    guard let table = table(root, key) else { return }
+    for name in table.keys {
+      let location = "space-list \(name)"
+      switch name {
+      case "modifiers": spaceListModifiers = string(table, name, at: location)
+      case "delay": spaceListDelay = seconds(table, name, at: location)
+      case "enabled":
+        spaceListEnabled = try? table.bool(forKey: name)
+        if spaceListEnabled == nil { report(location, "must be true or false") }
+      default:
+        report(
+          location, "is not a space-list setting; the settings are modifiers, delay, and enabled")
       }
     }
   }

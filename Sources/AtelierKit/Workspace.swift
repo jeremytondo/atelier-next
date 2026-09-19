@@ -24,6 +24,8 @@ package struct Patience: Sendable {
 actor Workspace {
   enum Change: Sendable {
     case windows, spaces
+    /// A command that chooses a Space to go to was invoked.
+    case selection
   }
 
   /// One census, and where the keyboard was when it was taken.
@@ -54,7 +56,8 @@ actor Workspace {
   private var idleWaiters: [CheckedContinuation<Void, Never>] = []
   private var censusesStarted = 0
   private var censusApplied = 0
-  private var lastSeen: (displays: [DisplaySpaces], windows: [UInt64: [Window]])?
+  private var lastSeen:
+    (displays: [DisplaySpaces], keyboardDisplay: String, windows: [UInt64: [Window]])?
   private var listeners: [UUID: (Change, AsyncStream<Void>.Continuation)] = [:]
 
   init(mac: any Mac, stateFolder: URL?, patience: Patience) {
@@ -111,7 +114,7 @@ actor Workspace {
       else { continue }
 
       censusApplied = census
-      apply(snapshot, focused: focus.window)
+      apply(snapshot, focused: focus.window, keyboardDisplay: display.id)
       return Observation(snapshot: snapshot, focus: focus, display: display, space: space)
     }
     throw .unavailable
@@ -133,7 +136,7 @@ actor Workspace {
     return displays.first { $0.currentSpace == current }
   }
 
-  private func apply(_ census: Snapshot, focused: UInt32?) {
+  private func apply(_ census: Snapshot, focused: UInt32?, keyboardDisplay: String) {
     // Windows of apps under Quick App behavior are not for the lists.
     let snapshot = Snapshot(
       displays: census.displays,
@@ -148,10 +151,13 @@ actor Workspace {
     save()
     let windows = lists.byDesktop.mapValues { Self.windows($0, in: snapshot, focused: focused) }
     if let lastSeen {
-      if lastSeen.displays != snapshot.displays { announce(.spaces) }
+      // The keyboard can go to another display with every Space where it was.
+      if lastSeen.displays != snapshot.displays || lastSeen.keyboardDisplay != keyboardDisplay {
+        announce(.spaces)
+      }
       if lastSeen.windows != windows { announce(.windows) }
     }
-    lastSeen = (snapshot.displays, windows)
+    lastSeen = (snapshot.displays, keyboardDisplay, windows)
   }
 
   private func save() {
@@ -159,7 +165,7 @@ actor Workspace {
     try? file?.save(lists.byDesktop)
   }
 
-  private func announce(_ change: Change) {
+  func announce(_ change: Change) {
     for (kind, listener) in listeners.values where kind == change {
       listener.yield()
     }

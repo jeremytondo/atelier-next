@@ -29,6 +29,7 @@ import Testing
     (["desktops", "select", "1"], Request(name: "desktops.select", arguments: ["1"])),
     (["desktops", "delete"], Request(name: "desktops.delete")),
     (["spaces", "move", "by", "-1"], Request(name: "spaces.move", arguments: ["by", "-1"])),
+    (["spaces", "move", "to", "3"], Request(name: "spaces.move", arguments: ["to", "3"])),
     (
       ["spaces", "move", "by", "2", "--json"],
       Request(name: "spaces.move", arguments: ["by", "2"], json: true)
@@ -67,6 +68,7 @@ import Testing
     ["spaces", "move", "1"], ["spaces", "move", "-f", "1", "-t", "2"],
     ["desktops", "new", "now"],
     ["spaces", "select", "1.5"], ["spaces", "move", "by"], ["spaces", "move", "by", "1", "2"],
+    ["spaces", "move", "to"], ["spaces", "move", "to", "x"],
     ["windows", "arrange"], ["windows", "arrange", "fill", "center"], ["config", "show", "now"],
     ["config", "reset"], ["quick-apps", "toggle"], ["quick-apps", "show", "1Password"],
     ["quit", "now"], ["quit", "--json"], ["doctor", "everything"], ["restart", "--json"],

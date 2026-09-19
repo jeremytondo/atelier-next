@@ -139,6 +139,7 @@ struct CommandRunner: Sendable {
     case .spacesSelect(let position): return try await spaces.select(position: position)
     case .spacesMove(let from, let to): return try await spaces.move(from: from, to: to)
     case .spacesMoveBy(let offset): return try await spaces.move(by: offset)
+    case .spacesMoveTo(let position): return try await spaces.move(to: position)
     case .desktopsNew: return try await desktops.new()
     case .desktopsSelect(let number): return try await desktops.select(number: number)
     case .desktopsDelete: return try await desktops.delete()

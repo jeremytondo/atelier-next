@@ -134,16 +134,17 @@ import Testing
     #expect(explained?.feedback == "No command for ⌥w")
   }
 
-  @Test func desktopsThatDoNotExistAreLeftOutAndTheSequenceRunsTheCommand() async throws {
+  @Test func spacesThatDoNotExistAreLeftOutAndTheSequenceRunsTheCommand() async throws {
     let mac = mac()
     let atelier = try await start(mac)
     _ = try await atelier.leader.open()
     mac.type("s")
     let spaces = await state(atelier) { $0?.title == "Spaces" }
     #expect(
-      spaces?.entries.filter { $0.label.hasPrefix("Desktop ") }.map(\.label) == [
-        "Desktop 1", "Desktop 2", "Desktop 3",
+      spaces?.entries.filter { $0.label.hasPrefix("Space ") }.map(\.label) == [
+        "Space 1", "Space 2", "Space 3",
       ])
+    #expect(spaces?.entries.first { $0.label == "Space 2" }?.hintPieces == ["⌥", "2"])
     #expect(spaces?.entries.first { $0.label == "New Desktop" }?.hint == "⌥`")
     #expect(spaces?.entries.first { $0.label == "New Desktop" }?.hintPieces == ["⌥", "`"])
     // A key with a modifier is a piece for each, and so is the hint beside it.
@@ -154,6 +155,41 @@ import Testing
     mac.type(.keyDown(Chord([.shift], "left")))
     #expect(await eventually { mac.requests == ["move 2 to 0"] })
     #expect(await eventually { await atelier.leader.state() == nil })
+  }
+
+  @Test func aNumberInTheSpacesMenuIsAPositionAmongSpacesOfEveryKind() async throws {
+    // Desktop, full screen, Desktop: what the number keys and the list count too.
+    let mac = FakeMac.oneDisplay(notDesktops: [2], current: 1)
+    let atelier = try await start(mac)
+    _ = try await atelier.leader.open()
+    mac.type("s")
+    let spaces = await state(atelier) { $0?.title == "Spaces" }
+    #expect(
+      spaces?.entries.filter { $0.label.hasPrefix("Space ") }.map(\.key) == ["1", "2", "3"])
+    #expect(spaces?.entries.contains { $0.label.hasPrefix("Desktop ") } == false)
+    mac.type("2")
+    #expect(await eventually { mac.currentSpace == 2 })
+    #expect(await eventually { await atelier.leader.state() == nil })
+  }
+
+  @Test func aDesktopNumberSomeoneBoundIsStillOfferedOnlyWhileItExists() async throws {
+    let mac = FakeMac.oneDisplay(notDesktops: [2], current: 1)
+    let atelier = try await start(
+      mac,
+      config: """
+        [keymap.leader]
+        "s 2" = "desktops select 2"
+        "s 3" = "desktops select 3"
+        "s 4" = "spaces select 0"
+        "s 5" = "desktops select -1"
+        """)
+    _ = try await atelier.leader.open()
+    mac.type("s")
+    let spaces = await state(atelier) { $0?.title == "Spaces" }
+    #expect(
+      spaces?.entries.filter { $0.key.count == 1 && $0.key.first!.isNumber }.map(\.label) == [
+        "Space 1", "Desktop 2",
+      ])
   }
 
   /// The Mac of `mac()` with every arrangement enabled in its Window menu.

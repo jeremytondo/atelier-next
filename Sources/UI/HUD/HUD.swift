@@ -5,37 +5,58 @@ import SwiftUI
 /// The HUD: one panel in the bottom-right of the display with the keyboard,
 /// showing whichever of these is wanted, in this order: the leader menu
 /// while it is open, the current Desktop's window list while its modifiers
-/// are held, and a notice for a moment after a shortcut failed. Everything
-/// it shows comes from AtelierKit's queries and events.
+/// are held, the list of Spaces while its own are, and a notice for a moment
+/// after a shortcut failed. Everything it shows comes from AtelierKit's
+/// queries and events; when the list of Spaces appears and what dismisses it
+/// is `SpaceListAppearance`.
 @MainActor
 public final class HUD {
   private let atelier: Atelier
   private let panel: HUDPanel
   private var leader: LeaderState?
-  private var isHeld = false
-  private var windows: (list: [AtelierKit.Window], display: String)?
+  private var windowsHeld = false
+  private let windows: Following<(list: [AtelierKit.Window], display: String)>
+  private var spaceList = SpaceListAppearance()
+  private var spaceListDelay: Task<Void, Never>?
+  private let spaces: Following<SpaceList>
   private var notice: String?
   private var noticeTimer: Task<Void, Never>?
-  private var following: Task<Void, Never>?
-  /// Counts the window-list reads, so a slow one never overwrites a newer one.
-  private var refreshes = 0
 
   public init(atelier: Atelier) {
     self.atelier = atelier
     panel = HUDPanel(content: HUDView(content: .empty))
+    windows = Following(
+      changes: { await atelier.windows.changes() },
+      read: {
+        guard case .desktop(let list, let display) = try? await atelier.windows.list() else {
+          return nil
+        }
+        return (list, display)
+      })
+    spaces = Following(
+      changes: { await atelier.spaces.changes() }, read: { try? await atelier.spaces.list() })
+    windows.onChange = { [weak self] in self?.render() }
+    spaces.onChange = { [weak self] in self?.render() }
     Task { [weak self] in
       for await _ in await atelier.leader.changes() {
         guard let self else { return }
         leader = await atelier.leader.state()
-        render()
+        spaceListChanged()
       }
     }
     Task { [weak self] in
-      for await held in await atelier.windows.held() {
+      for await holds in atelier.holds.changes() {
         guard let self else { return }
-        isHeld = held
-        if held { follow() } else { stopFollowing() }
-        render()
+        windowsHeld = holds.windows
+        if windowsHeld { windows.start() } else { windows.stop() }
+        spaceList.keys(holds.spaces)
+        spaceListChanged()
+      }
+    }
+    Task { [weak self] in
+      for await _ in await atelier.spaces.selections() {
+        self?.spaceList.dismiss()
+        self?.spaceListChanged()
       }
     }
     Task { [weak self] in
@@ -45,38 +66,26 @@ public final class HUD {
     }
   }
 
-  /// Keeps the list current while the modifiers are held.
-  private func follow() {
-    following?.cancel()
-    following = Task { [weak self] in
-      guard let self else { return }
-      // Subscribed first, so a change during the first read is not missed.
-      let changes = await atelier.windows.changes()
-      await refreshWindows()
-      for await _ in changes {
-        guard !Task.isCancelled else { return }
-        await refreshWindows()
+  /// Something happened that the list of Spaces goes by. The open leader
+  /// dismisses the list, whichever of the two came first. The delay is timed
+  /// and the Spaces are read only while they are needed.
+  private func spaceListChanged() {
+    if leader != nil { spaceList.dismiss() }
+    if case .waiting(let delay) = spaceList.phase {
+      if spaceListDelay == nil {
+        spaceListDelay = Task { [weak self] in
+          try? await Task.sleep(for: delay)
+          guard !Task.isCancelled, let self else { return }
+          spaceListDelay = nil
+          spaceList.delayPassed()
+          spaceListChanged()
+        }
       }
-    }
-  }
-
-  private func stopFollowing() {
-    following?.cancel()
-    following = nil
-    refreshes += 1
-    windows = nil
-  }
-
-  private func refreshWindows() async {
-    refreshes += 1
-    let refresh = refreshes
-    let list = try? await atelier.windows.list()
-    guard refresh == refreshes else { return }
-    if case .desktop(let windows, let display) = list {
-      self.windows = (windows, display)
     } else {
-      windows = nil
+      spaceListDelay?.cancel()
+      spaceListDelay = nil
     }
+    if spaceList.phase == .shown { spaces.start() } else { spaces.stop() }
     render()
   }
 
@@ -98,9 +107,12 @@ public final class HUD {
     if let leader, leader.isShown {
       content = .leader(leader)
       display = leader.display
-    } else if isHeld, let windows, !windows.list.isEmpty {
+    } else if windowsHeld, let windows = windows.value, !windows.list.isEmpty {
       content = .windows(windows.list)
       display = windows.display
+    } else if spaceList.phase == .shown, let spaces = spaces.value {
+      content = .spaces(spaces.spaces)
+      display = spaces.display
     } else if let notice, leader == nil {
       content = .notice(notice)
       display = nil

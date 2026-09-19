@@ -443,9 +443,14 @@ actor LeaderSession {
       ? Dictionary(
         uniqueKeysWithValues: ((try? await workspace.arrangements()) ?? []).map { ($0.id, $0) })
       : [:]
-    let desktops =
-      commands.contains(where: { if case .desktopsSelect = $0 { true } else { false } })
-      ? mac.spaces().first { $0.id == opening.display }?.desktops.count ?? 0 : 0
+    // A numbered Space or Desktop is offered only while it exists.
+    let numbersSpaces = commands.contains {
+      switch $0 {
+      case .spacesSelect, .desktopsSelect: true
+      default: false
+      }
+    }
+    let display = numbersSpaces ? mac.spaces().first { $0.id == opening.display } : nil
     // A slow read must not overwrite the answer to a later one.
     guard self.opening?.generation == opening.generation, self.opening?.refreshes == refresh
     else { return }
@@ -475,9 +480,11 @@ actor LeaderSession {
           } else {
             unavailable = "The Window menu could not be read."
           }
+        // A Space or Desktop that does not exist is left out rather than dimmed.
+        case .spacesSelect(let position):
+          guard position >= 1, position <= display?.spaces.count ?? 0 else { return nil }
         case .desktopsSelect(let number):
-          // A Desktop that does not exist is left out rather than dimmed.
-          guard number <= desktops else { return nil }
+          guard number >= 1, number <= display?.desktops.count ?? 0 else { return nil }
         case .quickAppsToggle(let app):
           // By the name on disk, not the bundle identifier or path configured.
           if let found = mac.findApp(app) {

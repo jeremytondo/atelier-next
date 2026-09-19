@@ -34,30 +34,6 @@ public enum CycleDirection: Hashable, Sendable {
 /// Desktop is the one receiving keyboard input.
 public struct Windows: Sendable {
   let workspace: Workspace
-  let config: ConfigStore
-
-  /// Yields true when the configured window-list modifiers are held, and
-  /// false when released. Shift may join them, so the reorder shortcuts can
-  /// be pressed while the list shows; any other modifier is a different chord.
-  public func held() async -> AsyncStream<Bool> {
-    let (stream, continuation) = AsyncStream.makeStream(
-      of: Bool.self, bufferingPolicy: .bufferingNewest(1))
-    let mac = workspace.mac
-    let config = config
-    let reading = Task {
-      var wasHeld = false
-      for await modifiers in await mac.modifierChanges() {
-        let wanted = await config.current.windowListModifiers
-        let isHeld =
-          modifiers.isSuperset(of: wanted) && modifiers.subtracting(wanted).isSubset(of: [.shift])
-        guard isHeld != wasHeld else { continue }
-        wasHeld = isHeld
-        continuation.yield(isHeld)
-      }
-    }
-    continuation.onTermination = { _ in reading.cancel() }
-    return stream
-  }
 
   /// `windows.list`
   public func list() async throws(AtelierError) -> WindowList {

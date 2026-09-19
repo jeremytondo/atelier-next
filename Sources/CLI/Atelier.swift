@@ -171,31 +171,36 @@ struct Spaces: ParsableCommand {
 
   struct Move: Asking {
     static let configuration = CommandConfiguration(
-      abstract: "Move a Space: one by position, or the current one by some positions.",
+      abstract: "Move a Space: one by position, or the current one to a position or by some.",
       usage: """
         atelier spaces move <from> <to> [--json]
+        atelier spaces move to <position> [--json]
         atelier spaces move by <offset> [--json]
         """,
       discussion: """
         With two positions, the Space at the first moves to the second, as dragging it \
-        in Mission Control would. With `by`, the current Space moves that many positions \
-        later, or earlier when negative, and stays where it is at either end.
+        in Mission Control would. With `to`, the current Space moves to that position, or \
+        to the end when the position is past it. With `by`, the current Space moves that \
+        many positions later, or earlier when negative, and stays where it is at either end.
         """)
 
     // Taken as words, so that a negative number is not read as an option.
     @Argument(
       parsing: .allUnrecognized,
-      help: ArgumentHelp("Two positions, or `by` and an offset such as 1 or -1.", valueName: "move")
+      help: ArgumentHelp(
+        "Two positions, `to` and a position, or `by` and an offset such as 1 or -1.",
+        valueName: "move")
     )
     var words: [String] = []
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
-      let byOffset = words.count == 2 && words[0] == "by" && Int(words[1]) != nil
+      let ofCurrent = words.count == 2 && ["by", "to"].contains(words[0]) && Int(words[1]) != nil
       let positions = words.count == 2 && Int(words[0]) != nil && Int(words[1]) != nil
-      guard byOffset || positions else {
+      guard ofCurrent || positions else {
         throw ValidationError(
-          "Give two positions, such as 1 3, or `by` and an offset, such as by -1.")
+          "Give two positions, such as 1 3, `to` and a position, such as to 3, or `by` and an offset, such as by -1."
+        )
       }
     }
 

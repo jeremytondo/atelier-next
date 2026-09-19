@@ -35,6 +35,7 @@ let package = Package(
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ]),
     .testTarget(name: "AtelierKitTests", dependencies: ["AtelierKit"]),
+    .testTarget(name: "UITests", dependencies: ["UI"]),
     .testTarget(name: "MacOSTests", dependencies: ["MacOS"]),
     .testTarget(name: "CLITests", dependencies: ["CLI"]),
   ],

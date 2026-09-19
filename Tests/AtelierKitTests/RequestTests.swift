@@ -60,6 +60,7 @@ import Testing
     (["desktops.new"], ["create", "switch to 100"]),
     (["desktops.delete"], ["switch to 3", "destroy 2"]),
     (["spaces.move", "by", "1"], ["move 2 to 2"]), (["spaces.move", "by", "-5"], ["move 2 to 0"]),
+    (["spaces.move", "to", "1"], ["move 2 to 0"]), (["spaces.move", "to", "9"], ["move 2 to 2"]),
   ]
 
   @Test(arguments: commands)

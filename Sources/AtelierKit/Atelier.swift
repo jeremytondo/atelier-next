@@ -11,6 +11,7 @@ public struct Atelier: Sendable {
   public let windows: Windows
   public let spaces: Spaces
   public let desktops: Desktops
+  public let holds: Holds
   public let permissions: Permissions
   public let login: Login
   public let config: Config
@@ -27,8 +28,9 @@ public struct Atelier: Sendable {
   ) {
     let workspace = Workspace(mac: mac, stateFolder: stateFolder, patience: patience)
     let store = ConfigStore(mac: mac, file: configFile)
-    windows = Windows(workspace: workspace, config: store)
+    windows = Windows(workspace: workspace)
     spaces = Spaces(workspace: workspace)
+    holds = Holds(mac: mac, config: store)
     desktops = Desktops(workspace: workspace)
     permissions = Permissions(mac: mac)
     login = Login(mac: mac, stateFolder: stateFolder)

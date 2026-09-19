@@ -17,6 +17,7 @@ package enum Command: Hashable, Sendable {
   case spacesSelect(Int)
   case spacesMove(from: Int, to: Int)
   case spacesMoveBy(Int)
+  case spacesMoveTo(Int)
   case desktopsNew
   case desktopsSelect(Int)
   case desktopsDelete
@@ -58,6 +59,9 @@ package enum Command: Hashable, Sendable {
     case ("spaces.move", "by", 2):
       guard let second else { return nil }
       self = .spacesMoveBy(second)
+    case ("spaces.move", "to", 2):
+      guard let second else { return nil }
+      self = .spacesMoveTo(second)
     case ("spaces.move", _, 2):
       guard let from = Int(arguments[0]), let second else { return nil }
       self = .spacesMove(from: from, to: second)
@@ -101,7 +105,7 @@ package enum Command: Hashable, Sendable {
     case .spacesNext: "spaces.next"
     case .spacesPrevious: "spaces.previous"
     case .spacesSelect: "spaces.select"
-    case .spacesMove, .spacesMoveBy: "spaces.move"
+    case .spacesMove, .spacesMoveBy, .spacesMoveTo: "spaces.move"
     case .desktopsNew: "desktops.new"
     case .desktopsSelect: "desktops.select"
     case .desktopsDelete: "desktops.delete"
@@ -130,6 +134,7 @@ package enum Command: Hashable, Sendable {
     case .spacesSelect(let position): ["\(position)"]
     case .spacesMove(let from, let to): ["\(from)", "\(to)"]
     case .spacesMoveBy(let offset): ["by", "\(offset)"]
+    case .spacesMoveTo(let position): ["to", "\(position)"]
     case .desktopsSelect(let number): ["\(number)"]
     case .quickAppsToggle(let app): [app]
     }
@@ -170,6 +175,7 @@ package enum Command: Hashable, Sendable {
     case .spacesMoveBy(-1): "Move Space Earlier"
     case .spacesMoveBy(let offset):
       offset > 0 ? "Move Space \(offset) Later" : "Move Space \(-offset) Earlier"
+    case .spacesMoveTo(let position): "Move Space to \(position)"
     case .desktopsNew: "New Desktop"
     case .desktopsSelect(let number): "Desktop \(number)"
     case .desktopsDelete: "Delete Desktop"

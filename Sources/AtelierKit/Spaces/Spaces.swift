@@ -55,12 +55,32 @@ public struct Spaces: Sendable {
   /// `spaces.move by`: moves the current Space so many positions later, or
   /// earlier when negative, held within the ends. Nothing to do at an end.
   public func move(by offset: Int) async throws(AtelierError) -> Outcome {
-    try await workspace.moveCurrentSpace(by: offset)
+    // Held within the list before any arithmetic, so no offset is too large.
+    try await workspace.moveCurrentSpace { from, last in
+      from + min(max(offset, -from), last - from)
+    }
   }
 
-  /// Yields after Spaces were added, removed, or reordered, or another became current.
+  /// `spaces.move to`: moves the current Space to a one-based position, or to
+  /// the end when the position is past it. It stays the current Space.
+  /// Nothing to do when it is there already, or for a position before the first.
+  public func move(to position: Int) async throws(AtelierError) -> Outcome {
+    try await workspace.moveCurrentSpace { _, last in
+      position >= 1 ? min(position - 1, last) : nil
+    }
+  }
+
+  /// Yields after Spaces were added, removed, or reordered, another became
+  /// current, or the keyboard went to another display.
   public func changes() async -> AsyncStream<Void> {
     await workspace.changes(to: .spaces)
+  }
+
+  /// Yields when a command that chooses a Space to go to is invoked, as
+  /// `spaces.select` and `desktops.select` do, before anything is asked of
+  /// macOS and whatever comes of it.
+  public func selections() async -> AsyncStream<Void> {
+    await workspace.changes(to: .selection)
   }
 }
 
@@ -86,7 +106,8 @@ extension Workspace {
   /// `choose` takes the current Space's zero-based index and the number of
   /// Spaces, and picks an index. One outside the list is nothing to do.
   func goToSpace(_ choose: @Sendable (Int, Int) -> Int) async throws(AtelierError) -> Outcome {
-    try await run { observation async throws(AtelierError) in
+    announce(.selection)
+    return try await run { observation async throws(AtelierError) in
       let spaces = observation.display.spaces
       guard let current = spaces.firstIndex(of: observation.space) else { throw .unavailable }
       let target = choose(current, spaces.count)
@@ -110,14 +131,16 @@ extension Workspace {
     }
   }
 
-  func moveCurrentSpace(by offset: Int) async throws(AtelierError) -> Outcome {
+  /// `choose` takes the current Space's zero-based index and the last index,
+  /// and picks an index within them, or nil for nothing to do. The current
+  /// Space and where it goes are both found in the one observation.
+  func moveCurrentSpace(_ choose: @Sendable (Int, Int) -> Int?) async throws(AtelierError)
+    -> Outcome
+  {
     try await run { observation async throws(AtelierError) in
       let display = try reorderable(observation)
       guard let from = display.spaces.firstIndex(of: observation.space) else { throw .unavailable }
-      // Held within the list before any arithmetic, so no offset is too large.
-      let last = display.spaces.count - 1
-      let to = from + min(max(offset, -from), last - from)
-      guard to != from else { return .unchanged }
+      guard let to = choose(from, display.spaces.count - 1), to != from else { return .unchanged }
       try await relocate(display, from: from, to: to)
       return .changed
     }
