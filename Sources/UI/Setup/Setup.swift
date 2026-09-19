@@ -71,6 +71,7 @@ public final class Setup: NSObject, NSWindowDelegate {
     model.canAddLoginItem = atelier.login.isInstalled
     model.leaderKeyPieces = report.leaderKeyPieces
     model.windowListModifierPieces = report.windowListModifierPieces
+    model.spaceListModifierPieces = report.spaceListModifierPieces
     model.configurationFile = report.filePath
     model.rejection = report.rejection
     model.problems = report.problems.filter { $0 != report.rejection }
@@ -84,6 +85,8 @@ final class SetupModel {
   var canAddLoginItem = false
   var leaderKeyPieces: [String]?
   var windowListModifierPieces: [String] = []
+  /// Nil when the list of Spaces is turned off.
+  var spaceListModifierPieces: [String]?
   var configurationFile: String?
   /// Why the file was refused whole, if it was; then none of it applies.
   var rejection: Problem?

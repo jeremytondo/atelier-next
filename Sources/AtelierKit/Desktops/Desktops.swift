@@ -69,7 +69,8 @@ extension Workspace {
   }
 
   func selectDesktop(_ number: Int) async throws(AtelierError) -> Outcome {
-    try await run { observation async throws(AtelierError) in
+    announce(.selection)
+    return try await run { observation async throws(AtelierError) in
       let desktops = observation.display.desktops
       guard number >= 1, desktops.indices.contains(number - 1),
         desktops[number - 1] != observation.space

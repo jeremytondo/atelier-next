@@ -20,6 +20,15 @@ public struct LeaderSettings: Equatable, Sendable {
   public var timeout: Duration?
 }
 
+/// When holding modifier keys shows the list of Spaces. None of it touches
+/// the shortcuts, which work whether or not the list shows.
+struct SpaceListSettings: Equatable, Sendable {
+  var modifiers: Chord.Modifiers
+  /// Of holding them before the list appears.
+  var delay: Duration
+  var isEnabled: Bool
+}
+
 public struct QuickAppSettings: Equatable, Sendable {
   public struct Size: Equatable, Sendable {
     public let width: Int
@@ -65,6 +74,7 @@ struct Configuration: Equatable, Sendable {
   var theme: Theme
   var leader: LeaderSettings
   var windowListModifiers: Chord.Modifiers
+  var spaceList: SpaceListSettings
   /// Every global shortcut and its command; an unbound key is simply absent.
   var global: [Chord: Command]
   var menu: Menu

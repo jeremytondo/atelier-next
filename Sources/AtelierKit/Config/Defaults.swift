@@ -11,6 +11,9 @@ enum Defaults {
 
   static let windowListModifiers: Chord.Modifiers = [.command, .option]
 
+  static let spaceList = SpaceListSettings(
+    modifiers: [.option], delay: .milliseconds(200), isEnabled: true)
+
   static let global: [(key: String, command: String)] =
     [
       ("ctrl+option+cmd+r", "config reload"),
@@ -26,7 +29,8 @@ enum Defaults {
     + (1...10).flatMap { number in
       let key = number % 10
       return [
-        ("option+\(key)", "desktops select \(number)"),
+        ("option+\(key)", "spaces select \(number)"),
+        ("option+shift+\(key)", "spaces move to \(number)"),
         ("cmd+option+\(key)", "windows select \(number)"),
         ("cmd+option+shift+\(key)", "windows move to \(number)"),
       ]
@@ -74,7 +78,7 @@ enum Defaults {
       ("c o", .command("config open")),
       ("c r", .command("config reload")),
     ]
-    + (1...10).map { number in ("s \(number % 10)", .command("desktops select \(number)")) }
+    + (1...10).map { number in ("s \(number % 10)", .command("spaces select \(number)")) }
 
   /// Each direction is bound twice after `prefix`: the Vim letter, which the
   /// menu shows, and the arrow, which works unseen. They are two bindings, so
@@ -104,6 +108,11 @@ enum Defaults {
     #
     # [window-list]
     # modifiers = "cmd+option"
+    #
+    # [space-list]
+    # modifiers = "option"
+    # delay = 0.2
+    # enabled = true
     #
     # [keymap.global]
     # "ctrl+option+w" = "windows select 1"

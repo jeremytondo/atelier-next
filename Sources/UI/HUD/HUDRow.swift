@@ -16,6 +16,8 @@ enum HUDMetrics {
   static let leaderRowSpacing: CGFloat = 4
   /// One line or two, a window row is this tall, and rows touch.
   static let windowRowHeight: CGFloat = 40
+  /// A Space row is one line, and rows touch.
+  static let spaceRowHeight: CGFloat = 28
 }
 
 /// The rows of one list. Every row's key column is as wide as the list's

@@ -79,6 +79,12 @@ struct SetupView: View {
           Keycaps(pieces: model.windowListModifierPieces).foregroundStyle(.primary)
           Text("held, shows this Desktop's numbered windows.")
         }
+        if let spaceListModifierPieces = model.spaceListModifierPieces {
+          GridRow {
+            Keycaps(pieces: spaceListModifierPieces).foregroundStyle(.primary)
+            Text("held, shows this display's numbered Spaces.")
+          }
+        }
       }
       Text("The atelier config show command lists every key.")
     }

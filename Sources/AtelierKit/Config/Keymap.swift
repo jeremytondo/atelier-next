@@ -14,11 +14,12 @@ enum Keymap {
     let theme = resolver.theme(overrides)
     let leader = resolver.leader(overrides)
     let windowList = resolver.windowListModifiers(overrides)
+    let spaceList = resolver.spaceList(overrides)
     var (global, quickApps) = resolver.global(overrides, leader: leader.chord)
     let menu = resolver.menu(overrides, quickApps: &quickApps)
     return Configuration(
-      theme: theme, leader: leader, windowListModifiers: windowList, global: global,
-      menu: menu, quickApps: quickApps, problems: resolver.problems)
+      theme: theme, leader: leader, windowListModifiers: windowList, spaceList: spaceList,
+      global: global, menu: menu, quickApps: quickApps, problems: resolver.problems)
   }
 
   private struct Resolver {
@@ -58,14 +59,7 @@ enum Keymap {
           }
         }
       }
-      // A day is plenty, and far short of what `Duration` could not hold.
-      if let delay = overrides.leaderDelay {
-        if delay >= 0, delay <= 86400 {
-          leader.delay = .seconds(delay)
-        } else {
-          report("leader delay", "must be a number of seconds, 0 or more")
-        }
-      }
+      leader.delay = delay(overrides.leaderDelay, at: "leader delay") ?? leader.delay
       if let timeout = overrides.leaderTimeout {
         if let seconds = timeout, !(seconds >= 0.1 && seconds <= 86400) {
           report("leader timeout", "must be at least 0.1 seconds, or false to never close")
@@ -77,27 +71,59 @@ enum Keymap {
     }
 
     mutating func windowListModifiers(_ overrides: Overrides) -> Chord.Modifiers {
-      guard let text = overrides.windowListModifiers else { return Defaults.windowListModifiers }
+      holdModifiers(overrides.windowListModifiers, at: "window-list modifiers")
+        ?? Defaults.windowListModifiers
+    }
+
+    mutating func spaceList(_ overrides: Overrides) -> SpaceListSettings {
+      var spaceList = Defaults.spaceList
+      if let modifiers = holdModifiers(overrides.spaceListModifiers, at: "space-list modifiers") {
+        spaceList.modifiers = modifiers
+      }
+      spaceList.delay = delay(overrides.spaceListDelay, at: "space-list delay") ?? spaceList.delay
+      spaceList.isEnabled = overrides.spaceListEnabled ?? spaceList.isEnabled
+      return spaceList
+    }
+
+    /// The time before something appears. Nil for none written, and for a
+    /// problem, which is reported.
+    private mutating func delay(_ seconds: Double?, at location: String) -> Duration? {
+      guard let seconds else { return nil }
+      // A day is plenty, and far short of what `Duration` could not hold.
+      guard seconds >= 0, seconds <= 86400 else {
+        report(location, "must be a number of seconds, 0 or more")
+        return nil
+      }
+      return .seconds(seconds)
+    }
+
+    /// The modifiers that show a list while held. Nil for none written, and
+    /// for a problem, which is reported.
+    private mutating func holdModifiers(_ text: String?, at location: String) -> Chord.Modifiers? {
+      guard let text else { return nil }
       do {
         let modifiers = try KeyGrammar.modifiers(text)
         guard !modifiers.contains(.function) else {
-          report("window-list modifiers", "cannot include fn")
-          return Defaults.windowListModifiers
+          report(location, "cannot include fn")
+          return nil
         }
         return modifiers
       } catch {
-        report("window-list modifiers", error.message)
-        return Defaults.windowListModifiers
+        report(location, error.message)
+        return nil
       }
     }
 
     mutating func global(_ overrides: Overrides, leader: Chord?) -> (
       [Chord: Command], [QuickAppSettings]
     ) {
+      // A default on a chord macOS switches Spaces with is left out, as a user's
+      // would be: Atelier presses that chord itself and must not catch it.
       var global = Dictionary(
         uniqueKeysWithValues: Defaults.global.map {
           (try! KeyGrammar.chord($0.key), Command(words: $0.command)!)
-        })
+        }
+      ).filter { !spaceShortcuts.contains($0.key) }
       var owners: [Chord: String] = [:]
 
       /// Binds the chord to the command, or to nothing, when everything

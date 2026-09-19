@@ -75,8 +75,13 @@ import Testing
     let configuration = resolve("")
     #expect(configuration.problems.isEmpty)
     #expect(configuration.global.count == Defaults.global.count)
-    #expect(configuration.global[chord("option+1")] == .desktopsSelect(1))
-    #expect(configuration.global[chord("option+0")] == .desktopsSelect(10))
+    // A number is a position among Spaces of every kind, 0 standing for the tenth.
+    #expect(configuration.global[chord("option+1")] == .spacesSelect(1))
+    #expect(configuration.global[chord("option+0")] == .spacesSelect(10))
+    #expect(configuration.global[chord("option+shift+3")] == .spacesMoveTo(3))
+    #expect(configuration.global[chord("option+shift+0")] == .spacesMoveTo(10))
+    #expect(configuration.global[chord("option+[")] == nil)
+    #expect(configuration.global[chord("option+shift+]")] == nil)
     #expect(configuration.global[chord("cmd+option+3")] == .windowsSelect(3))
     #expect(configuration.global[chord("cmd+option+shift+3")] == .windowsMove(.toSlot(3)))
     #expect(configuration.global[chord("cmd+option+]")] == .windowsCycle(.next))
@@ -85,6 +90,9 @@ import Testing
     #expect(configuration.global[chord("ctrl+option+cmd+r")] == .configReload)
     #expect(configuration.leader == Defaults.leader)
     #expect(configuration.windowListModifiers == [.command, .option])
+    #expect(
+      configuration.spaceList
+        == SpaceListSettings(modifiers: [.option], delay: .milliseconds(200), isEnabled: true))
     #expect(configuration.quickApps.isEmpty)
     // Quick Apps has nothing under it, so it is not offered.
     #expect(keys(of: configuration.menu) == ["s", "w", "c"])
@@ -98,7 +106,8 @@ import Testing
     #expect(command(submenu(windows!, "a")!, "shift+left") == .windowsArrange(.leftQuarters))
     let spaces = submenu(configuration.menu, "s")!
     #expect(command(spaces, "shift+right") == .spacesMoveBy(1))
-    #expect(command(spaces, "0") == .desktopsSelect(10))
+    #expect(command(spaces, "2") == .spacesSelect(2))
+    #expect(command(spaces, "0") == .spacesSelect(10))
   }
 
   @Test(arguments: ConfigurationTests.directions.indices)
@@ -349,6 +358,89 @@ import Testing
     #expect(resolve("[leader]\nkey = \"fn+space\"").problems.map(\.location) == ["leader key"])
   }
 
+  @Test func spaceListSettingsAreCheckedOneByOne() {
+    let configuration = resolve(
+      """
+      [space-list]
+      modifiers = "ctrl+option"
+      delay = 0
+      enabled = false
+      """)
+    #expect(configuration.problems.isEmpty)
+    #expect(
+      configuration.spaceList
+        == SpaceListSettings(modifiers: [.control, .option], delay: .zero, isEnabled: false))
+    let report = ConfigReport(file: nil, configuration: configuration, rejection: nil)
+    #expect(report.text.contains("\nSpace list: off\n"))
+    #expect(report.spaceListModifierPieces == nil)
+    // Turning the list off, or moving it, leaves every shortcut as it was.
+    #expect(configuration.global == resolve("").global)
+    let immediate = resolve("[space-list]\ndelay = 0")
+    #expect(
+      ConfigReport(file: nil, configuration: immediate, rejection: nil).text.contains(
+        "\nSpace list: hold ⌥; appears at once\n"))
+
+    // A setting with a problem is left out, and the others apply.
+    let wrong = resolve(
+      """
+      [space-list]
+      modifiers = "fn+option"
+      delay = -1
+      enabled = "no"
+      colour = 1
+      """)
+    #expect(wrong.spaceList == Defaults.spaceList)
+    #expect(
+      wrong.problems.map(\.text).sorted() == [
+        "space-list colour: is not a space-list setting; the settings are modifiers, delay, and enabled",
+        "space-list delay: must be a number of seconds, 0 or more",
+        "space-list enabled: must be true or false",
+        "space-list modifiers: cannot include fn",
+      ])
+    let mixed = resolve("[space-list]\nmodifiers = \"option+w\"\ndelay = 0.5")
+    #expect(mixed.spaceList.modifiers == [.option])
+    #expect(mixed.spaceList.delay == .milliseconds(500))
+    #expect(mixed.problems.map(\.location) == ["space-list modifiers"])
+    #expect(resolve("[space-list]\ndelay = inf").problems.map(\.location) == ["space-list delay"])
+    #expect(resolve("space-list = 1").problems.map(\.location) == ["space-list"])
+  }
+
+  @Test func aDefaultOnAChordMacOSSwitchesSpacesWithIsLeftOut() {
+    let configuration = resolve("", spaceChords: [chord("option+1"), chord("fn+ctrl+left")])
+    #expect(configuration.problems.isEmpty)
+    #expect(configuration.global[chord("option+1")] == nil)
+    #expect(configuration.global[chord("option+2")] == .spacesSelect(2))
+    #expect(configuration.global.count == Defaults.global.count - 1)
+  }
+
+  @Test func bindingsTheUserWroteOutlastTheDefaultsThatChanged() {
+    let configuration = resolve(
+      """
+      [keymap.global]
+      "option+1" = "desktops select 1"
+      "option+2" = "unbind"
+      "option+shift+1" = "windows select 1"
+
+      [keymap.leader]
+      "s 1" = "desktops select 1"
+
+      [[quick-apps]]
+      app = "Notes"
+      shortcut = "option+shift+2"
+      """)
+    #expect(configuration.problems.isEmpty)
+    #expect(configuration.global[chord("option+1")] == .desktopsSelect(1))
+    #expect(configuration.global[chord("option+2")] == nil)
+    #expect(configuration.global[chord("option+shift+1")] == .windowsSelect(1))
+    #expect(configuration.global[chord("option+shift+2")] == .quickAppsToggle("Notes"))
+    // What the file leaves alone takes the new defaults.
+    #expect(configuration.global[chord("option+3")] == .spacesSelect(3))
+    #expect(configuration.global[chord("option+shift+3")] == .spacesMoveTo(3))
+    let spaces = submenu(configuration.menu, "s")!
+    #expect(command(spaces, "1") == .desktopsSelect(1))
+    #expect(command(spaces, "2") == .spacesSelect(2))
+  }
+
   @Test func leaderSequencesReplaceNameAndUnbind() {
     let configuration = resolve(
       """
@@ -518,7 +610,13 @@ import Testing
     #expect(report.leaderKeyPieces == ["⌥", "Space"])
     #expect(report.windowListModifiers == "⌥⌘")
     #expect(report.windowListModifierPieces == ["⌥", "⌘"])
-    #expect(text.contains("  ⌥1        desktops select 1"))
+    #expect(text.contains("  ⌥1        spaces select 1"))
+    #expect(text.contains("  ⌥⇧1       spaces move to 1"))
+    #expect(text.contains("Window list: hold ⌥⌘\nSpace list: hold ⌥; appears after 0.2 s\n"))
+    #expect(report.spaceListModifierPieces == ["⌥"])
+    #expect(
+      report.json.replacing(" ", with: "").replacing("\n", with: "").contains(
+        "\"spaceList\":{\"delay\":0.2,\"enabled\":true,\"modifiers\":\"option\"}"))
     // A label longer than its column is never cut short.
     let wide = resolve("[keymap.global]\n\"ctrl+option+shift+cmd+space\" = \"desktops new\"")
     #expect(

@@ -2,14 +2,14 @@ import AppKit
 
 /// Says which modifier keys are held, whenever that changes, through AppKit's
 /// event monitors. Listening only: nothing is consumed or delayed. A global
-/// monitor sees other apps' events and a local one Atelier's own.
+/// monitor sees other apps' events and a local one Atelier's own. Every change
+/// is kept in order, since a hold is told from the next by the release between.
 @MainActor
 final class ModifierWatcher {
   private var monitors: [Any] = []
 
   static func changes() -> AsyncStream<Chord.Modifiers> {
-    let (stream, continuation) = AsyncStream.makeStream(
-      of: Chord.Modifiers.self, bufferingPolicy: .bufferingNewest(1))
+    let (stream, continuation) = AsyncStream.makeStream(of: Chord.Modifiers.self)
     let watcher = ModifierWatcher()
     let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
       continuation.yield(Chord.Modifiers(event.modifierFlags))
