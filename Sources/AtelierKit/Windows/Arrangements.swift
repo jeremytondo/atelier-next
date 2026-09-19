@@ -8,7 +8,9 @@ public struct ArrangementInfo: Equatable, Identifiable, Sendable {
   /// Nil when the arrangement can run now; otherwise why it cannot.
   public let unavailable: String?
   /// macOS's own shortcut for it, when its menu says.
-  public let shortcut: String?
+  public var shortcut: String? { shortcutPieces?.joined() }
+  /// The same shortcut as `KeyGrammar` takes it apart, for drawing as keycaps.
+  public let shortcutPieces: [String]?
 }
 
 extension Windows {
@@ -49,7 +51,7 @@ extension Workspace {
         }
       return ArrangementInfo(
         id: arrangement.rawValue, label: arrangement.label, unavailable: unavailable,
-        shortcut: item?.shortcut.map(KeyGrammar.describe))
+        shortcutPieces: item?.shortcut.map(KeyGrammar.pieces))
     }
   }
 

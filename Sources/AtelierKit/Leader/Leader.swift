@@ -6,11 +6,14 @@ import Synchronization
 public struct LeaderEntry: Equatable, Identifiable, Sendable {
   public var id: String { key }
   /// The key to press, as a menu prints it: `⇧←`.
-  public let key: String
+  public var key: String { keyPieces.joined() }
+  /// The same key as `KeyGrammar` takes it apart, for drawing as keycaps: `⇧`, `←`.
+  public let keyPieces: [String]
   public let label: String
   public let isSubmenu: Bool
   /// A shortcut that reaches the same command without the leader, when there is one.
-  public let hint: String?
+  public var hint: String? { hintPieces?.joined() }
+  public let hintPieces: [String]?
   /// Nil when the command can run now; otherwise why not.
   public let unavailable: String?
 }
@@ -446,25 +449,29 @@ actor LeaderSession {
     // A slow read must not overwrite the answer to a later one.
     guard self.opening?.generation == opening.generation, self.opening?.refreshes == refresh
     else { return }
+    // Of several shortcuts for one command, the first as they read.
     let shortcuts = Dictionary(grouping: configuration.global, by: \.value)
-      .mapValues { $0.map { KeyGrammar.describe($0.key) }.sorted() }
+      .compactMapValues {
+        $0.map { KeyGrammar.pieces($0.key) }.min { $0.joined() < $1.joined() }
+      }
     self.opening?.entries = menu.entries.compactMap { entry -> LeaderEntry? in
       switch entry {
       case .submenu(let chord, let submenu):
         return LeaderEntry(
-          key: KeyGrammar.describe(chord), label: submenu.label, isSubmenu: true, hint: nil,
+          keyPieces: KeyGrammar.pieces(chord), label: submenu.label, isSubmenu: true,
+          hintPieces: nil,
           unavailable: nil)
       case .command(_, _, isHidden: true):
         return nil
       case .command(let chord, let command, _):
-        var hint = shortcuts[command]?.first
+        var hint = shortcuts[command]
         var unavailable: String?
         var label = command.label
         switch command {
         case .windowsArrange(let arrangement):
           if let info = arrangements[arrangement.rawValue] {
             unavailable = info.unavailable
-            hint = hint ?? info.shortcut
+            hint = hint ?? info.shortcutPieces
           } else {
             unavailable = "The Window menu could not be read."
           }
@@ -481,7 +488,7 @@ actor LeaderSession {
         default: break
         }
         return LeaderEntry(
-          key: KeyGrammar.describe(chord), label: label, isSubmenu: false, hint: hint,
+          keyPieces: KeyGrammar.pieces(chord), label: label, isSubmenu: false, hintPieces: hint,
           unavailable: unavailable)
       }
     }

@@ -96,15 +96,26 @@ enum KeyGrammar {
     return modifiers
   }
 
+  /// A chord in the pieces a keyboard would show: `⇧` then `←`, one for each
+  /// modifier and one for the key, with a named key such as `Space` kept whole.
+  /// Whoever draws keys takes these, and never takes a description apart.
+  static func pieces(_ chord: Chord) -> [String] {
+    let key = keySymbols[chord.key] ?? (chord.key.count == 1 ? chord.key : chord.key.capitalized)
+    return pieces(chord.modifiers) + [key]
+  }
+
+  static func pieces(_ modifiers: Chord.Modifiers) -> [String] {
+    modifierOrder.filter { modifiers.contains($0.0) }.map(\.symbol)
+  }
+
   /// `⌥⌘1`, `⇧←`, `fn⌃f`: a shortcut as macOS menus print it, except that a
   /// letter stays lowercase, so that `h` and `⇧h` are told apart by Shift alone.
   static func describe(_ chord: Chord) -> String {
-    let key = keySymbols[chord.key] ?? (chord.key.count == 1 ? chord.key : chord.key.capitalized)
-    return describe(chord.modifiers) + key
+    pieces(chord).joined()
   }
 
   static func describe(_ modifiers: Chord.Modifiers) -> String {
-    modifierOrder.filter { modifiers.contains($0.0) }.map(\.symbol).joined()
+    pieces(modifiers).joined()
   }
 
   static func describe(_ sequence: [Chord]) -> String {
