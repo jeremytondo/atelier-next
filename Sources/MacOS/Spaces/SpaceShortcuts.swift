@@ -74,8 +74,13 @@ final class SpaceShortcuts: Sendable {
     // Marked as Atelier's own, so its key listener lets them through.
     PostedKeys.mark(down)
     PostedKeys.mark(up)
-    down.post(tap: .cghidEventTap)
-    up.post(tap: .cghidEventTap)
+    // Posted where macOS has finished with the keyboard itself. Posted any
+    // earlier, the press takes on whatever modifiers are held at that moment,
+    // so Control-2 sent while Option is down arrives as Control-Option-2, which
+    // is no shortcut of macOS's, and nothing switches. A shortcut of Atelier's
+    // is pressed with its modifiers held, so that is the usual case.
+    down.post(tap: .cgSessionEventTap)
+    up.post(tap: .cgSessionEventTap)
     return true
   }
 
