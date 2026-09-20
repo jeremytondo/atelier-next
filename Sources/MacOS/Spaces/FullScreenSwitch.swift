@@ -7,6 +7,11 @@ import os
 /// activated. A missing, stale, or unresponsive target has no shortcut
 /// fallback. The workspace holds its command guard until Space and focus
 /// have settled, so later commands cannot overlap this activation.
+///
+/// A window coming forward counts as use to macOS, where a shortcut does not:
+/// with "Automatically rearrange Spaces based on most recent use" on, it moves
+/// the window's Space next to the one being left, a moment before the switch.
+/// Atelier needs that setting off and does not undo the move.
 struct FullScreenSwitch: Sendable {
   let skyLight: SkyLight
   private static let log = Logger(subsystem: "com.elevenideas.Atelier", category: "spaces")

@@ -8,6 +8,8 @@ The design is in [ATE-57](https://linear.app/elevenideas/issue/ATE-57/research-n
 
 Atelier needs macOS 27 on Apple silicon. `brew install --cask jeremytondo/tap/atelier` installs the stable app with the `atelier` command, and `jeremytondo/tap/atelier@dev` the newest development build instead; afterwards `atelier doctor` checks the installation. [Installing and releasing](docs/releases.md) covers updating, switching channels, coming from the Hammerspoon version, and how a release is made.
 
+Atelier goes by the order of your Spaces, so turn off "Automatically rearrange Spaces based on most recent use" in System Settings, under Desktop & Dock. Left on, macOS moves a Space whenever one of its windows comes forward.
+
 ## The Hammerspoon version
 
 Atelier previously ran on Hammerspoon 2. That version is kept in two tags, not in this tree:
