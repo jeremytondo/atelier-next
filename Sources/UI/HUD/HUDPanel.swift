@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import os
 
 /// The window shell of the HUD: a floating panel that never takes the
 /// keyboard, lets clicks through, and appears on every Space, holding
@@ -42,7 +43,11 @@ final class HUDPanel {
     let margin: CGFloat = 20
     let origin = NSPoint(x: visible.maxX - size.width - margin, y: visible.minY + margin)
     panel.setFrame(NSRect(origin: origin, size: size), display: true)
+    let wasVisible = panel.isVisible
     if !panel.isVisible { panel.orderFrontRegardless() }
+    Logger(subsystem: "com.elevenideas.Atelier", category: "hud").info(
+      "panel: size \(Int(size.width))x\(Int(size.height)) at \(Int(origin.x)),\(Int(origin.y)), was visible \(wasVisible), on active Space \(self.panel.isOnActiveSpace), occluded \(!self.panel.occlusionState.contains(.visible))"
+    )
   }
 
   func hide() {

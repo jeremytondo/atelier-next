@@ -1,5 +1,6 @@
 import Foundation
 import MacOS
+import os
 
 /// How long commands wait for macOS to show what was asked of it.
 package struct Patience: Sendable {
@@ -59,6 +60,7 @@ actor Workspace {
   private var lastSeen:
     (displays: [DisplaySpaces], keyboardDisplay: String, windows: [UInt64: [Window]])?
   private var listeners: [UUID: (Change, AsyncStream<Void>.Continuation)] = [:]
+  private let log = Logger(subsystem: "com.elevenideas.Atelier", category: "workspace")
 
   init(mac: any Mac, stateFolder: URL?, patience: Patience) {
     self.mac = mac
@@ -105,18 +107,28 @@ actor Workspace {
       async let snapshotNow = mac.snapshot()
       let focus = await mac.focus()
       guard let snapshot = await snapshotNow, !snapshot.displays.isEmpty else {
+        log.notice("observe: no census from macOS")
         throw .unavailable
       }
-      guard census > censusApplied else { continue }
+      guard census > censusApplied else {
+        log.notice("observe: census \(census) overtaken by \(self.censusApplied)")
+        continue
+      }
 
       guard let display = Self.keyboardDisplay(in: snapshot.displays, focus: focus),
         let space = display.spaces.first(where: { $0.id == display.currentSpace })
-      else { continue }
+      else {
+        log.notice(
+          "observe: no keyboard display; active \(focus.activeSpace), window Spaces \(focus.windowSpaces, privacy: .public), shown \(snapshot.displays.map(\.currentSpace), privacy: .public)"
+        )
+        continue
+      }
 
       censusApplied = census
       apply(snapshot, focused: focus.window, keyboardDisplay: display.id)
       return Observation(snapshot: snapshot, focus: focus, display: display, space: space)
     }
+    log.notice("observe: gave up after three tries")
     throw .unavailable
   }
 

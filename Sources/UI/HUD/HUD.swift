@@ -1,6 +1,7 @@
 import AppKit
 import AtelierKit
 import SwiftUI
+import os
 
 /// The HUD: one panel in the bottom-right of the display with the keyboard,
 /// showing whichever of these is wanted, in this order: the leader menu
@@ -21,6 +22,7 @@ public final class HUD {
   private let spaces: Following<SpaceList>
   private var notice: String?
   private var noticeTimer: Task<Void, Never>?
+  private let log = Logger(subsystem: "com.elevenideas.Atelier", category: "hud")
 
   public init(atelier: Atelier) {
     self.atelier = atelier
@@ -35,18 +37,34 @@ public final class HUD {
       })
     spaces = Following(
       changes: { await atelier.spaces.changes() }, read: { try? await atelier.spaces.list() })
-    windows.onChange = { [weak self] in self?.render() }
-    spaces.onChange = { [weak self] in self?.render() }
+    windows.onChange = { [weak self] in
+      self?.log.info(
+        "windows read: \(self?.windows.value.map { "\($0.list.count) windows" } ?? "nothing", privacy: .public)"
+      )
+      self?.render()
+    }
+    spaces.onChange = { [weak self] in
+      self?.log.info(
+        "spaces read: \(self?.spaces.value.map { "\($0.spaces.count) Spaces" } ?? "nothing", privacy: .public)"
+      )
+      self?.render()
+    }
     Task { [weak self] in
       for await _ in await atelier.leader.changes() {
         guard let self else { return }
         leader = await atelier.leader.state()
+        log.info(
+          "leader: \(self.leader == nil ? "closed" : self.leader!.isShown ? "shown" : "open, hidden", privacy: .public)"
+        )
         spaceListChanged()
       }
     }
     Task { [weak self] in
       for await holds in atelier.holds.changes() {
         guard let self else { return }
+        log.info(
+          "holds: windows \(holds.windows), spaces \(String(describing: holds.spaces), privacy: .public)"
+        )
         windowsHeld = holds.windows
         if windowsHeld { windows.start() } else { windows.stop() }
         spaceList.keys(holds.spaces)
@@ -55,6 +73,7 @@ public final class HUD {
     }
     Task { [weak self] in
       for await _ in await atelier.spaces.selections() {
+        self?.log.info("selection")
         self?.spaceList.dismiss()
         self?.spaceListChanged()
       }
@@ -86,6 +105,7 @@ public final class HUD {
       spaceListDelay = nil
     }
     if spaceList.phase == .shown { spaces.start() } else { spaces.stop() }
+    log.info("space list: \(String(describing: self.spaceList.phase), privacy: .public)")
     render()
   }
 
@@ -117,14 +137,29 @@ public final class HUD {
       content = .notice(notice)
       display = nil
     } else {
+      log.info("render: nothing")
       panel.hide()
       return
     }
+    log.info("render: \(content.kind, privacy: .public)")
     guard let screen = display.flatMap(NSScreen.named) ?? NSScreen.main ?? NSScreen.screens.first
     else {
       panel.hide()
       return
     }
     panel.show(HUDView(content: content), on: screen)
+  }
+}
+
+extension HUDView.Content {
+  /// For the log: which kind is shown, and nothing of what it holds.
+  fileprivate var kind: String {
+    switch self {
+    case .empty: "empty"
+    case .leader: "leader"
+    case .windows: "windows"
+    case .spaces: "spaces"
+    case .notice: "notice"
+    }
   }
 }
