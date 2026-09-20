@@ -16,8 +16,8 @@ import Testing
     try text.write(to: file, atomically: true, encoding: .utf8)
   }
 
-  private func start(_ mac: FakeMac = FakeMac()) async -> Atelier {
-    let atelier = Atelier(mac, configFile: file)
+  private func start(_ mac: FakeMac = FakeMac(), patience: Patience = .short) async -> Atelier {
+    let atelier = Atelier(mac: mac, configFile: file, patience: patience)
     await atelier.config.ready()
     return atelier
   }
@@ -44,30 +44,21 @@ import Testing
     #expect(await eventually { mac.requests == ["switch to 1", "switch to 3"] })
   }
 
-  @Test func aPressDuringARunningCommandIsRefusedNotQueued() async throws {
+  @Test func aPressDuringARunningCommandIsRefusedNotQueued() async {
+    // A frozen switch keeps the first command running, and for long enough
+    // that a slow machine cannot press again only after it has given up.
     let mac = FakeMac.oneDisplay(current: 1)
-    let atelier = await start(mac)
+    mac.change { $0.ignoresSwitches = true }
+    var patience = Patience.short
+    patience.transition = .milliseconds(500)
+    let atelier = await start(mac, patience: patience)
     let notices = atelier.notices.changes()
     var iterator = notices.makeAsyncIterator()
-    // Keep the first command running until the second is refused. A short
-    // simulated switch timeout can expire before a busy test runner resumes.
-    let started = AsyncStream.makeStream(of: Void.self)
-    let gate = AsyncStream.makeStream(of: Void.self)
-    defer { gate.continuation.finish() }
-    let running = Task {
-      try await atelier.runner.workspace.run { _ throws(AtelierError) in
-        started.continuation.yield()
-        for await _ in gate.stream { break }
-        return .unchanged
-      }
-    }
-    for await _ in started.stream { break }
+    mac.press(chord("option+2"))
+    #expect(await eventually { mac.requests == ["switch to 2"] })
     mac.press(chord("option+3"))
     #expect(await iterator.next() == Notice(text: AtelierError.busy.message))
-    #expect(mac.requests.isEmpty)
-    gate.continuation.finish()
-    #expect(try await running.value == .unchanged)
-    #expect(mac.requests.isEmpty)
+    #expect(mac.requests == ["switch to 2"])
   }
 
   @Test func aShortcutThatFailsIsANotice() async {

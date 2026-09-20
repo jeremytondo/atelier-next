@@ -32,12 +32,13 @@ run the same commands. If someone using only the CLI would want it, it belongs
 in `AtelierKit`; if it is about what appears on screen, it belongs in `UI`.
 
 Only `MacOS` touches Accessibility or private macOS calls, and workarounds for
-controlling other apps and Spaces stay inside it. AppKit presentation and
-recovery of Atelier's own windows belong to `UI`. Requests to other apps run
-in the background with a short time limit, so a frozen app holds up nothing
-else. The key-listening used by the leader runs only while the leader is open
-and does almost no work itself; the only listening that is always on is one
-modifier monitor for the holds that show the window list and the Space list.
+macOS stay inside it; the exception is a workaround for one of Atelier's own
+windows that needs only AppKit, which stays in `UI` with the window. Requests
+to other apps run in the background with a short time limit, so a frozen app
+holds up nothing else. The key-listening used by the leader runs only while
+the leader is open and does almost no work itself; the only listening that is
+always on is one modifier monitor for the holds that show the window list and
+the Space list.
 Each piece of `UI` stands alone: pieces share only `Design` and get their
 information from `AtelierKit`'s queries and events, never from a timer. The
 core defaults are built in; `~/.config/atelier/config-next.toml` overrides them

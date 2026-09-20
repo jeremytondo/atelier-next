@@ -79,12 +79,6 @@ public final class HUD {
       }
     }
     Task { [weak self] in
-      for await _ in await atelier.spaces.changes() {
-        guard let self else { return }
-        panel.spacesChanged()
-      }
-    }
-    Task { [weak self] in
       for await notice in atelier.notices.changes() {
         self?.show(notice: notice.text)
       }
