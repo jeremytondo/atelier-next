@@ -123,20 +123,27 @@ import Testing
     }
   }
 
-  @Test func doesNotRepairAnOriginNowShownOnAnotherDisplay() async {
-    _ = await transition.confirm(
+  @Test(arguments: [false, true])
+  func doesNotRepairAnOriginNowShownOnAnotherDisplay(_ focused: Bool) async {
+    let result = await transition.confirm(
       displays: {
         [
           DisplaySpaces(id: "Main", currentSpace: 2, spaces: [Space(id: 2, isDesktop: false)]),
           DisplaySpaces(id: "Other", currentSpace: 1, spaces: [Space(id: 1, isDesktop: true)]),
         ]
       },
-      isFocused: { false },
+      isFocused: { focused },
       restoreOrigin: {
         Issue.record("Must not change focus on another display's visible Space")
         return true
       },
-      timeout: .zero)
+      timeout: focused ? .seconds(3) : .zero,
+      settling: .zero)
+    switch result {
+    case .sent: #expect(focused)
+    case .uncertain: #expect(!focused)
+    default: Issue.record("Skipping origin repair must not change the arrival result")
+    }
   }
 
   @Test func confirmsWithoutRepairWhenThereWasNoDifferentOriginApp() async {

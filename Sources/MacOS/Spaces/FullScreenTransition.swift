@@ -41,9 +41,10 @@ struct FullScreenTransition: Sendable {
     // user may have changed Spaces, or the origin may have moved displays.
     var restored = true
     if let origin,
-      let screen = displays().first(where: { $0.spaces.contains(where: { $0.id == origin }) })
+      let screen = displays().first(where: { $0.spaces.contains(where: { $0.id == origin }) }),
+      screen.currentSpace != origin
     {
-      restored = screen.currentSpace != origin && restoreOrigin()
+      restored = restoreOrigin()
     }
     guard arrived else {
       return .uncertain("macOS did not confirm the full-screen Space and its focused window.")
