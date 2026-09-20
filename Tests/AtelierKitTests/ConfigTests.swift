@@ -44,18 +44,30 @@ import Testing
     #expect(await eventually { mac.requests == ["switch to 1", "switch to 3"] })
   }
 
-  @Test func aPressDuringARunningCommandIsRefusedNotQueued() async {
-    // Space switches take a while; a frozen switch keeps the first command running.
+  @Test func aPressDuringARunningCommandIsRefusedNotQueued() async throws {
     let mac = FakeMac.oneDisplay(current: 1)
-    mac.change { $0.ignoresSwitches = true }
     let atelier = await start(mac)
     let notices = atelier.notices.changes()
     var iterator = notices.makeAsyncIterator()
-    mac.press(chord("option+2"))
-    #expect(await eventually { mac.requests == ["switch to 2"] })
+    // Keep the first command running until the second is refused. A short
+    // simulated switch timeout can expire before a busy test runner resumes.
+    let started = AsyncStream.makeStream(of: Void.self)
+    let gate = AsyncStream.makeStream(of: Void.self)
+    defer { gate.continuation.finish() }
+    let running = Task {
+      try await atelier.runner.workspace.run { _ throws(AtelierError) in
+        started.continuation.yield()
+        for await _ in gate.stream { break }
+        return .unchanged
+      }
+    }
+    for await _ in started.stream { break }
     mac.press(chord("option+3"))
     #expect(await iterator.next() == Notice(text: AtelierError.busy.message))
-    #expect(mac.requests == ["switch to 2"])
+    #expect(mac.requests.isEmpty)
+    gate.continuation.finish()
+    #expect(try await running.value == .unchanged)
+    #expect(mac.requests.isEmpty)
   }
 
   @Test func aShortcutThatFailsIsANotice() async {
