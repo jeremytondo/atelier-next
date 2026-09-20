@@ -141,12 +141,25 @@ public final class HUD {
       panel.hide()
       return
     }
-    log.info("render: \(String(describing: content).prefix(12), privacy: .public)")
+    log.info("render: \(content.kind, privacy: .public)")
     guard let screen = display.flatMap(NSScreen.named) ?? NSScreen.main ?? NSScreen.screens.first
     else {
       panel.hide()
       return
     }
     panel.show(HUDView(content: content), on: screen)
+  }
+}
+
+extension HUDView.Content {
+  /// For the log: which kind is shown, and nothing of what it holds.
+  fileprivate var kind: String {
+    switch self {
+    case .empty: "empty"
+    case .leader: "leader"
+    case .windows: "windows"
+    case .spaces: "spaces"
+    case .notice: "notice"
+    }
   }
 }
