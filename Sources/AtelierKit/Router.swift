@@ -163,8 +163,7 @@ struct CommandRunner: Sendable {
 extension SpaceList {
   var text: String {
     spaces.enumerated().map { index, space in
-      let kind = space.desktopNumber.map { "Desktop \($0)" } ?? "Full screen or Split View"
-      return "\(space.isCurrent ? "*" : " ") \(index + 1)  \(kind)  (\(space.id))"
+      "\(space.isCurrent ? "*" : " ") \(index + 1)  \(space.name)  (\(space.id))"
     }.joined(separator: "\n")
   }
 
@@ -174,6 +173,7 @@ extension SpaceList {
         var id: UInt64
         var position: Int
         var desktopNumber: Int?
+        var name: String
         var current: Bool
       }
       var display: String
@@ -185,7 +185,7 @@ extension SpaceList {
         spaces: spaces.enumerated().map { index, space in
           Payload.Item(
             id: space.id, position: index + 1, desktopNumber: space.desktopNumber,
-            current: space.isCurrent)
+            name: space.name, current: space.isCurrent)
         }))
   }
 }

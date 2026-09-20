@@ -86,10 +86,11 @@ import Testing
 
   @Test func wordsTheSpaces() async {
     let mac = FakeMac.oneDisplay(notDesktops: [2], current: 3)
+    mac.change { $0.spaceNames = [2: "Notes & Safari"] }
     #expect(
       await reply("spaces.list", on: mac).output == """
           1  Desktop 1  (1)
-          2  Full screen or Split View  (2)
+          2  Notes & Safari  (2)
         * 3  Desktop 2  (3)
         """)
   }

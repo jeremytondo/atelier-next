@@ -35,6 +35,28 @@ import Testing
       ])
   }
 
+  @Test func namesFullScreenAndSplitViewSpacesByTheirApps() {
+    func space(_ id: Int, apps: [Int]) -> [String: Any] {
+      [
+        "ManagedSpaceID": id, "type": 4,
+        "TileLayoutManager": ["TileSpaces": apps.map { ["pid": $0] }],
+      ]
+    }
+    let names = DisplaySpaces.names([
+      display(
+        current: 3,
+        spaces: [
+          ["ManagedSpaceID": 3, "type": 0],
+          space(7, apps: [40]),
+          // A pair is joined, and an app that cannot be named is left out.
+          space(9, apps: [41, 42]),
+          space(11, apps: [41, 99]),
+          space(13, apps: [99]),
+        ])
+    ]) { [40: "Numbers", 41: "Notes", 42: "Safari"][$0] }
+    #expect(names == [7: "Numbers", 9: "Notes & Safari", 11: "Notes"])
+  }
+
   @Test func keepsEachDisplaysCurrentSpace() {
     var second = display(current: 5, spaces: [["id64": 5, "type": 0]])
     second["Display Identifier"] = "Second"

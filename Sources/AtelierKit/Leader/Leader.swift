@@ -451,6 +451,7 @@ actor LeaderSession {
       }
     }
     let display = numbersSpaces ? mac.spaces().first { $0.id == opening.display } : nil
+    let spaces = display.map { SpaceList($0, names: mac.spaceNames()).spaces } ?? []
     // A slow read must not overwrite the answer to a later one.
     guard self.opening?.generation == opening.generation, self.opening?.refreshes == refresh
     else { return }
@@ -480,9 +481,11 @@ actor LeaderSession {
           } else {
             unavailable = "The Window menu could not be read."
           }
-        // A Space or Desktop that does not exist is left out rather than dimmed.
+        // A Space or Desktop that does not exist is left out rather than dimmed,
+        // and a Space that does goes by its name.
         case .spacesSelect(let position):
-          guard position >= 1, position <= display?.spaces.count ?? 0 else { return nil }
+          guard spaces.indices.contains(position - 1) else { return nil }
+          label = spaces[position - 1].name
         case .desktopsSelect(let number):
           guard number >= 1, number <= display?.desktops.count ?? 0 else { return nil }
         case .quickAppsToggle(let app):

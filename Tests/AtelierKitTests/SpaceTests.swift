@@ -18,6 +18,17 @@ import Testing
     #expect(list.spaces.map(\.isCurrent) == [false, false, true, false, false])
   }
 
+  @Test func namesDesktopsByNumberAndOtherSpacesByApp() async throws {
+    let mac = mac(current: 3)
+    mac.change { $0.spaceNames = [2: "Numbers"] }
+    let list = try await Atelier(mac).spaces.list()
+    // Desktops count only Desktops, and a Space whose app has no name gets Dock's word.
+    #expect(
+      list.spaces.map(\.name) == [
+        "Desktop 1", "Numbers", "Desktop 2", "Desktop 3", "Fullscreen",
+      ])
+  }
+
   @Test func nextAndPreviousStepThroughEveryKind() async throws {
     let mac = mac(current: 1)
     let atelier = Atelier(mac)

@@ -51,6 +51,11 @@ package protocol Mac: Sendable {
   /// on any app. Empty when WindowServer refuses or any part is unreadable.
   func spaces() -> [DisplaySpaces]
 
+  /// A name for each full-screen and Split View Space, by the Space's id: its
+  /// app's, or both apps' for a Split View. Read without waiting on any app.
+  /// A Desktop has no entry; it goes by its number.
+  func spaceNames() -> [UInt64: String]
+
   /// Nil when Dock would not say.
   func isMissionControlOpen() async -> Bool?
 

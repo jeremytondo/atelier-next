@@ -28,6 +28,33 @@ extension DisplaySpaces {
     return Set(ids).count == ids.count ? displays : []
   }
 
+  /// A name for each full-screen and Split View Space: its app's, and the two
+  /// of a Split View joined as Dock joins them. A Desktop has no entry, and
+  /// neither has a Space none of whose apps could be named.
+  ///
+  /// Mission Control shows the window's title instead, and these dictionaries
+  /// carry it, with the app's name, but only for a process allowed to record
+  /// the screen. Atelier never asks for that, so it goes by the tile's process,
+  /// which is always there, and everyone sees the same names.
+  static func names(_ rawDisplays: [[String: Any]], appName: (pid_t) -> String?)
+    -> [UInt64: String]
+  {
+    var names: [UInt64: String] = [:]
+    for rawDisplay in rawDisplays {
+      for rawSpace in rawDisplay["Spaces"] as? [[String: Any]] ?? [] {
+        guard let id = id(of: rawSpace),
+          let layout = rawSpace["TileLayoutManager"] as? [String: Any],
+          let tiles = layout["TileSpaces"] as? [[String: Any]]
+        else { continue }
+        let apps = tiles.compactMap { tile in
+          (tile["pid"] as? NSNumber).flatMap { pid_t(exactly: $0.int64Value) }.flatMap(appName)
+        }
+        if !apps.isEmpty { names[id] = apps.joined(separator: " & ") }
+      }
+    }
+    return names
+  }
+
   static func id(of rawSpace: [String: Any]) -> UInt64? {
     ((rawSpace["ManagedSpaceID"] ?? rawSpace["id64"]) as? NSNumber)?.uint64Value
   }

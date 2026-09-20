@@ -5,6 +5,10 @@ public struct SpaceInfo: Equatable, Sendable {
   public let id: UInt64
   /// One-based, counting Desktops only; nil for a full-screen or Split View Space.
   public let desktopNumber: Int?
+  /// "Desktop" and its number as Mission Control counts them, or the app of
+  /// a full-screen Space, or both apps of a Split View. Whoever shows it
+  /// decides how much fits.
+  public let name: String
   public let isCurrent: Bool
 }
 
@@ -23,7 +27,8 @@ public struct Spaces: Sendable {
 
   /// `spaces.list`
   public func list() async throws(AtelierError) -> SpaceList {
-    SpaceList(try await workspace.observe().display)
+    let display = try await workspace.observe().display
+    return SpaceList(display, names: workspace.mac.spaceNames())
   }
 
   /// `spaces.next`: the Space after the current one, or the first after the last.
@@ -85,7 +90,9 @@ public struct Spaces: Sendable {
 }
 
 extension SpaceList {
-  init(_ display: DisplaySpaces) {
+  /// `names` are those of full-screen and Split View Spaces. One without is
+  /// called what Dock calls such a Space.
+  init(_ display: DisplaySpaces, names: [UInt64: String]) {
     var desktops = 0
     self.init(
       display: display.id,
@@ -93,6 +100,7 @@ extension SpaceList {
         if space.isDesktop { desktops += 1 }
         return SpaceInfo(
           id: space.id, desktopNumber: space.isDesktop ? desktops : nil,
+          name: space.isDesktop ? "Desktop \(desktops)" : names[space.id] ?? "Fullscreen",
           isCurrent: space.id == display.currentSpace)
       })
   }
