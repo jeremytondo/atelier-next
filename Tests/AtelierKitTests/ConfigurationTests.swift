@@ -5,12 +5,12 @@ import Testing
 
 /// Reading the file and laying it over the defaults, with no Mac involved.
 @Suite struct ConfigurationTests {
-  private func resolve(_ text: String, spaceChords: Set<Chord> = []) -> Configuration {
+  private func resolve(_ text: String) -> Configuration {
     switch Overrides.parse(text) {
-    case .success(let overrides): return Keymap.resolve(overrides, spaceShortcuts: spaceChords)
+    case .success(let overrides): return Keymap.resolve(overrides)
     case .failure(let problem):
       Issue.record("The file was rejected: \(problem.text)")
-      return Keymap.resolve(Overrides(), spaceShortcuts: [])
+      return Keymap.resolve(Overrides())
     }
   }
 
@@ -285,20 +285,18 @@ import Testing
     #expect(command(submenu(configuration.menu, "x")!, "a") == .desktopsNew)
   }
 
-  @Test func keysMacOSNeedsForSwitchingSpacesAreRefused() {
+  @Test func nativeSpaceShortcutChordsCanBeBound() {
     let configuration = resolve(
       """
       [keymap.global]
       "ctrl+3" = "desktops select 3"
-      """, spaceChords: [chord("ctrl+3"), chord("fn+ctrl+left")])
-    #expect(configuration.problems.count == 1)
-    #expect(configuration.problems[0].message.contains("macOS's own shortcut"))
-    #expect(configuration.global[chord("ctrl+3")] == nil)
-    // macOS reports Fn on its arrow shortcuts; the chord as written is the same key.
+      """)
+    #expect(configuration.problems.isEmpty)
+    #expect(configuration.global[chord("ctrl+3")] == .desktopsSelect(3))
     let arrows = resolve(
-      "[keymap.global]\n\"ctrl+left\" = \"spaces previous\"", spaceChords: [chord("fn+ctrl+left")])
-    #expect(arrows.problems.count == 1)
-    #expect(arrows.global[chord("ctrl+left")] == nil)
+      "[keymap.global]\n\"ctrl+left\" = \"spaces previous\"")
+    #expect(arrows.problems.isEmpty)
+    #expect(arrows.global[chord("ctrl+left")] == .spacesPrevious)
   }
 
   @Test func theLeaderKeyIsItsOwnAndDisplacesADefault() {
@@ -352,9 +350,9 @@ import Testing
     let unbounded = resolve("[leader]\ndelay = inf\ntimeout = nan")
     #expect(unbounded.leader == Defaults.leader)
     #expect(unbounded.problems.map(\.location) == ["leader delay", "leader timeout"])
-    let taken = resolve("[leader]\nkey = \"ctrl+1\"", spaceChords: [chord("ctrl+1")])
-    #expect(taken.leader.chord == Defaults.leader.chord)
-    #expect(taken.problems.map(\.location) == ["leader key"])
+    let native = resolve("[leader]\nkey = \"ctrl+1\"")
+    #expect(native.leader.chord == chord("ctrl+1"))
+    #expect(native.problems.isEmpty)
     #expect(resolve("[leader]\nkey = \"fn+space\"").problems.map(\.location) == ["leader key"])
   }
 
@@ -405,12 +403,13 @@ import Testing
     #expect(resolve("space-list = 1").problems.map(\.location) == ["space-list"])
   }
 
-  @Test func aDefaultOnAChordMacOSSwitchesSpacesWithIsLeftOut() {
-    let configuration = resolve("", spaceChords: [chord("option+1"), chord("fn+ctrl+left")])
+  @Test func allDefaultSpaceSelectionChordsAreAvailable() {
+    let configuration = resolve("")
     #expect(configuration.problems.isEmpty)
-    #expect(configuration.global[chord("option+1")] == nil)
-    #expect(configuration.global[chord("option+2")] == .spacesSelect(2))
-    #expect(configuration.global.count == Defaults.global.count - 1)
+    for number in 1...10 {
+      #expect(configuration.global[chord("option+\(number % 10)")] == .spacesSelect(number))
+    }
+    #expect(configuration.global.count == Defaults.global.count)
   }
 
   @Test func bindingsTheUserWroteOutlastTheDefaultsThatChanged() {

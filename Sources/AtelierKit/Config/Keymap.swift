@@ -3,14 +3,10 @@ import MacOS
 /// Lays the user's overrides over the defaults. A user entry at a key
 /// replaces the default there, `unbind` removes it, and an entry with a
 /// problem is left out with the problem recorded. Two user entries for one
-/// key, a sequence that would pass through a command, and a key macOS needs
-/// for itself are problems too.
+/// key and a sequence that would pass through a command are problems too.
 enum Keymap {
-  static func resolve(_ overrides: Overrides, spaceShortcuts: Set<Chord>) -> Configuration {
-    // macOS lists Fn on its arrow-key shortcuts, which no configured chord carries.
-    let spaceShortcuts = Set(
-      spaceShortcuts.map { Chord($0.modifiers.subtracting(.function), $0.key) })
-    var resolver = Resolver(problems: overrides.problems, spaceShortcuts: spaceShortcuts)
+  static func resolve(_ overrides: Overrides) -> Configuration {
+    var resolver = Resolver(problems: overrides.problems)
     let theme = resolver.theme(overrides)
     let leader = resolver.leader(overrides)
     let windowList = resolver.windowListModifiers(overrides)
@@ -24,7 +20,6 @@ enum Keymap {
 
   private struct Resolver {
     var problems: [Problem]
-    let spaceShortcuts: Set<Chord>
 
     mutating func report(_ location: String, _ message: String) {
       problems.append(Problem(location: location, message: message))
@@ -49,8 +44,6 @@ enum Keymap {
             let chord = try KeyGrammar.chord(text)
             if chord.modifiers.contains(.function) {
               report("leader key", "cannot use fn")
-            } else if spaceShortcuts.contains(chord) {
-              report("leader key", "is macOS's own shortcut for switching Spaces")
             } else {
               leader.chord = chord
             }
@@ -117,13 +110,11 @@ enum Keymap {
     mutating func global(_ overrides: Overrides, leader: Chord?) -> (
       [Chord: Command], [QuickAppSettings]
     ) {
-      // A default on a chord macOS switches Spaces with is left out, as a user's
-      // would be: Atelier presses that chord itself and must not catch it.
       var global = Dictionary(
         uniqueKeysWithValues: Defaults.global.map {
           (try! KeyGrammar.chord($0.key), Command(words: $0.command)!)
         }
-      ).filter { !spaceShortcuts.contains($0.key) }
+      )
       var owners: [Chord: String] = [:]
 
       /// Binds the chord to the command, or to nothing, when everything
@@ -145,13 +136,6 @@ enum Keymap {
         owners[chord] = location
         if chord == leader {
           report(location, "is the leader key")
-          return nil
-        }
-        if spaceShortcuts.contains(chord) {
-          report(
-            location,
-            "is macOS's own shortcut for switching Spaces, which Atelier presses itself; leave it to macOS"
-          )
           return nil
         }
         global[chord] = command

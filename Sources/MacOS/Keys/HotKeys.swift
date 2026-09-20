@@ -11,7 +11,8 @@ import Synchronization
 /// lives as long as it does, since Carbon holds a bare pointer to it.
 final class HotKeys: Sendable {
   private struct State {
-    var registered: [UInt32: (reference: EventHotKeyRef, chord: Chord)] = [:]
+    var registered: [UInt32: (reference: EventHotKeyRef?, chord: Chord)] = [:]
+    var released: [Chord: Int] = [:]
     var next: UInt32 = 1
     var held: Set<UInt32> = []
     var handler: EventHandlerRef?
@@ -40,7 +41,7 @@ final class HotKeys: Sendable {
           uniqueKeysWithValues: chords.map { ($0, "macOS refused Atelier's shortcut handler.") })
       }
       for (_, registered) in state.registered {
-        UnregisterEventHotKey(registered.reference)
+        if let reference = registered.reference { UnregisterEventHotKey(reference) }
       }
       state.registered = [:]
       state.held = []
@@ -54,23 +55,80 @@ final class HotKeys: Sendable {
           refused[chord] = "The current keyboard layout has no \(chord.key) key."
           continue
         }
-        let id = EventHotKeyID(signature: Self.signature, id: state.next)
         var reference: EventHotKeyRef?
-        let status = RegisterEventHotKey(
-          UInt32(code), Self.carbonModifiers(chord.modifiers), id, GetEventDispatcherTarget(), 0,
-          &reference)
-        guard status == noErr, let reference else {
-          refused[chord] =
-            status == eventHotKeyExistsErr
-            ? "Another app has registered this shortcut."
-            : "macOS refused the shortcut (\(status))."
-          continue
+        if state.released[chord] == nil {
+          let status = register(chord, code: code, id: state.next, reference: &reference)
+          guard status == noErr, reference != nil else {
+            refused[chord] = Self.reason(status)
+            continue
+          }
         }
         state.registered[state.next] = (reference, chord)
         state.next += 1
       }
       return refused
     }
+  }
+
+  /// Carbon consumes registered shortcuts before Dock can match them. Release
+  /// only the chord being posted, including across a configuration reload, then
+  /// restore the current binding. A key-up during this interval is not delivered
+  /// to Carbon, so its held state must be cleared too.
+  @MainActor func release(_ chord: Chord) -> Bool {
+    state.withLock { state in
+      state.released[chord, default: 0] += 1
+      guard state.released[chord] == 1 else { return true }
+      for (id, registered) in state.registered where registered.chord == chord {
+        if let reference = registered.reference, UnregisterEventHotKey(reference) != noErr {
+          state.released[chord] = nil
+          return false
+        }
+        state.registered[id]?.reference = nil
+        state.held.remove(id)
+      }
+      return true
+    }
+  }
+
+  /// A failure to restore is reported to the command that borrowed the chord.
+  @MainActor func restore(_ chord: Chord) -> String? {
+    let codes = KeyCodes()
+    return state.withLock { state in
+      guard let count = state.released[chord] else { return nil }
+      guard count == 1 else {
+        state.released[chord] = count - 1
+        return nil
+      }
+      state.released[chord] = nil
+      for (id, registered) in state.registered where registered.chord == chord {
+        guard let code = codes.code(for: chord.key) else {
+          return "The current keyboard layout has no \(chord.key) key."
+        }
+        var reference: EventHotKeyRef?
+        let status = register(chord, code: code, id: state.next, reference: &reference)
+        guard status == noErr, reference != nil else { return Self.reason(status) }
+        // Queued events for the old registration must not become a new press.
+        state.registered[id] = nil
+        state.registered[state.next] = (reference, chord)
+        state.next += 1
+        state.held.remove(id)
+      }
+      return nil
+    }
+  }
+
+  private func register(
+    _ chord: Chord, code: CGKeyCode, id: UInt32, reference: inout EventHotKeyRef?
+  ) -> OSStatus {
+    RegisterEventHotKey(
+      UInt32(code), Self.carbonModifiers(chord.modifiers),
+      EventHotKeyID(signature: Self.signature, id: id), GetEventDispatcherTarget(), 0, &reference)
+  }
+
+  private static func reason(_ status: OSStatus) -> String {
+    status == eventHotKeyExistsErr
+      ? "Another app has registered this shortcut."
+      : "macOS refused the shortcut (\(status))."
   }
 
   private static func carbonModifiers(_ modifiers: Chord.Modifiers) -> UInt32 {
@@ -110,7 +168,7 @@ final class HotKeys: Sendable {
   /// while `replace`, also on the main thread, holds the lock.
   private func handle(_ id: UInt32, released: Bool) {
     let chord: Chord? = state.withLock { state in
-      guard let registered = state.registered[id] else { return nil }
+      guard let registered = state.registered[id], registered.reference != nil else { return nil }
       if released {
         state.held.remove(id)
         return nil

@@ -131,6 +131,9 @@ final class KeyTap: KeyListening, @unchecked Sendable {
       consumedDowns.insert(code)
       return true
     case .keyUp:
+      guard event.getIntegerValueField(.eventSourceUserData) != PostedKeys.marker else {
+        return false
+      }
       let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
       let consumed = consumedDowns.remove(code) != nil
       if isStopping, consumedDowns.isEmpty { tearDown() }
