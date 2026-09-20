@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import os
 
 /// Enters a full-screen Space through its exact window, allowing Dock to
 /// perform one native transition. Discovery happens before anything is
@@ -8,6 +9,7 @@ import ApplicationServices
 /// have settled, so later commands cannot overlap this activation.
 struct FullScreenSwitch: Sendable {
   let skyLight: SkyLight
+  private static let log = Logger(subsystem: "com.elevenideas.Atelier", category: "spaces")
 
   private struct Origin: Sendable {
     let space: UInt64
@@ -22,92 +24,69 @@ struct FullScreenSwitch: Sendable {
   func switchSpace(to space: UInt64, on display: String, expecting: [DisplaySpaces]) async
     -> SpaceDispatch
   {
-    guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27,
-      skyLight.windowActivation != nil
-    else { return .refused("Direct full-screen switching is unavailable on this macOS.") }
-
+    guard let activation = skyLight.windowActivation else {
+      return .refused("Direct full-screen switching is unavailable on this macOS.")
+    }
     let result = await Background.run {
-      activate(space: space, display: display, expecting: expecting)
+      activate(space: space, display: display, expecting: expecting, with: activation)
     }
-    let window: FullScreenWindow
-    let origin: Origin?
     switch result {
-    case .sent(let target, let previous):
-      window = target
-      origin = previous
     case .stopped(let dispatch): return dispatch
+    case .sent(let window, let origin):
+      return await FullScreenTransition(space: space, display: display, origin: origin?.space)
+        .confirm(
+          displays: { DisplaySpaces.decode(skyLight.managedDisplaySpaces()) },
+          isFocused: { await Background.run { isFocused(window) } },
+          restoreOrigin: {
+            guard let origin, !activation.restoreFront(origin.process, space: origin.space)
+            else { return }
+            Self.log.notice("macOS would not restore the front app of Space \(origin.space)")
+          })
     }
-
-    return await FullScreenTransition(space: space, display: display, origin: origin?.space)
-      .confirm(
-        displays: { DisplaySpaces.decode(skyLight.managedDisplaySpaces()) },
-        isFocused: { await Background.run { isFocused(window) } },
-        restoreOrigin: {
-          guard let origin else { return true }
-          return skyLight.restoreFront(origin.process, space: origin.space)
-        })
   }
 
-  /// No AX element leaves this background operation. Both the app's launch
-  /// identity and WindowServer's owner/membership are checked again after the
-  /// AX search, and the Space layout is read last before activation.
-  private func activate(space: UInt64, display: String, expecting: [DisplaySpaces]) -> Activation {
+  /// No AX element leaves this background operation. Finding the element
+  /// waits on the app, so what the target rests on is read again after it,
+  /// last of all before activation.
+  private func activate(
+    space: UInt64, display: String, expecting: [DisplaySpaces], with activation: WindowActivation
+  ) -> Activation {
     let raw = skyLight.managedDisplaySpaces()
     guard DisplaySpaces.decode(raw) == expecting else { return .stopped(.changed) }
     guard let target = FullScreenWindow.read(space: space, on: display, from: raw),
-      target.app != getpid(), owns(target, space: space),
-      let activation = skyLight.windowActivation,
+      target.app != getpid(),
       let process = activation.process(for: target.app),
-      let element = resolve(target)
+      let element = resolve(target, with: activation)
     else {
       return .stopped(.refused("The full-screen window is unavailable or did not answer."))
     }
-    guard activation.process(for: target.app) == process,
-      owns(target, space: space), matches(element, target)
-    else {
-      return .stopped(.refused("The full-screen window changed before Atelier could focus it."))
-    }
 
+    // The origin Space's front app is restored afterwards when it can be
+    // told; when it cannot, the switch goes ahead without.
     var origin: Origin?
     if let previous = expecting.first(where: { $0.id == display })?.currentSpace,
       previous != space,
-      let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != target.app
+      let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != target.app,
+      let previousProcess = activation.process(for: app.processIdentifier)
     {
-      guard let previousProcess = activation.process(for: app.processIdentifier) else {
-        return .stopped(.refused("macOS did not identify the previous Space's focused app."))
-      }
       origin = Origin(space: previous, process: previousProcess)
     }
 
     let latest = skyLight.managedDisplaySpaces()
     guard DisplaySpaces.decode(latest) == expecting,
-      FullScreenWindow.read(space: space, on: display, from: latest) == target
+      FullScreenWindow.read(space: space, on: display, from: latest) == target,
+      skyLight.spaces(ofWindow: target.id) == [space],
+      activation.process(for: target.app) == process
     else { return .stopped(.changed) }
 
-    let dispatch = activation.focus(window: target.id, in: process)
-    switch dispatch {
-    case .refused, .changed: return .stopped(dispatch)
-    case .sent:
-      AXUIElementSetMessagingTimeout(element, WindowCensus.requestTimeLimit)
-      _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
-    case .uncertain: break
+    guard activation.focus(window: target.id, in: process) else {
+      return .stopped(.refused("macOS would not bring the full-screen window forward."))
     }
-    // Once activation was posted, even a timed-out AXRaise can still take
-    // effect. Keep the command guard and observe the actual Space and focus;
-    // returning early would let another command race the unfinished switch.
+    // A raise that times out can still take effect. Keep the command guard
+    // and observe the actual Space and focus; returning early would let
+    // another command race the unfinished switch.
+    _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     return .sent(target, origin)
-  }
-
-  private func owns(_ target: FullScreenWindow, space: UInt64) -> Bool {
-    guard skyLight.spaces(ofWindow: target.id) == [space],
-      let descriptions = CGWindowListCopyWindowInfo(.optionIncludingWindow, target.id)
-        as? [[String: Any]]
-    else { return false }
-    return descriptions.contains {
-      ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == target.id
-        && ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == target.app
-        && ($0[kCGWindowLayer as String] as? NSNumber)?.intValue == 0
-    }
   }
 
   private func matches(_ element: AXUIElement, _ target: FullScreenWindow) -> Bool {
@@ -117,14 +96,14 @@ struct FullScreenSwitch: Sendable {
       && element.attribute(kAXRoleAttribute) as? String == kAXWindowRole
   }
 
-  private func resolve(_ target: FullScreenWindow) -> AXUIElement? {
+  private func resolve(_ target: FullScreenWindow, with activation: WindowActivation)
+    -> AXUIElement?
+  {
     let deadline = ContinuousClock.now + .milliseconds(500)
-    let app = AXUIElementCreateApplication(target.app)
-    AXUIElementSetMessagingTimeout(app, WindowCensus.requestTimeLimit)
     // Key and main windows can remain published when AXWindows omits them.
     // A non-answer stops here: scanning a frozen app cannot help.
     guard
-      let values = app.attributes([
+      let values = AXUIElementCreateApplication(target.app).attributes([
         kAXWindowsAttribute, kAXFocusedWindowAttribute, kAXMainWindowAttribute,
       ])
     else { return nil }
@@ -136,19 +115,20 @@ struct FullScreenSwitch: Sendable {
     }
     for candidate in published {
       guard ContinuousClock.now < deadline else { return nil }
-      AXUIElementSetMessagingTimeout(candidate, 0.03)
       if matches(candidate, target) { return candidate }
     }
 
-    guard skyLight.canResolveRemoteElements else { return nil }
-    // These numbers belong to AX elements, including descendants. They may
-    // be sparse in long-lived apps, so time bounds the search, not an ID cap.
+    // An app lists only the windows of the Spaces being shown, so this scan
+    // is the usual way to a full-screen window. These numbers belong to AX
+    // elements, including descendants. They may be sparse in long-lived
+    // apps, so time bounds the search, not an ID cap.
     let scanDeadline = min(deadline, ContinuousClock.now + .milliseconds(250))
     var number: UInt64 = 0
     while ContinuousClock.now < scanDeadline {
-      if let candidate = skyLight.remoteElement(in: target.app, number: number) {
-        AXUIElementSetMessagingTimeout(candidate, 0.03)
-        if matches(candidate, target) { return candidate }
+      if let candidate = activation.remoteElement(in: target.app, number: number),
+        matches(candidate, target)
+      {
+        return candidate
       }
       number += 1
     }

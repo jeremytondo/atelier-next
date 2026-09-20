@@ -4,6 +4,7 @@ import Foundation
 /// the origin Space's remembered app even if focus confirmation fails, so
 /// every exit repairs that record when the origin is known to be offscreen.
 /// A user switch back to the origin must never be overwritten by the repair.
+/// The repair is a courtesy: whether it took never changes the result.
 struct FullScreenTransition: Sendable {
   let space: UInt64
   let display: String
@@ -12,7 +13,7 @@ struct FullScreenTransition: Sendable {
   func confirm(
     displays: @Sendable () -> [DisplaySpaces],
     isFocused: @Sendable () async -> Bool,
-    restoreOrigin: @Sendable () -> Bool,
+    restoreOrigin: @Sendable () -> Void,
     timeout: Duration = .seconds(3),
     settling: Duration = .milliseconds(75)
   ) async -> SpaceDispatch {
@@ -39,18 +40,14 @@ struct FullScreenTransition: Sendable {
 
     // Read again immediately before repair: confirmation awaited AX and the
     // user may have changed Spaces, or the origin may have moved displays.
-    var restored = true
     if let origin,
       let screen = displays().first(where: { $0.spaces.contains(where: { $0.id == origin }) }),
       screen.currentSpace != origin
     {
-      restored = restoreOrigin()
+      restoreOrigin()
     }
     guard arrived else {
       return .uncertain("macOS did not confirm the full-screen Space and its focused window.")
-    }
-    guard restored else {
-      return .uncertain("macOS switched Spaces but could not preserve the previous Space's focus.")
     }
     return .sent
   }

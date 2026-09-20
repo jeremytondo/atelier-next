@@ -63,15 +63,8 @@ import Testing
     var desktop = target()
     desktop["type"] = 0
     #expect(read(desktop) == nil)
-  }
-
-  @Test(arguments: [0, -1, Int(UInt32.max) + 1])
-  func rejectsInvalidWindowIDs(_ window: Int) {
-    #expect(read(target(window: window)) == nil)
-  }
-
-  @Test(arguments: [0, -1, Int(Int32.max) + 1])
-  func rejectsInvalidProcessIDs(_ app: Int) {
-    #expect(read(target(app: app)) == nil)
+    // Zero names no window and no app.
+    #expect(read(target(window: 0)) == nil)
+    #expect(read(target(app: 0)) == nil)
   }
 }

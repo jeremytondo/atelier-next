@@ -12,9 +12,7 @@ struct FullScreenWindow: Sendable, Equatable {
   {
     guard let screen = raw.first(where: { $0["Display Identifier"] as? String == display }),
       let spaces = screen["Spaces"] as? [[String: Any]],
-      let target = spaces.first(where: {
-        (($0["ManagedSpaceID"] ?? $0["id64"]) as? NSNumber)?.uint64Value == space
-      }),
+      let target = spaces.first(where: { DisplaySpaces.id(of: $0) == space }),
       (target["type"] as? NSNumber)?.intValue == 4,
       let window = owner(target),
       let layout = target["TileLayoutManager"] as? [String: Any],

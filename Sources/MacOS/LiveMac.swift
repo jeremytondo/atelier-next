@@ -76,14 +76,12 @@ package struct LiveMac: Mac {
   package func switchSpace(to space: UInt64, on display: String, expecting: [DisplaySpaces]) async
     -> SpaceDispatch
   {
-    guard
-      let target = expecting.first(where: { $0.id == display })?
-        .spaces.first(where: { $0.id == space })
-    else { return .changed }
-    if target.isDesktop {
-      return await shortcuts.switchSpace(to: space, on: display, expecting: expecting)
+    let target = expecting.first { $0.id == display }?.spaces.first { $0.id == space }
+    // A Space that is not there goes the Desktops' way, which refuses it.
+    if target?.isDesktop == false {
+      return await fullScreen.switchSpace(to: space, on: display, expecting: expecting)
     }
-    return await fullScreen.switchSpace(to: space, on: display, expecting: expecting)
+    return await shortcuts.switchSpace(to: space, on: display, expecting: expecting)
   }
 
   /// Dock keeps its own list of Desktops, and its shortcuts reach a new one
