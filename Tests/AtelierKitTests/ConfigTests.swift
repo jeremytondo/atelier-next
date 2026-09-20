@@ -16,8 +16,8 @@ import Testing
     try text.write(to: file, atomically: true, encoding: .utf8)
   }
 
-  private func start(_ mac: FakeMac = FakeMac()) async -> Atelier {
-    let atelier = Atelier(mac, configFile: file)
+  private func start(_ mac: FakeMac = FakeMac(), patience: Patience = .short) async -> Atelier {
+    let atelier = Atelier(mac: mac, configFile: file, patience: patience)
     await atelier.config.ready()
     return atelier
   }
@@ -45,10 +45,13 @@ import Testing
   }
 
   @Test func aPressDuringARunningCommandIsRefusedNotQueued() async {
-    // Space switches take a while; a frozen switch keeps the first command running.
+    // A frozen switch keeps the first command running, and for long enough
+    // that a slow machine cannot press again only after it has given up.
     let mac = FakeMac.oneDisplay(current: 1)
     mac.change { $0.ignoresSwitches = true }
-    let atelier = await start(mac)
+    var patience = Patience.short
+    patience.transition = .milliseconds(500)
+    let atelier = await start(mac, patience: patience)
     let notices = atelier.notices.changes()
     var iterator = notices.makeAsyncIterator()
     mac.press(chord("option+2"))
