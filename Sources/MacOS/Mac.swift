@@ -102,10 +102,6 @@ package protocol Mac: Sendable {
   /// Every press of a registered shortcut, once per press however long it is held.
   func hotKeyPresses() -> AsyncStream<Chord>
 
-  /// macOS's own shortcuts for switching Spaces, on or off, which Atelier
-  /// presses itself and so must not register.
-  func spaceSwitchingChords() async -> [Chord]
-
   /// Opens a file in the app the user has for it. False when macOS could not.
   func open(_ file: URL) -> Bool
 

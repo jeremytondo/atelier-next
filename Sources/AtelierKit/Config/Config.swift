@@ -88,7 +88,7 @@ actor ConfigStore {
   init(mac: any Mac, file: URL?) {
     self.mac = mac
     self.file = file
-    current = Keymap.resolve(Overrides(), spaceShortcuts: [])
+    current = Keymap.resolve(Overrides())
   }
 
   var problems: [Problem] {
@@ -167,8 +167,7 @@ actor ConfigStore {
   /// Reads and resolves the file. No file is the defaults; a file that
   /// cannot be read or parsed is the defaults with the rejection.
   private func load() async -> Loaded {
-    let spaceShortcuts = Set(await mac.spaceSwitchingChords())
-    let defaults = Keymap.resolve(Overrides(), spaceShortcuts: spaceShortcuts)
+    let defaults = Keymap.resolve(Overrides())
     guard let file, FileManager.default.fileExists(atPath: file.path) else {
       return Loaded(configuration: defaults)
     }
@@ -183,7 +182,7 @@ actor ConfigStore {
     }
     switch Overrides.parse(text) {
     case .success(let overrides):
-      return Loaded(configuration: Keymap.resolve(overrides, spaceShortcuts: spaceShortcuts))
+      return Loaded(configuration: Keymap.resolve(overrides))
     case .failure(let problem):
       return Loaded(configuration: defaults, rejection: problem)
     }

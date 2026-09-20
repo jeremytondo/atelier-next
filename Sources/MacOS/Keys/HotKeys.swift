@@ -12,6 +12,9 @@ import Synchronization
 final class HotKeys: Sendable {
   private struct State {
     var registered: [UInt32: (reference: EventHotKeyRef, chord: Chord)] = [:]
+    /// The chord lent to macOS, and whether Atelier binds it and so registers
+    /// it again afterwards.
+    var lent: (chord: Chord, isBound: Bool)?
     var next: UInt32 = 1
     var held: Set<UInt32> = []
     var handler: EventHandlerRef?
@@ -29,7 +32,8 @@ final class HotKeys: Sendable {
   }
 
   /// Registers exactly these chords, releasing every chord registered before.
-  /// Returns why each chord that could not be registered was refused.
+  /// Returns why each chord that could not be registered was refused. A chord
+  /// on loan to macOS waits for `reclaim`.
   @MainActor func replace(_ chords: [Chord]) -> [Chord: String] {
     let codes = KeyCodes()
     return state.withLock { state in
@@ -44,33 +48,71 @@ final class HotKeys: Sendable {
       }
       state.registered = [:]
       state.held = []
+      state.lent?.isBound = false
       var refused: [Chord: String] = [:]
       for chord in chords {
-        guard !chord.modifiers.contains(.function) else {
-          refused[chord] = "Shortcuts with Fn are not supported."
-          continue
+        if chord == state.lent?.chord {
+          state.lent?.isBound = true
+        } else if let reason = Self.register(chord, codes: codes, in: &state) {
+          refused[chord] = reason
         }
-        guard let code = codes.code(for: chord.key) else {
-          refused[chord] = "The current keyboard layout has no \(chord.key) key."
-          continue
-        }
-        let id = EventHotKeyID(signature: Self.signature, id: state.next)
-        var reference: EventHotKeyRef?
-        let status = RegisterEventHotKey(
-          UInt32(code), Self.carbonModifiers(chord.modifiers), id, GetEventDispatcherTarget(), 0,
-          &reference)
-        guard status == noErr, let reference else {
-          refused[chord] =
-            status == eventHotKeyExistsErr
-            ? "Another app has registered this shortcut."
-            : "macOS refused the shortcut (\(status))."
-          continue
-        }
-        state.registered[state.next] = (reference, chord)
-        state.next += 1
       }
       return refused
     }
+  }
+
+  /// Stops catching a chord while macOS is sent it: a registered chord reaches
+  /// Atelier and nothing else, Dock included. One chord at a time, as commands
+  /// run. False when another is lent already or macOS keeps the registration.
+  @MainActor func lend(_ chord: Chord) -> Bool {
+    state.withLock { state in
+      guard state.lent == nil else { return false }
+      var isBound = false
+      for (id, registered) in state.registered where registered.chord == chord {
+        guard UnregisterEventHotKey(registered.reference) == noErr else { return false }
+        state.registered[id] = nil
+        // Its key-up reaches no one now.
+        state.held.remove(id)
+        isBound = true
+      }
+      state.lent = (chord, isBound)
+      return true
+    }
+  }
+
+  /// Registers the lent chord again if Atelier binds it, going by the bindings
+  /// of now, under a new number so that nothing queued for the old one counts
+  /// as a press. Returns why macOS refused, if it did.
+  @MainActor func reclaim() -> String? {
+    let codes = KeyCodes()
+    return state.withLock { state in
+      guard let lent = state.lent else { return nil }
+      state.lent = nil
+      return lent.isBound ? Self.register(lent.chord, codes: codes, in: &state) : nil
+    }
+  }
+
+  /// Nil once the chord is registered; otherwise why it was refused.
+  private static func register(_ chord: Chord, codes: KeyCodes, in state: inout State) -> String? {
+    guard !chord.modifiers.contains(.function) else {
+      return "Shortcuts with Fn are not supported."
+    }
+    guard let code = codes.code(for: chord.key) else {
+      return "The current keyboard layout has no \(chord.key) key."
+    }
+    let id = EventHotKeyID(signature: signature, id: state.next)
+    var reference: EventHotKeyRef?
+    let status = RegisterEventHotKey(
+      UInt32(code), carbonModifiers(chord.modifiers), id, GetEventDispatcherTarget(), 0,
+      &reference)
+    guard status == noErr, let reference else {
+      return status == eventHotKeyExistsErr
+        ? "Another app has registered this shortcut."
+        : "macOS refused the shortcut (\(status))."
+    }
+    state.registered[state.next] = (reference, chord)
+    state.next += 1
+    return nil
   }
 
   private static func carbonModifiers(_ modifiers: Chord.Modifiers) -> UInt32 {
@@ -107,7 +149,8 @@ final class HotKeys: Sendable {
   }
 
   /// Called by Carbon on the main thread between run-loop turns, so never
-  /// while `replace`, also on the main thread, holds the lock.
+  /// while `replace`, `lend`, or `reclaim`, also on the main thread, holds the
+  /// lock.
   private func handle(_ id: UInt32, released: Bool) {
     let chord: Chord? = state.withLock { state in
       guard let registered = state.registered[id] else { return nil }

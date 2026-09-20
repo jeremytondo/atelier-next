@@ -56,10 +56,6 @@ final class FakeMac: Mac, Sendable {
     /// The global shortcuts registered now.
     var hotKeys: [Chord] = []
     var refusedHotKeys: [Chord: String] = [:]
-    /// macOS's own Space-switching shortcuts: Control with a digit or arrow.
-    var spaceChords: [Chord] =
-      [Chord([.control], "left"), Chord([.control], "right")]
-      + (1...9).map { Chord([.control], "\($0)") }
     /// Each app's Window menu; an app not listed has no menu bar.
     var windowMenus: [Int32: [Arrangement: ArrangementItem]] = [:]
     var openedFiles: [URL] = []
@@ -439,8 +435,6 @@ extension FakeMac {
   }
 
   func hotKeyPresses() -> AsyncStream<Chord> { hotKeyPressed.stream }
-
-  func spaceSwitchingChords() async -> [Chord] { state.withLock(\.spaceChords) }
 
   func open(_ file: URL) -> Bool {
     state.withLock { $0.openedFiles.append(file) }

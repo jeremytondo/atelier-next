@@ -14,7 +14,7 @@ package struct LiveMac: Mac {
   package init() throws {
     skyLight = try SkyLight()
     census = WindowCensus(skyLight: skyLight)
-    shortcuts = SpaceShortcuts(skyLight: skyLight)
+    shortcuts = SpaceShortcuts(skyLight: skyLight, hotKeys: hotKeys)
     fullScreen = FullScreenSwitch(skyLight: skyLight)
     windowMenu = WindowMenu(skyLight: skyLight)
     // The system-wide element sets the limit for every request this process
@@ -146,18 +146,6 @@ package struct LiveMac: Mac {
 
   package func hotKeyPresses() -> AsyncStream<Chord> {
     hotKeys.presses()
-  }
-
-  /// Previous, next, and Desktops 1 to 16, from macOS's table of its own shortcuts.
-  package func spaceSwitchingChords() async -> [Chord] {
-    await MainActor.run {
-      let codes = KeyCodes()
-      return ([79, 81] + Array(118...133)).compactMap { id -> Chord? in
-        guard let (key, flags) = skyLight.symbolicHotKey(UInt32(id)), let name = codes.name(of: key)
-        else { return nil }
-        return Chord(Chord.Modifiers(CGEventFlags(rawValue: UInt64(flags))), name)
-      }
-    }
   }
 
   package func open(_ file: URL) -> Bool {
