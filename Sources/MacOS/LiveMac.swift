@@ -69,6 +69,12 @@ package struct LiveMac: Mac {
     DisplaySpaces.decode(skyLight.managedDisplaySpaces())
   }
 
+  package func spaceNames() -> [UInt64: String] {
+    DisplaySpaces.names(skyLight.managedDisplaySpaces()) {
+      NSRunningApplication(processIdentifier: $0)?.localizedName
+    }
+  }
+
   package func isMissionControlOpen() async -> Bool? {
     await Background.run { MissionControl.isOpen }
   }

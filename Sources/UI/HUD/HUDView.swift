@@ -47,10 +47,9 @@ struct HUDView: View {
       case .spaces(let spaces):
         header("SPACES")
         HUDRows(spacing: 0) {
-          // A Space is named by its place, whatever its kind: the number its key goes by.
+          // The key is the Space's place, whatever its kind.
           ForEach(Array(spaces.enumerated()), id: \.element.id) { index, space in
-            SpaceRow(
-              keyPieces: Self.numberKey(index), position: index + 1, isCurrent: space.isCurrent)
+            SpaceRow(keyPieces: Self.numberKey(index), space: space)
           }
         }
       case .notice(let text):
@@ -143,15 +142,18 @@ private struct WindowRow: View {
 
 private struct SpaceRow: View {
   let keyPieces: [String]
-  let position: Int
-  let isCurrent: Bool
+  let space: SpaceInfo
 
   var body: some View {
-    HUDRow(keyPieces: keyPieces, height: HUDMetrics.spaceRowHeight, isHighlighted: isCurrent) {
-      Text("Space \(position)").fontWeight(isCurrent ? .semibold : .regular).lineLimit(1)
+    HUDRow(
+      keyPieces: keyPieces, height: HUDMetrics.spaceRowHeight, isHighlighted: space.isCurrent
+    ) {
+      // A Split View of two long app names can outgrow the row: the name
+      // keeps to one line and is cut short at the row's end.
+      Text(space.name).fontWeight(space.isCurrent ? .semibold : .regular).lineLimit(1)
       Spacer(minLength: 0)
     }
     .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    .accessibilityAddTraits(space.isCurrent ? .isSelected : [])
   }
 }

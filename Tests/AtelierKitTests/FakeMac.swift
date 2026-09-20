@@ -19,6 +19,8 @@ final class FakeMac: Mac, Sendable {
     /// What a login item that was added becomes: enabled, or awaiting approval.
     var registeredLoginItemStatus = LoginItemStatus.enabled
     var displays: [DisplaySpaces] = []
+    /// The full-screen and Split View Spaces whose apps could be named.
+    var spaceNames: [UInt64: String] = [:]
     var activeSpace: UInt64 = 1
     /// Nil while Atelier itself is frontmost. It need not be in `windows`: a
     /// panel can have the keyboard.
@@ -245,6 +247,8 @@ final class FakeMac: Mac, Sendable {
   func changes() -> AsyncStream<Void> { hints.stream }
 
   func spaces() -> [DisplaySpaces] { state.withLock(\.displays) }
+
+  func spaceNames() -> [UInt64: String] { state.withLock(\.spaceNames) }
 
   func isMissionControlOpen() async -> Bool? { state.withLock(\.isMissionControlOpen) }
 

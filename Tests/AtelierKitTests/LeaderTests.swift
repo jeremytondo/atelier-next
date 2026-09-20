@@ -141,10 +141,10 @@ import Testing
     mac.type("s")
     let spaces = await state(atelier) { $0?.title == "Spaces" }
     #expect(
-      spaces?.entries.filter { $0.label.hasPrefix("Space ") }.map(\.label) == [
-        "Space 1", "Space 2", "Space 3",
+      spaces?.entries.filter { $0.label.hasPrefix("Desktop ") }.map(\.label) == [
+        "Desktop 1", "Desktop 2", "Desktop 3",
       ])
-    #expect(spaces?.entries.first { $0.label == "Space 2" }?.hintPieces == ["⌥", "2"])
+    #expect(spaces?.entries.first { $0.label == "Desktop 2" }?.hintPieces == ["⌥", "2"])
     #expect(spaces?.entries.first { $0.label == "New Desktop" }?.hint == "⌥`")
     #expect(spaces?.entries.first { $0.label == "New Desktop" }?.hintPieces == ["⌥", "`"])
     // A key with a modifier is a piece for each, and so is the hint beside it.
@@ -160,13 +160,15 @@ import Testing
   @Test func aNumberInTheSpacesMenuIsAPositionAmongSpacesOfEveryKind() async throws {
     // Desktop, full screen, Desktop: what the number keys and the list count too.
     let mac = FakeMac.oneDisplay(notDesktops: [2], current: 1)
+    mac.change { $0.spaceNames = [2: "Keynote"] }
     let atelier = try await start(mac)
     _ = try await atelier.leader.open()
     mac.type("s")
     let spaces = await state(atelier) { $0?.title == "Spaces" }
-    #expect(
-      spaces?.entries.filter { $0.label.hasPrefix("Space ") }.map(\.key) == ["1", "2", "3"])
-    #expect(spaces?.entries.contains { $0.label.hasPrefix("Desktop ") } == false)
+    // Each goes by its name, where Desktops count only Desktops.
+    let numbered = spaces?.entries.filter { $0.key.count == 1 && $0.key.first!.isNumber }
+    #expect(numbered?.map(\.key) == ["1", "2", "3"])
+    #expect(numbered?.map(\.label) == ["Desktop 1", "Keynote", "Desktop 2"])
     mac.type("2")
     #expect(await eventually { mac.currentSpace == 2 })
     #expect(await eventually { await atelier.leader.state() == nil })
@@ -188,7 +190,7 @@ import Testing
     let spaces = await state(atelier) { $0?.title == "Spaces" }
     #expect(
       spaces?.entries.filter { $0.key.count == 1 && $0.key.first!.isNumber }.map(\.label) == [
-        "Space 1", "Desktop 2",
+        "Desktop 1", "Desktop 2",
       ])
   }
 
