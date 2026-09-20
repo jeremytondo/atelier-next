@@ -1,9 +1,11 @@
 import Foundation
 
-/// Confirms a native shortcut while its registration remains available.
-/// Enabling a shortcut does not ensure Dock has accepted the first key yet.
-/// An absolute Desktop jump can be repeated once without overshooting; an
-/// arrow cannot. Retry only while the complete original Space state remains.
+/// Sends one of macOS's Space-switching shortcuts and watches for the switch.
+/// A shortcut only just turned on may not be one Dock answers yet, so a press
+/// that shows nothing is sent once more, but only a jump to a numbered
+/// Desktop, which lands in the same place however often it is pressed, and
+/// only while the Spaces are exactly as they were. A step is never repeated:
+/// a second one would overshoot.
 struct SpaceShortcutTransition: Sendable {
   let space: UInt64
   let display: String
@@ -17,12 +19,9 @@ struct SpaceShortcutTransition: Sendable {
     guard post() else { return .refused("Could not send macOS's Space-switching shortcut.") }
     let start = ContinuousClock.now
     var retried = false
-    let arrived = expecting.map {
-      $0.id == display ? DisplaySpaces(id: $0.id, currentSpace: space, spaces: $0.spaces) : $0
-    }
     while ContinuousClock.now - start < timeout {
       let snapshot = displays()
-      if snapshot == arrived { return .sent }
+      if snapshot.first(where: { $0.id == display })?.currentSpace == space { return .sent }
       guard snapshot == expecting else {
         return .uncertain("The Spaces changed while macOS was switching.")
       }

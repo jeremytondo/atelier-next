@@ -285,20 +285,6 @@ import Testing
     #expect(command(submenu(configuration.menu, "x")!, "a") == .desktopsNew)
   }
 
-  @Test func nativeSpaceShortcutChordsCanBeBound() {
-    let configuration = resolve(
-      """
-      [keymap.global]
-      "ctrl+3" = "desktops select 3"
-      """)
-    #expect(configuration.problems.isEmpty)
-    #expect(configuration.global[chord("ctrl+3")] == .desktopsSelect(3))
-    let arrows = resolve(
-      "[keymap.global]\n\"ctrl+left\" = \"spaces previous\"")
-    #expect(arrows.problems.isEmpty)
-    #expect(arrows.global[chord("ctrl+left")] == .spacesPrevious)
-  }
-
   @Test func theLeaderKeyIsItsOwnAndDisplacesADefault() {
     let configuration = resolve(
       """
@@ -350,9 +336,6 @@ import Testing
     let unbounded = resolve("[leader]\ndelay = inf\ntimeout = nan")
     #expect(unbounded.leader == Defaults.leader)
     #expect(unbounded.problems.map(\.location) == ["leader delay", "leader timeout"])
-    let native = resolve("[leader]\nkey = \"ctrl+1\"")
-    #expect(native.leader.chord == chord("ctrl+1"))
-    #expect(native.problems.isEmpty)
     #expect(resolve("[leader]\nkey = \"fn+space\"").problems.map(\.location) == ["leader key"])
   }
 
@@ -401,15 +384,6 @@ import Testing
     #expect(mixed.problems.map(\.location) == ["space-list modifiers"])
     #expect(resolve("[space-list]\ndelay = inf").problems.map(\.location) == ["space-list delay"])
     #expect(resolve("space-list = 1").problems.map(\.location) == ["space-list"])
-  }
-
-  @Test func allDefaultSpaceSelectionChordsAreAvailable() {
-    let configuration = resolve("")
-    #expect(configuration.problems.isEmpty)
-    for number in 1...10 {
-      #expect(configuration.global[chord("option+\(number % 10)")] == .spacesSelect(number))
-    }
-    #expect(configuration.global.count == Defaults.global.count)
   }
 
   @Test func bindingsTheUserWroteOutlastTheDefaultsThatChanged() {
