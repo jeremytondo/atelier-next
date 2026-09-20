@@ -38,31 +38,14 @@ struct FullScreenSwitch: Sendable {
     case .stopped(let dispatch): return dispatch
     }
 
-    let deadline = ContinuousClock.now + .seconds(3)
-    var focusedSince: ContinuousClock.Instant?
-    while ContinuousClock.now < deadline {
-      let displays = DisplaySpaces.decode(skyLight.managedDisplaySpaces())
-      guard let screen = displays.first(where: { $0.id == display }),
-        screen.spaces.contains(where: { $0.id == space && !$0.isDesktop })
-      else { break }
-      if screen.currentSpace == space,
-        await Background.run({ isFocused(window) })
-      {
-        let now = ContinuousClock.now
-        if let focusedSince, now - focusedSince >= .milliseconds(75) {
-          guard restore(origin) else {
-            return .uncertain(
-              "macOS switched Spaces but could not preserve the previous Space's focus.")
-          }
-          return .sent
-        }
-        if focusedSince == nil { focusedSince = now }
-      } else {
-        focusedSince = nil
-      }
-      do { try await Task.sleep(for: .milliseconds(10)) } catch { break }
-    }
-    return .uncertain("macOS did not confirm the full-screen Space and its focused window.")
+    return await FullScreenTransition(space: space, display: display, origin: origin?.space)
+      .confirm(
+        displays: { DisplaySpaces.decode(skyLight.managedDisplaySpaces()) },
+        isFocused: { await Background.run { isFocused(window) } },
+        restoreOrigin: {
+          guard let origin else { return true }
+          return skyLight.restoreFront(origin.process, space: origin.space)
+        })
   }
 
   /// No AX element leaves this background operation. Both the app's launch
@@ -113,17 +96,6 @@ struct FullScreenSwitch: Sendable {
     // effect. Keep the command guard and observe the actual Space and focus;
     // returning early would let another command race the unfinished switch.
     return .sent(target, origin)
-  }
-
-  private func restore(_ origin: Origin?) -> Bool {
-    guard let origin else { return true }
-    let displays = DisplaySpaces.decode(skyLight.managedDisplaySpaces())
-    guard
-      let display = displays.first(where: { $0.spaces.contains(where: { $0.id == origin.space }) })
-    else { return true }
-    // A user switch back to the origin must not be overwritten by a repair.
-    guard display.currentSpace != origin.space else { return false }
-    return skyLight.restoreFront(origin.process, space: origin.space)
   }
 
   private func owns(_ target: FullScreenWindow, space: UInt64) -> Bool {
