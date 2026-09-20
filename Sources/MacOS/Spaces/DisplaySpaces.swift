@@ -28,7 +28,7 @@ extension DisplaySpaces {
     return Set(ids).count == ids.count ? displays : []
   }
 
-  private static func id(of rawSpace: [String: Any]) -> UInt64? {
+  static func id(of rawSpace: [String: Any]) -> UInt64? {
     ((rawSpace["ManagedSpaceID"] ?? rawSpace["id64"]) as? NSNumber)?.uint64Value
   }
 }

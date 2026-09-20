@@ -1,8 +1,9 @@
 import ApplicationServices
 import Foundation
 
-/// Every private SkyLight and HIServices symbol Atelier uses, resolved once.
-/// The libraries stay open for the life of the process.
+/// Every private SkyLight and HIServices symbol Atelier needs, resolved once;
+/// those it can do without are `WindowActivation`'s. The libraries stay open
+/// for the life of the process.
 struct SkyLight: Sendable {
   private typealias MainConnection = @convention(c) () -> Int32
   private typealias CopyManagedDisplaySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
@@ -30,6 +31,7 @@ struct SkyLight: Sendable {
   private let hotKeyIsEnabled: IsSymbolicHotKeyEnabled
   private let enableHotKey: SetSymbolicHotKeyEnabled
   private let getWorkspacesCount: GetWorkspacesCount
+  let windowActivation: WindowActivation?
 
   init() throws {
     guard
@@ -58,6 +60,10 @@ struct SkyLight: Sendable {
     hotKeyIsEnabled = unsafeBitCast(hotKeyEnabled, to: IsSymbolicHotKeyEnabled.self)
     self.enableHotKey = unsafeBitCast(enableHotKey, to: SetSymbolicHotKeyEnabled.self)
     getWorkspacesCount = unsafeBitCast(workspaces, to: GetWorkspacesCount.self)
+    // Optional: losing direct full-screen focus must not disable Desktops or
+    // make us fall back to a route through some other Space.
+    windowActivation = WindowActivation(
+      skyLight: skyLight, hiServices: hiServices, connection: connection)
   }
 
   /// The undocumented per-display dictionaries behind `DisplaySpaces.decode`.

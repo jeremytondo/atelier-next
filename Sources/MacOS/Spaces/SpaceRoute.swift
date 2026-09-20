@@ -1,10 +1,12 @@
-/// The key presses that take a display from its current Space to another.
+/// The key presses that take a display from its current Space to a Desktop.
 ///
 /// macOS offers "Switch to Desktop N" for the first sixteen Desktops, numbered
 /// across all displays in WindowServer's order and skipping full-screen and
 /// Split View Spaces, and previous and next, which step through every kind of
-/// Space and stop at either end. So any Space is a jump to a numbered Desktop,
+/// Space and stop at either end. So a Desktop is a jump to a numbered Desktop,
 /// or none, and then steps; the route with the fewest presses wins.
+/// Full-screen and Split View targets must be focused directly: a shortcut
+/// route can visibly visit an unrelated Desktop before reaching them.
 ///
 /// Stepping acts on the display under the pointer, which need not be the one
 /// with the keyboard, so with several displays only a jump alone will do.
@@ -31,6 +33,7 @@ enum SpaceRoute {
   {
     guard let display = displays.first(where: { $0.id == displayID }),
       let to = display.spaces.firstIndex(where: { $0.id == target }),
+      display.spaces[to].isDesktop,
       let from = display.spaces.firstIndex(where: { $0.id == display.currentSpace })
     else { return nil }
 

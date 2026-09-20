@@ -26,16 +26,18 @@ import Testing
     #expect(presses(to: 4, in: displays) == [.desktop(3)])
   }
 
-  @Test func aSpaceThatIsNotADesktopIsReachedFromTheNearestWay() {
+  @Test func fullScreenTargetsNeverGetAShortcutRoute() {
     let displays = [display(1...5, notDesktops: [2, 5], current: 1)]
-    #expect(presses(to: 2, in: displays) == [.next])
-    #expect(presses(to: 5, in: displays) == [.desktop(3), .next])
+    // Even an adjacent full-screen Space must go through direct focus. In
+    // particular, the former Desktop 3 + next detour is forbidden.
+    #expect(presses(to: 2, in: displays) == nil)
+    #expect(presses(to: 5, in: displays) == nil)
   }
 
   @Test func everyPressSaysWhereItShouldArrive() {
     let plan = SpaceRoute.plan(
-      to: 5, on: "only", in: [display(1...5, notDesktops: [2, 5], current: 1)])
-    #expect(plan?.map(\.arrivesAt) == [4, 5])
+      to: 18, on: "only", in: [display(1...18, current: 1)])
+    #expect(plan?.map(\.arrivesAt) == [16, 17, 18])
   }
 
   @Test func aDesktopPastTheNumberedShortcutsIsReachedByStepping() {
