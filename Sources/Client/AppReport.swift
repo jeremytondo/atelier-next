@@ -1,6 +1,6 @@
 import Foundation
 
-/// What only the running app can say about itself, for `atelier doctor`. The
+/// What only the running app can say about itself, for `atelier-mac doctor`. The
 /// command adds what it can see from outside, and words the whole.
 public struct AppReport: Codable, Equatable, Sendable {
   public struct Problem: Codable, Equatable, Sendable {

@@ -4,8 +4,8 @@ import MacOS
 
 /// Everything Atelier knows and does, with nothing visible: the root the app
 /// makes once, holding one subject per group of commands. Its interface and
-/// the `atelier` command both work through it, so `atelier.windows.select(2)`
-/// here is `atelier windows select 2` in the terminal, and a key bound to
+/// the `atelier-mac` command both work through it, so `atelier.windows.select(2)`
+/// here is `atelier-mac windows select 2` in the terminal, and a key bound to
 /// `windows select 2` in the configuration.
 public struct Atelier: Sendable {
   public let windows: Windows
@@ -57,7 +57,7 @@ public struct Atelier: Sendable {
   /// dealt with.
   static let configFileName = "config-next.toml"
 
-  /// Atelier on the real Mac, answering the `atelier` command from now on.
+  /// Atelier on the real Mac, answering the `atelier-mac` command from now on.
   /// Throws `Server.StartError.alreadyRunning` when another Atelier has the job.
   /// `ATELIER_CONFIG` in the environment names another file, for trying a
   /// configuration without touching one's own.

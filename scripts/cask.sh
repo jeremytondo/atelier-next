@@ -46,11 +46,11 @@ cask "$token" do
   depends_on macos: :golden_gate
 
   app "Atelier.app"
-  binary "#{appdir}/Atelier.app/Contents/Helpers/atelier"
+  binary "#{appdir}/Atelier.app/Contents/Helpers/atelier-mac"
 
   postflight_steps do
     run "/usr/bin/xattr",
-        args: ["-dr", "com.apple.quarantine", "{{appdir}}/Atelier.app/Contents/Helpers/atelier"]
+        args: ["-dr", "com.apple.quarantine", "{{appdir}}/Atelier.app/Contents/Helpers/atelier-mac"]
   end
 
   # On an upgrade Homebrew quits a running Atelier with this and opens the new
@@ -64,9 +64,9 @@ cask "$token" do
   caveats <<~EOS
     $note
     Your configuration and the window lists are kept through upgrades, channel
-    changes, and uninstalling; \`atelier config open\` opens the configuration.
-    Run \`atelier doctor\` after an upgrade. If Homebrew could not quit Atelier,
-    it says the old build is still running, and \`atelier restart\` puts that right.
+    changes, and uninstalling; \`atelier-mac config open\` opens the configuration.
+    Run \`atelier-mac doctor\` after an upgrade. If Homebrew could not quit Atelier,
+    it says the old build is still running, and \`atelier-mac restart\` puts that right.
   EOS
 end
 CASK

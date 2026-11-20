@@ -152,7 +152,7 @@ enum Keymap {
         } else {
           report(
             entry.location,
-            "\"\(entry.target)\" is not a command; write it as the atelier command takes it, such as \"windows select 1\""
+            "\"\(entry.target)\" is not a command; write it as the atelier-mac command takes it, such as \"windows select 1\""
           )
         }
       }
@@ -245,7 +245,7 @@ enum Keymap {
           guard let command = Command(words: words) else {
             report(
               entry.location,
-              "\"\(words)\" is not a command; write it as the atelier command takes it, such as \"desktops new\""
+              "\"\(words)\" is not a command; write it as the atelier-mac command takes it, such as \"desktops new\""
             )
             continue
           }

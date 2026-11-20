@@ -1,4 +1,4 @@
-/// Which build this is. The app and the `atelier` command both compile this
+/// Which build this is. The app and the `atelier-mac` command both compile this
 /// in, so each knows its own build and the two can be compared. A release
 /// writes the two values before it builds; anything else is a development build.
 public enum Build {

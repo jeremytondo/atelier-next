@@ -4,7 +4,7 @@ import Testing
 
 @testable import CLI
 
-/// What `atelier doctor` makes of what it finds. Nothing here reaches a
+/// What `atelier-mac doctor` makes of what it finds. Nothing here reaches a
 /// running Atelier: the app's answer is handed in.
 @Suite struct DoctorTests {
   private let matching = InstalledApp(
@@ -24,7 +24,7 @@ import Testing
   }
 
   private func diagnosis(_ app: Diagnosis.App, installed: InstalledApp?) -> Diagnosis {
-    Diagnosis(commandPath: "/opt/homebrew/bin/atelier", installed: installed, app: app)
+    Diagnosis(commandPath: "/opt/homebrew/bin/atelier-mac", installed: installed, app: app)
   }
 
   @Test func aHealthyInstallationHasNoProblems() {
@@ -80,7 +80,7 @@ import Testing
     let stale = diagnosis(.running(report(build: "older")), installed: matching)
     #expect(stale.problems.count == 1)
     #expect(stale.problems[0].hasPrefix("The running app is build \(Build.version) (older)"))
-    #expect(stale.problems[0].contains("atelier restart"))
+    #expect(stale.problems[0].contains("atelier-mac restart"))
     let other = InstalledApp(path: "/Applications/Atelier.app", version: "9.9.9", build: "1")
     let foreign = diagnosis(.running(report()), installed: other)
     #expect(foreign.problems.count == 1)
@@ -99,7 +99,7 @@ import Testing
     #expect(diagnosis.problems.count == 1)
     #expect(
       diagnosis.problems[0].hasPrefix("The running app is at /Users/someone/dev/Atelier.app"))
-    #expect(diagnosis.problems[0].contains("atelier restart"))
+    #expect(diagnosis.problems[0].contains("atelier-mac restart"))
     #expect(!diagnosis.text.contains("Everything checks out."))
   }
 
@@ -136,7 +136,7 @@ import Testing
       (.failure(.badReply), .unreachable(SocketError.badReply.description)),
     ]
     for (answer, expected) in cases {
-      let diagnosis = Diagnosis.make(commandPath: "/nowhere/atelier") { _ throws(SocketError) in
+      let diagnosis = Diagnosis.make(commandPath: "/nowhere/atelier-mac") { _ throws(SocketError) in
         try answer.get()
       }
       #expect(diagnosis.app == expected)
@@ -153,11 +153,11 @@ import Testing
       fromPropertyList: ["CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "45"],
       format: .xml, options: 0
     ).write(to: app.appending(path: "Contents/Info.plist"))
-    try Data().write(to: helpers.appending(path: "atelier"))
+    try Data().write(to: helpers.appending(path: "atelier-mac"))
     // As Homebrew links it: a symlink elsewhere to the command inside the app.
-    let link = folder.appending(path: "atelier")
+    let link = folder.appending(path: "atelier-mac")
     try FileManager.default.createSymbolicLink(
-      at: link, withDestinationURL: helpers.appending(path: "atelier"))
+      at: link, withDestinationURL: helpers.appending(path: "atelier-mac"))
     let found = try #require(InstalledApp.find(commandPath: link.path))
     #expect(found.version == "1.2.3")
     #expect(found.build == "45")
@@ -166,7 +166,7 @@ import Testing
     #expect(InstalledApp.read(folder) == nil)
     // The Hammerspoon version's app has the name, the identifier, and the
     // place, and not the command inside: it is not this Atelier.
-    try FileManager.default.removeItem(at: helpers.appending(path: "atelier"))
+    try FileManager.default.removeItem(at: helpers.appending(path: "atelier-mac"))
     #expect(InstalledApp.read(app) == nil)
   }
 }

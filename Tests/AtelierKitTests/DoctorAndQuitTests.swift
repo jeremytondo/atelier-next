@@ -6,7 +6,7 @@ import Testing
 
 @testable import AtelierKit
 
-/// What the running app says of itself to `atelier doctor`, and quitting when asked.
+/// What the running app says of itself to `atelier-mac doctor`, and quitting when asked.
 @Suite struct DoctorAndQuitTests {
   private func report(_ atelier: Atelier) async throws -> AppReport {
     let reply = await atelier.reply(to: Request(name: "doctor"))
@@ -107,7 +107,7 @@ import Testing
     let next = await atelier.reply(to: Request(name: "desktops.select", arguments: ["3"]))
     #expect(next == Reply(ok: false, output: AtelierError.busy.message, busy: true))
     #expect(mac.requests == ["switch to 2"])
-    // Asked again, as when `atelier quit` leads to the app's own ending, it returns at once.
+    // Asked again, as when `atelier-mac quit` leads to the app's own ending, it returns at once.
     await atelier.prepareToQuit()
   }
 

@@ -3,7 +3,7 @@ import PackageDescription
 
 // Each layer knows only the one below it: `UI`, then `AtelierKit`, then
 // `MacOS`. `DesktopBridge` is the one piece of Objective-C, which only `MacOS`
-// uses. `Client` is what the `atelier` command and the app's server agree on,
+// uses. `Client` is what the `atelier-mac` command and the app's server agree on,
 // so the command never links the app's behavior. `App/` holds the bundle that
 // links `UI` and `AtelierKit`.
 let package = Package(
@@ -12,7 +12,7 @@ let package = Package(
   products: [
     .library(name: "UI", targets: ["UI"]),
     .library(name: "AtelierKit", targets: ["AtelierKit"]),
-    .executable(name: "atelier", targets: ["CLI"]),
+    .executable(name: "atelier-mac", targets: ["CLI"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-argument-parser", from: "1.6.0"),

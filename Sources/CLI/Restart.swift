@@ -2,11 +2,11 @@ import ArgumentParser
 import Client
 import Foundation
 
-/// Quitting and restarting the app from outside it. `atelier restart` is for
-/// an Atelier still running the build from before an update, which `atelier
-/// doctor` points out: it comes back as the installed build, and an Atelier
-/// that was closed stays closed. What these touch is handed in, so they can be
-/// tried without an app.
+/// Quitting and restarting the app from outside it. `atelier-mac restart` is for
+/// an Atelier still running the build from before an update, which
+/// `atelier-mac doctor` points out: it comes back as the installed build, and an
+/// Atelier that was closed stays closed. What these touch is handed in, so they
+/// can be tried without an app.
 struct Restarting {
   var send: (Request) throws(SocketError) -> Reply
   /// The installed app; nil when there is none.
@@ -125,7 +125,7 @@ struct Restart: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Quit the running app and open the installed one. Nothing when it is not running.",
     discussion: """
-      For an Atelier still running the build from before an update, which atelier doctor \
+      For an Atelier still running the build from before an update, which atelier-mac doctor \
       points out. It is called a restart only when what answers afterwards is the installed \
       build at the installed place.
       """)

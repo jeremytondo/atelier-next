@@ -86,7 +86,7 @@ struct SetupView: View {
           }
         }
       }
-      Text("The atelier config show command lists every key.")
+      Text("The atelier-mac config show command lists every key.")
     }
   }
 
