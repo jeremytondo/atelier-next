@@ -60,7 +60,7 @@ extension Atelier {
     }
   }
 
-  /// What only the running app can say about itself, for `atelier doctor`.
+  /// What only the running app can say about itself, for `atelier-mac doctor`.
   func report() async -> AppReport {
     let configuration = await config.show()
     let login = login.status()
@@ -150,7 +150,7 @@ struct CommandRunner: Sendable {
       let result = try await config.reload()
       if !result.problems.isEmpty {
         notices.post(
-          "Reloaded with \(result.problems.count) problem\(result.problems.count == 1 ? "" : "s"); see atelier config show."
+          "Reloaded with \(result.problems.count) problem\(result.problems.count == 1 ? "" : "s"); see atelier-mac config show."
         )
       }
       return result.outcome

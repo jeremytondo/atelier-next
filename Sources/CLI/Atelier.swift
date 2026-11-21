@@ -2,7 +2,7 @@ import ArgumentParser
 import Client
 import Foundation
 
-/// The `atelier` command. It knows how to reach the running app and nothing
+/// The `atelier-mac` command. It knows how to reach the running app and nothing
 /// about what the app does: each subcommand is one AtelierKit request, worded
 /// for the terminal, and the app does the work and words the reply. `doctor`
 /// and `restart` are the two that must work with no app to ask, so they add
@@ -10,7 +10,7 @@ import Foundation
 @main
 struct AtelierCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
-    commandName: "atelier",
+    commandName: "atelier-mac",
     abstract: "Talk to the running Atelier app.",
     version: Build.description,
     subcommands: [
@@ -94,7 +94,7 @@ struct Windows: ParsableCommand {
     struct By: Asking {
       static let configuration = CommandConfiguration(
         abstract: "Move the focused window some slots later, or earlier when negative.",
-        usage: "atelier windows move by <offset> [--json]")
+        usage: "atelier-mac windows move by <offset> [--json]")
 
       // Taken as words, so that a negative number is not read as an option.
       @Argument(
@@ -173,9 +173,9 @@ struct Spaces: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Move a Space: one by position, or the current one to a position or by some.",
       usage: """
-        atelier spaces move <from> <to> [--json]
-        atelier spaces move to <position> [--json]
-        atelier spaces move by <offset> [--json]
+        atelier-mac spaces move <from> <to> [--json]
+        atelier-mac spaces move to <position> [--json]
+        atelier-mac spaces move by <offset> [--json]
         """,
       discussion: """
         With two positions, the Space at the first moves to the second, as dragging it \

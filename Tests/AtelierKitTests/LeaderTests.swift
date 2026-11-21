@@ -372,7 +372,7 @@ import Testing
     _ = await state(atelier) { $0?.title == "Configuration" }
     mac.type("r")
     #expect(await eventually { await atelier.leader.state() == nil })
-    #expect(await iterator.next()?.text == "Reloaded with 1 problem; see atelier config show.")
+    #expect(await iterator.next()?.text == "Reloaded with 1 problem; see atelier-mac config show.")
     _ = try await atelier.leader.open()
     _ = try await atelier.config.reload()
     #expect(await eventually { await atelier.leader.state() == nil })

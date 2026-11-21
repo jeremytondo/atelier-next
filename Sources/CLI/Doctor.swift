@@ -14,7 +14,7 @@ struct InstalledApp: Equatable, Codable {
   /// else the one in an Applications folder. Nil when there is none.
   static func find(commandPath: String = Diagnosis.commandPath) -> InstalledApp? {
     let command = URL(filePath: commandPath).resolvingSymlinksInPath()
-    // Atelier.app/Contents/Helpers/atelier
+    // Atelier.app/Contents/Helpers/atelier-mac
     let enclosing = command.deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent()
     let candidates =
@@ -30,7 +30,8 @@ struct InstalledApp: Equatable, Codable {
   /// name, the same identifier, and the same place in Applications.
   static func read(_ app: URL) -> InstalledApp? {
     guard
-      FileManager.default.fileExists(atPath: app.appending(path: "Contents/Helpers/atelier").path),
+      FileManager.default.fileExists(
+        atPath: app.appending(path: "Contents/Helpers/atelier-mac").path),
       let data = try? Data(contentsOf: app.appending(path: "Contents/Info.plist")),
       let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
         as? [String: Any],
@@ -47,7 +48,7 @@ struct InstalledApp: Equatable, Codable {
   }
 }
 
-/// Everything `atelier doctor` found, and what it makes of it. It only looks:
+/// Everything `atelier-mac doctor` found, and what it makes of it. It only looks:
 /// nothing here repairs anything, launches anything, or changes anything.
 struct Diagnosis: Equatable {
   enum App: Equatable {
@@ -104,29 +105,29 @@ struct Diagnosis: Equatable {
     }
     if let installed, installed.version != Build.version || installed.build != Build.number {
       problems.append(
-        "The installed app is build \(installed.description) and this command is \(Build.description). Reinstall Atelier so the two match, and check which atelier your shell finds."
+        "The installed app is build \(installed.description) and this command is \(Build.description). Reinstall Atelier so the two match, and check which atelier-mac your shell finds."
       )
     }
     switch app {
     case .notRunning:
       problems.append(
-        "Atelier is not running, so its checks could not be made. Open Atelier, then run atelier doctor again."
+        "Atelier is not running, so its checks could not be made. Open Atelier, then run atelier-mac doctor again."
       )
     case .unreachable(let reason):
       problems.append(
-        "Atelier seems to be running but did not give a report: \(reason) Quit and reopen Atelier, then run atelier doctor again."
+        "Atelier seems to be running but did not give a report: \(reason) Quit and reopen Atelier, then run atelier-mac doctor again."
       )
     case .running(let report):
       if report.version != Build.version || report.build != Build.number {
         problems.append(
-          "The running app is build \(report.version) (\(report.build)) and this command is \(Build.description). Run atelier restart to run the installed build."
+          "The running app is build \(report.version) (\(report.build)) and this command is \(Build.description). Run atelier-mac restart to run the installed build."
         )
       }
       // The same build from somewhere else is still not the installed app, as
       // with a build run from a source checkout.
       if let installed, !installed.isAt(report.path) {
         problems.append(
-          "The running app is at \(report.path), not the installed \(installed.path). Run atelier restart to run the installed one."
+          "The running app is at \(report.path), not the installed \(installed.path). Run atelier-mac restart to run the installed one."
         )
       }
       if !report.hasAccessibility {

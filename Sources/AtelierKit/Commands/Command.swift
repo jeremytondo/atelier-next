@@ -1,7 +1,7 @@
 import MacOS
 
 /// Everything Atelier can be asked, one case per request, parsed from the
-/// words the `atelier` command takes, such as `windows select 1`. A key in the
+/// words the `atelier-mac` command takes, such as `windows select 1`. A key in the
 /// configuration names its command with the same words, so the terminal, a
 /// shortcut, and the leader menu all reach the same thing, and a binding can
 /// be checked without running it.

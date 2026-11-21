@@ -52,7 +52,7 @@ brew update
 brew upgrade --cask $token
 \`\`\`
 
-After installing or upgrading, run \`atelier doctor\` to check the installation.
+After installing or upgrading, run \`atelier-mac doctor\` to check the installation.
 Only one channel can be installed at a time. See [installation and channel switching](https://github.com/$repository/blob/$head/docs/releases.md).
 
 ## What's Changed

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Atelier.app that ships: a Release build with the `atelier` command
+# Build the Atelier.app that ships: a Release build with the `atelier-mac` command
 # inside it, signed with Developer ID, notarized, stapled, and zipped into
 # dist/. App, command, and dist/release.json must name the same build, or
 # nothing is produced. Publishing is another step; this uploads nothing.
@@ -64,18 +64,18 @@ xcodebuildmcp swift-package build --package-path "$root" --configuration release
 app="$stage/Atelier.app"
 ditto "$root/.build/xcode-release/Build/Products/Release/Atelier.app" "$app"
 mkdir -p "$app/Contents/Helpers"
-ditto "$root/.build/release/atelier" "$app/Contents/Helpers/atelier"
+ditto "$root/.build/release/atelier-mac" "$app/Contents/Helpers/atelier-mac"
 
 # Inside out: the command first, then the app that contains it.
 codesign --force --options runtime --timestamp --identifier com.elevenideas.Atelier.cli \
-  --sign "$identity" "$app/Contents/Helpers/atelier"
+  --sign "$identity" "$app/Contents/Helpers/atelier-mac"
 codesign --force --options runtime --timestamp --sign "$identity" "$app"
 codesign --verify --deep --strict "$app"
 
 # One build, named the same three ways.
 plist="$app/Contents/Info.plist"
 app_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist"))"
-command_name=$("$app/Contents/Helpers/atelier" --version)
+command_name=$("$app/Contents/Helpers/atelier-mac" --version)
 [[ $app_name == "$version ($build)" ]] || die "the app names itself $app_name, not $version ($build)"
 [[ $command_name == "$version ($build)" ]] || die "the command names itself $command_name, not $version ($build)"
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist") == com.elevenideas.Atelier ]] ||

@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the `atelier` command and the running app agree on. The app does the
+/// What the `atelier-mac` command and the running app agree on. The app does the
 /// work and words the answer; the command only carries both. This interface is
 /// unstable until Atelier's first release.
 public struct Request: Codable, Equatable, Sendable {

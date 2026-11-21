@@ -5,7 +5,7 @@ import Testing
 
 @testable import CLI
 
-/// `atelier quit` and `atelier restart` against an app that is only described:
+/// `atelier-mac quit` and `atelier-mac restart` against an app that is only described:
 /// each test says how the app answers each request in turn, and what was
 /// opened is recorded.
 @Suite struct RestartTests {

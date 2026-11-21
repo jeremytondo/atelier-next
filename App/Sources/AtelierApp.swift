@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// Every road out comes through here: the menu's Quit, `atelier quit`,
+  /// Every road out comes through here: the menu's Quit, `atelier-mac quit`,
   /// macOS, and an update. A command in progress is let finish first.
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard let atelier else { return .terminateNow }

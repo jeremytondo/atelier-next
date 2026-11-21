@@ -2,7 +2,7 @@ import ApplicationServices
 
 /// The window arrangements macOS itself offers in an app's Window menu: Fill,
 /// Center, the halves, corners, and arrangements of several windows. Named
-/// as the `atelier` command names them.
+/// as the `atelier-mac` command names them.
 package enum Arrangement: String, CaseIterable, Sendable {
   case fill, center, left, right, top, bottom
   case topLeft = "top-left"

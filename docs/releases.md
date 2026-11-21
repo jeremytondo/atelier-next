@@ -1,6 +1,6 @@
 # Installing and releasing
 
-Atelier is installed with Homebrew from the shared tap [jeremytondo/homebrew-tap](https://github.com/jeremytondo/homebrew-tap), which holds other tools besides. There are two channels. Both need macOS 27 on Apple silicon, install `Atelier.app` with the `atelier` command inside it, and link the command onto your path. Neither involves Hammerspoon.
+Atelier is installed with Homebrew from the shared tap [jeremytondo/homebrew-tap](https://github.com/jeremytondo/homebrew-tap), which holds other tools besides. There are two channels. Both need macOS 27 on Apple silicon, install `Atelier.app` with the `atelier-mac` command inside it, and link the command onto your path. Neither involves Hammerspoon.
 
 | Channel | Cask | What it follows |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ Install by full name the first time, which also adds the tap:
 brew install --cask jeremytondo/tap/atelier        # or jeremytondo/tap/atelier@dev
 ```
 
-After that the short names do: `brew upgrade --cask atelier`, `brew uninstall --cask atelier@dev`. After installing or upgrading, run `atelier doctor`; it checks that the command, the installed app, and the running app are the same build. The app keeps macOS's quarantine protection for its first launch. The cask removes quarantine only from the command inside it, because launching that nested executable directly does not reliably surface the app's first-launch confirmation.
+After that the short names do: `brew upgrade --cask atelier`, `brew uninstall --cask atelier@dev`. After installing or upgrading, run `atelier-mac doctor`; it checks that the command, the installed app, and the running app are the same build. The app keeps macOS's quarantine protection for its first launch. The cask removes quarantine only from the command inside it, because launching that nested executable directly does not reliably surface the app's first-launch confirmation.
 
 The two channels are the same app in the same place, so only one is installed at a time, and they share its settings, its window lists, its Accessibility permission, and its place in Login Items. To switch, uninstall one and install the other:
 
@@ -26,7 +26,7 @@ brew install --cask jeremytondo/tap/atelier@dev
 
 Installing, upgrading, switching, and uninstalling all leave `~/.config/atelier/` and the window lists alone. `brew uninstall --zap` removes the window lists and the record of the first launch, and never the configuration.
 
-On an upgrade Homebrew quits a running Atelier, which finishes any command in progress first, and opens the new one afterwards; an Atelier that was closed stays closed. Homebrew's quit needs permission to control Atelier, and says so when it lacks it. The old app then keeps running beside the new command: `atelier doctor` reports the older build still running, and `atelier restart` replaces it with the installed one. The cask cannot do that for you, since Homebrew runs a cask's steps without the network, which counts Atelier's socket.
+On an upgrade Homebrew quits a running Atelier, which finishes any command in progress first, and opens the new one afterwards; an Atelier that was closed stays closed. Homebrew's quit needs permission to control Atelier, and says so when it lacks it. The old app then keeps running beside the new command: `atelier-mac doctor` reports the older build still running, and `atelier-mac restart` replaces it with the installed one. The cask cannot do that for you, since Homebrew runs a cask's steps without the network, which counts Atelier's socket.
 
 ## Coming from the Hammerspoon version
 

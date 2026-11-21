@@ -96,8 +96,8 @@ enum Defaults {
   /// The file `config open` writes when there is none.
   static let fileTemplate = """
     # Atelier configuration. Atelier runs with built-in defaults; this file
-    # overrides them. `atelier config show` prints what is in effect, and
-    # `atelier config reload` applies your edits.
+    # overrides them. `atelier-mac config show` prints what is in effect, and
+    # `atelier-mac config reload` applies your edits.
     #
     # theme = "system"  # or "light" or "dark"
     #

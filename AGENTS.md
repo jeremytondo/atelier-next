@@ -26,7 +26,7 @@ programs. Each layer knows only the one below it: `App`, then `UI`, then
 `AtelierKit`, then `MacOS`. `AtelierKit` is everything Atelier knows and does,
 with nothing visible, and never learns that `UI` exists. It is organised by
 subject, and each subject offers commands, queries, and events under grouped
-names such as `desktops.new`. `UI` and the `atelier` command are two users of
+names such as `desktops.new`. `UI` and the `atelier-mac` command are two users of
 the same `AtelierKit`; shortcuts, the leader menu, Spotlight, and the CLI all
 run the same commands. If someone using only the CLI would want it, it belongs
 in `AtelierKit`; if it is about what appears on screen, it belongs in `UI`.

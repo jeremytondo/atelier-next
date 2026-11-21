@@ -7,7 +7,7 @@ public struct Notice: Equatable, Sendable {
 }
 
 /// Brief word for the person at the keyboard: why a shortcut or leader
-/// command did nothing. A success is quiet, and the `atelier` command gets
+/// command did nothing. A success is quiet, and the `atelier-mac` command gets
 /// its answer in its reply, so these are only for the interface to show for
 /// a moment. Every notice is logged as well.
 public final class Notices: Sendable {

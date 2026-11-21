@@ -44,7 +44,7 @@ dev_cask="$temporary/atelier@dev.rb"
   1111111111111111111111111111111111111111111111111111111111111111 >"$dev_cask"
 ruby -c "$dev_cask" >/dev/null
 grep -Fq 'run "/usr/bin/xattr"' "$dev_cask" || fail 'the cask does not make its command directly runnable'
-grep -Fq 'args: ["-dr", "com.apple.quarantine", "{{appdir}}/Atelier.app/Contents/Helpers/atelier"]' "$dev_cask" ||
+grep -Fq 'args: ["-dr", "com.apple.quarantine", "{{appdir}}/Atelier.app/Contents/Helpers/atelier-mac"]' "$dev_cask" ||
   fail 'the cask removes quarantine from something other than its command'
 
 fakebin="$temporary/bin"
