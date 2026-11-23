@@ -15,7 +15,7 @@ Install by full name the first time, which also adds the tap:
 brew install --cask jeremytondo/tap/atelier        # or jeremytondo/tap/atelier@dev
 ```
 
-After that the short names do: `brew upgrade --cask atelier`, `brew uninstall --cask atelier@dev`. After installing or upgrading, run `atelier-mac doctor`; it checks that the command, the installed app, and the running app are the same build. The app keeps macOS's quarantine protection for its first launch. The cask removes quarantine only from the command inside it, because launching that nested executable directly does not reliably surface the app's first-launch confirmation.
+After that the short names do: `brew upgrade --cask atelier`, `brew uninstall --cask atelier@dev`. After installing or upgrading, run `atelier-mac doctor`; it checks that the command, the installed app, and the running app are the same build. Open Atelier once before using `atelier-mac`; until you confirm the app's first launch, macOS holds the command too.
 
 The two channels are the same app in the same place, so only one is installed at a time, and they share its settings, its window lists, its Accessibility permission, and its place in Login Items. To switch, uninstall one and install the other:
 
