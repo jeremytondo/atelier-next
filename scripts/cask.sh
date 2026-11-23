@@ -4,10 +4,9 @@
 # only one is installed at a time; they differ in name, in where the download
 # is, and in what the other is called.
 #
-# The cask runs nothing of Atelier's. It does remove quarantine from the CLI
-# executable: invoking a quarantined executable nested inside an app can leave
-# macOS waiting for an app-launch confirmation that does not reliably surface
-# from a terminal command. The app stays quarantined for its normal first launch.
+# The cask runs nothing of Atelier's and leaves quarantine to Homebrew, as
+# official casks do. The command waits until the app's first launch is
+# confirmed, so the caveats say to open Atelier first.
 # Homebrew runs a cask's steps in a sandbox without the network, which counts
 # Atelier's socket, so a step could not ask the running app anything.
 #
@@ -48,11 +47,6 @@ cask "$token" do
   app "Atelier.app"
   binary "#{appdir}/Atelier.app/Contents/Helpers/atelier-mac"
 
-  postflight_steps do
-    run "/usr/bin/xattr",
-        args: ["-dr", "com.apple.quarantine", "{{appdir}}/Atelier.app/Contents/Helpers/atelier-mac"]
-  end
-
   # On an upgrade Homebrew quits a running Atelier with this and opens the new
   # one afterwards; one that was closed stays closed. Atelier finishes a command
   # in progress before it goes.
@@ -63,6 +57,8 @@ cask "$token" do
 
   caveats <<~EOS
     $note
+    Open Atelier once before using \`atelier-mac\`; until macOS confirms the
+    app's first launch, the command waits.
     Your configuration and the window lists are kept through upgrades, channel
     changes, and uninstalling; \`atelier-mac config open\` opens the configuration.
     Run \`atelier-mac doctor\` after an upgrade. If Homebrew could not quit Atelier,
